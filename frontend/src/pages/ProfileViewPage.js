@@ -17,6 +17,7 @@ import { useAuth } from "../lib/AuthContext";
 import { PENIS_RANGES } from "../lib/constants";
 import { useTranslation } from "react-i18next";
 import { RoleBadge } from "../components/RoleBadge";
+import { PersonDetails } from "../components/PersonDetails";
 
 function Row({ label, value }) {
   if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
@@ -208,7 +209,15 @@ export default function ProfileViewPage() {
                   <div>
                     <div className="font-display text-3xl leading-tight">
                       {profile.display_name}
-                      <span className="ml-2 text-xl text-[hsl(var(--muted-foreground))]">{profile.age}</span>
+                      {profile.partner && <span className="text-[hsl(var(--muted-foreground))]"> &amp; {profile.partner.display_name}</span>}
+                      {!profile.partner && profile.account_type === "duo" && profile.persona_b?.display_name && (
+                        <span className="text-[hsl(var(--muted-foreground))]"> &amp; {profile.persona_b.display_name}</span>
+                      )}
+                      <span className="ml-2 text-xl text-[hsl(var(--muted-foreground))]">
+                        {profile.age}
+                        {profile.partner?.age && ` / ${profile.partner.age}`}
+                        {!profile.partner && profile.account_type === "duo" && profile.persona_b?.age && ` / ${profile.persona_b.age}`}
+                      </span>
                     </div>
                     <div className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
                       {[profile.pronouns, profile.orientation ? t(`orientations.${profile.orientation}`) : null, profile.gender_identity ? t(`genders.${profile.gender_identity}`) : null]
@@ -216,6 +225,11 @@ export default function ProfileViewPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
+                    {(profile.partner || (profile.account_type === "duo" && profile.persona_b)) && (
+                      <Badge className="gap-1 bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/40" data-testid="profile-couple-badge">
+                        Paar
+                      </Badge>
+                    )}
                     {profile.id_verified && (
                       <Badge className="gap-1 bg-[hsl(var(--accent))]/90 hover:bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]" data-testid="profile-id-verified-badge">
                         <ShieldCheck className="h-3 w-3" /> ID verifiziert
@@ -243,45 +257,16 @@ export default function ProfileViewPage() {
                 </div>
                 {profile.bio && <p className="mt-3 text-sm leading-relaxed">{profile.bio}</p>}
 
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <Row label={t("profile.height")} value={profile.height_cm ? `${profile.height_cm} cm` : null} />
-                  <Row label={t("profile.body_type")} value={profile.body_type ? t(`body_types.${profile.body_type}`) : null} />
-                  <Row label={t("profile.ethnicity")} value={profile.ethnicity} />
-                  <Row label={t("profile.smoking")} value={profile.smoking ? t(`lifestyle.smoking.${profile.smoking}`) : null} />
-                  <Row label={t("profile.drinking")} value={profile.drinking ? t(`lifestyle.drinking.${profile.drinking}`) : null} />
-                  <Row label={t("profile.diet")} value={profile.diet ? t(`lifestyle.diet.${profile.diet}`) : null} />
-                  <Row label={t("profile.sti_status")} value={profile.sti_status ? t(`lifestyle.sti.${profile.sti_status}`) : null} />
-                  <Row label={t("profile.sti_tested_on")} value={profile.sti_tested_on} />
-                  <Row label={t("profile.cup_size")} value={profile.cup_size} />
-                  <Row label={t("profile.penis_category")}
-                    value={profile.penis_category ? `${profile.penis_category} (${PENIS_RANGES[profile.penis_category]})` : null} />
-                  <Row label={t("profile.languages")} value={profile.languages} />
+                {/* Körper & Life-Style + Kinks (always visible, even if empty) */}
+                <div className="mt-4 space-y-3">
+                  <PersonDetails person={profile} title={profile.partner || (profile.account_type === "duo" && profile.persona_b) ? profile.display_name : null} compact />
+                  {profile.partner && (
+                    <PersonDetails person={profile.partner} title={profile.partner.display_name} compact />
+                  )}
+                  {!profile.partner && profile.account_type === "duo" && profile.persona_b && (
+                    <PersonDetails person={profile.persona_b} title={profile.persona_b.display_name || "Person B"} compact />
+                  )}
                 </div>
-
-                {(profile.relationship_types?.length > 0) && (
-                  <div className="mt-3">
-                    <div className="text-xs text-[hsl(var(--muted-foreground))] mb-1">{t("profile.looking_for")}</div>
-                    <div className="flex flex-wrap gap-2">
-                      {profile.relationship_types.map((r) => <Badge key={r} variant="secondary">{t(`relationships.${r}`)}</Badge>)}
-                    </div>
-                  </div>
-                )}
-                {(profile.seeking_roles?.length > 0) && (
-                  <div className="mt-2">
-                    <div className="text-xs text-[hsl(var(--muted-foreground))] mb-1">{t("filters.seeking_roles")}</div>
-                    <div className="flex flex-wrap gap-2">
-                      {profile.seeking_roles.map((r) => <Badge key={r} variant="outline">{t(`roles.${r}`)}</Badge>)}
-                    </div>
-                  </div>
-                )}
-                {(profile.kinks?.length > 0) && (
-                  <div className="mt-2">
-                    <div className="text-xs text-[hsl(var(--muted-foreground))] mb-1">{t("profile.kinks")}</div>
-                    <div className="flex flex-wrap gap-2">
-                      {profile.kinks.map((k) => <Badge key={k} variant="outline">{k}</Badge>)}
-                    </div>
-                  </div>
-                )}
 
                 {profile.admin_view && !previewMode && (
                   <div className="mt-3 border-t pt-3 text-xs font-mono">

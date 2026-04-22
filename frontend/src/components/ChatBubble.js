@@ -4,13 +4,16 @@ import { ReportDialog } from "./ReportDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useState } from "react";
 
-export function ChatBubble({ message, me }) {
-  const isMe = message.sender_id === me?.id;
+export function ChatBubble({ message, me, senders = {}, showSenderLabel = false }) {
+  // With couple-aware chats, "isMe" means either the viewing user OR their linked partner.
+  const selfIds = new Set([me?.id, me?.partner_user_id].filter(Boolean));
+  const isMe = selfIds.has(message.sender_id);
   const isBroadcast = !!message.is_broadcast;
   const time = message.created_at ? format(new Date(message.created_at), "HH:mm") : "";
   const isNsfw = message.media_data_url && (message.nsfw_score ?? 0) >= 0.75;
   const isRead = isMe && (message.read_by?.length || 0) > 1;
   const [reportOpen, setReportOpen] = useState(false);
+  const senderProfile = message.sender || senders[message.sender_id] || null;
 
   // Split **Title**\n\nBody into title + body for broadcast
   let bcTitle = null, bcBody = message.text;
@@ -21,6 +24,15 @@ export function ChatBubble({ message, me }) {
 
   return (
     <div className={`group flex w-full items-end gap-2 ${isMe ? "justify-end" : "justify-start"}`} data-testid="chat-bubble">
+      {!isMe && !isBroadcast && senderProfile?.avatar && (
+        <img
+          src={senderProfile.avatar}
+          alt={senderProfile.display_name || "Sender"}
+          className="h-7 w-7 rounded-full object-cover ring-1 ring-[hsl(var(--border))] shrink-0 mb-2"
+          title={senderProfile.display_name}
+          data-testid={`chat-sender-avatar-${message.sender_id}`}
+        />
+      )}
       {!isMe && !isBroadcast && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -68,6 +80,15 @@ export function ChatBubble({ message, me }) {
                 {message.broadcast_severity === "urgent" ? "Dringend" : "Warnung"}
               </span>
             )}
+          </div>
+        )}
+        {/* Per-message sender label when the thread is couple-enabled and senders differ */}
+        {!isBroadcast && showSenderLabel && senderProfile?.display_name && (
+          <div
+            className={`text-[10.5px] font-medium mb-0.5 ${isMe ? "opacity-80" : "text-[hsl(var(--accent))]"}`}
+            data-testid={`chat-sender-label-${message.sender_id}`}
+          >
+            {senderProfile.display_name}
           </div>
         )}
         {bcTitle && <div className="font-display text-base mb-1">{bcTitle}</div>}

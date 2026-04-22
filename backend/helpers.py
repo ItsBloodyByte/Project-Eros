@@ -217,4 +217,43 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
         "penis_length_cm": penis_len,
         "penis_girth_cm": doc.get("penis_girth_cm"),
         "penis_category": _penis_category(penis_len),
+        # Partner-profile identifiers (the actual partner record is attached separately)
+        "account_type": doc.get("account_type") or "single",
+        "couple_id": doc.get("couple_id"),
+        "partner_user_id": doc.get("partner_user_id"),
+        "persona_b": _persona_b_public(doc.get("persona_b")) if doc.get("account_type") == "duo" else None,
+    }
+
+
+def _persona_b_public(p: Optional[dict]) -> Optional[dict]:
+    """Strip private fields of persona_b (single-account duo). Returns dict or None."""
+    if not isinstance(p, dict):
+        return None
+    derived_age = compute_age(p.get("birth_date"))
+    if derived_age is None:
+        derived_age = p.get("age")
+    penis_len = p.get("penis_length_cm")
+    return {
+        "display_name": p.get("display_name") or "",
+        "age": derived_age,
+        "gender_identity": p.get("gender_identity"),
+        "pronouns": p.get("pronouns"),
+        "orientation": p.get("orientation"),
+        "bio": p.get("bio"),
+        "photos": p.get("photos") or [],
+        "height_cm": p.get("height_cm"),
+        "body_type": p.get("body_type"),
+        "ethnicity": p.get("ethnicity"),
+        "smoking": p.get("smoking"),
+        "drinking": p.get("drinking"),
+        "diet": p.get("diet"),
+        "languages": p.get("languages") or [],
+        "interests": p.get("interests") or [],
+        "kinks": p.get("kinks") or [],
+        "sti_status": p.get("sti_status"),
+        "sti_tested_on": p.get("sti_tested_on"),
+        "cup_size": p.get("cup_size"),
+        "penis_length_cm": penis_len,
+        "penis_girth_cm": p.get("penis_girth_cm"),
+        "penis_category": _penis_category(penis_len),
     }

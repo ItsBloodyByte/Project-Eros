@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { MapPin, Eye, ShieldCheck } from "lucide-react";
+import { MapPin, Eye, ShieldCheck, Users } from "lucide-react";
 import { NsfwBlurOverlay } from "./NsfwBlurOverlay";
 import { RoleBadge } from "./RoleBadge";
 
@@ -8,6 +8,22 @@ export function ProfileCard({ user, visited = false }) {
   const [revealed, setRevealed] = useState(false);
   const primary = (user.photos || []).find((p) => p.is_primary) || (user.photos || [])[0];
   const isNsfw = primary && primary.nsfw_score >= 0.75;
+  // Couple detection: either linked partner (two accounts) OR duo account (single-account couple)
+  const linkedPartner = user.partner;
+  const duoPartner = user.account_type === "duo" ? user.persona_b : null;
+  const isCouple = !!linkedPartner || !!duoPartner;
+  const partnerName = linkedPartner?.display_name || duoPartner?.display_name || null;
+  const partnerPhoto = (() => {
+    if (linkedPartner) {
+      const p = (linkedPartner.photos || []).find((x) => x.is_primary) || (linkedPartner.photos || [])[0];
+      return p?.data || null;
+    }
+    if (duoPartner) {
+      const p = (duoPartner.photos || []).find((x) => x.is_primary) || (duoPartner.photos || [])[0];
+      return p?.data || null;
+    }
+    return null;
+  })();
 
   return (
     <Link
@@ -67,6 +83,15 @@ export function ProfileCard({ user, visited = false }) {
 
         {/* Top-right state */}
         <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5">
+          {isCouple && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide"
+              title={partnerName ? `Paar mit ${partnerName}` : "Paar-Account"}
+              data-testid="profile-card-couple-badge"
+            >
+              <Users className="h-3 w-3" /> Paar
+            </span>
+          )}
           {visited && (
             <span
               className="inline-grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm"
@@ -80,6 +105,17 @@ export function ProfileCard({ user, visited = false }) {
             <span className="online-dot" title="Gerade online" data-testid="profile-card-online-indicator" />
           )}
         </div>
+
+        {/* Partner secondary avatar overlay (bottom-right corner of image) */}
+        {partnerPhoto && (
+          <div
+            className="absolute right-2.5 bottom-[68px] h-12 w-12 rounded-full overflow-hidden ring-2 ring-white/90 shadow-[var(--shadow-md)] bg-[hsl(var(--muted))]"
+            title={partnerName ? `mit ${partnerName}` : "Partner-Profil"}
+            data-testid="profile-card-partner-avatar"
+          >
+            <img src={partnerPhoto} alt={partnerName || "Partner"} className="h-full w-full object-cover" />
+          </div>
+        )}
 
         {/* Boosted ribbon */}
         {user.boosted && (
@@ -95,7 +131,8 @@ export function ProfileCard({ user, visited = false }) {
         <div className="absolute inset-x-0 bottom-0 p-3.5 text-white">
           <div className="font-display text-xl leading-tight tracking-tight">
             {user.display_name}
-            <span className="ml-1.5 text-white/80 text-[13px] font-sans font-normal">{user.age}</span>
+            {partnerName && <span className="text-white/90"> &amp; {partnerName}</span>}
+            <span className="ml-1.5 text-white/80 text-[13px] font-sans font-normal">{user.age}{partnerName && linkedPartner?.age ? ` & ${linkedPartner.age}` : ""}{partnerName && duoPartner?.age ? ` & ${duoPartner.age}` : ""}</span>
           </div>
           <div className="mt-1 flex items-center gap-2 text-[11.5px] text-white/85">
             {user.city && (

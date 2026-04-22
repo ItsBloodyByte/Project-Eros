@@ -25,6 +25,8 @@ export default function ChatPage() {
   const [selfDestruct, setSelfDestruct] = useState(false);
   const [peer, setPeer] = useState(null);
   const [matchMeta, setMatchMeta] = useState({ locked: false, system_match: false, locked_reason: null });
+  const [senders, setSenders] = useState({});
+  const [coupleMeta, setCoupleMeta] = useState({});
   const [typing, setTyping] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const wsRef = useRef(null);
@@ -41,6 +43,8 @@ export default function ChatPage() {
         setMatchMeta({ locked: !!m.locked, system_match: !!m.system_match, locked_reason: m.locked_reason || null });
         const res = await api.get(`/matches/${matchId}/messages`);
         setMessages(res.data.messages);
+        setSenders(res.data.senders || {});
+        setCoupleMeta(res.data.couple_meta || {});
       } catch (e) {
         toast.error("Failed to load chat");
       }
@@ -62,6 +66,9 @@ export default function ChatPage() {
               if (prev.some((m) => m.id === data.message.id)) return prev;
               return [...prev, data.message];
             });
+            if (data.sender) {
+              setSenders((prev) => ({ ...prev, [data.sender.id]: data.sender }));
+            }
           } else if (data.type === "typing" && data.from !== user?.id) {
             setPeerTyping(Boolean(data.is_typing));
           } else if (data.type === "screenshot" && data.from !== user?.id) {
@@ -134,7 +141,20 @@ export default function ChatPage() {
             </Link>
             {peer && (
               <div className="flex items-center gap-2">
-                <div className="font-display text-lg tracking-tight">{peer.display_name}</div>
+                <div className="font-display text-lg tracking-tight" data-testid="chat-peer-title">
+                  {peer.display_name}
+                  {peer.partner && (
+                    <span className="text-[hsl(var(--muted-foreground))]"> &amp; {peer.partner.display_name}</span>
+                  )}
+                  {!peer.partner && peer.account_type === "duo" && peer.persona_b?.display_name && (
+                    <span className="text-[hsl(var(--muted-foreground))]"> &amp; {peer.persona_b.display_name}</span>
+                  )}
+                </div>
+                {(peer.partner || (peer.account_type === "duo" && peer.persona_b)) && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/40 px-2 py-0.5 text-[10.5px] font-medium" data-testid="chat-couple-badge">
+                    Paar
+                  </span>
+                )}
                 {peer.is_system && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] px-2 py-0.5 text-[10.5px] font-medium" data-testid="chat-official-badge" title="Offizielles Eros-Profil">
                     <BadgeCheck className="h-3 w-3" /> Offiziell
@@ -173,7 +193,19 @@ export default function ChatPage() {
           </div>
 
           <div ref={listRef} className="flex-1 overflow-y-auto px-1 py-3 space-y-2.5" data-testid="chat-message-list">
-            {messages.map((m) => <ChatBubble key={m.id} message={m} me={user} />)}
+            {(() => {
+              // Show per-message sender label when the chat is couple-enabled on either side.
+              const myIsCouple = (user?.partner_user_id) || coupleMeta?.user_a?.is_couple || coupleMeta?.user_b?.is_couple || (peer?.partner) || (peer?.account_type === "duo");
+              return messages.map((m) => (
+                <ChatBubble
+                  key={m.id}
+                  message={m}
+                  me={user}
+                  senders={senders}
+                  showSenderLabel={!!myIsCouple}
+                />
+              ));
+            })()}
             {peerTyping && <div className="text-xs text-[hsl(var(--muted-foreground))] pl-2">tippt …</div>}
             {messages.length === 0 && <div className="text-sm text-[hsl(var(--muted-foreground))] text-center py-16">Schreib hallo — sei warm und konkret.</div>}
           </div>

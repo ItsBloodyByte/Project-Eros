@@ -1,38 +1,62 @@
 [
   {
-    "content": "Phase A: Backend – Promo-System + Premium-Erweiterungen",
+    "content": "Explore User- & Match-Modelle + register/me-Endpoints + Chat-Architektur",
     "status": "completed"
   },
   {
-    "content": "Phase A: Frontend – Admin Promos + Account Extras + Super-Like auf Profil",
+    "content": "Backend: Datenmodell für Paare (couples collection, user.couple_id, user.persona_b)",
     "status": "completed"
   },
   {
-    "content": "Phase A: Testen – E2E Screenshots",
+    "content": "Backend: Couple-Invite-Endpoints (invite/accept/decline/revoke/unlink) inkl. E-Mail UND user_id",
     "status": "completed"
   },
   {
-    "content": "Phase B: Blog – Backend Model + CRUD (drafts/publish)",
+    "content": "Backend: Register erweitern (account_type=duo + persona_b beim Onboarding)",
     "status": "completed"
   },
   {
-    "content": "Phase B: Blog – TipTap Rich-Text-Editor Komponente",
+    "content": "Backend: Chat/Match-Zugriff für beide Partner + Nachrichten-Sender bleibt echter User",
     "status": "completed"
   },
   {
-    "content": "Phase B: Blog – Admin-Tab zum Verfassen/Bearbeiten",
+    "content": "Backend: Discover liefert Paare als 1 Eintrag mit `partner` Feld; public_user_from_doc erweitert",
     "status": "completed"
   },
   {
-    "content": "Phase B: Blog – öffentliche /blog-Liste + /blog/:slug Einzelansicht + Nav-Link",
+    "content": "Frontend: Onboarding-Toggle `Einzelperson / Paar` + persona_b Formular",
     "status": "completed"
   },
   {
-    "content": "Phase B: Blog – Testen (Liste, Detail, Admin, Editor)",
+    "content": "Frontend: Account-Seite – Partner-Sektion (einladen/annehmen/lösen)",
     "status": "completed"
+  },
+  {
+    "content": "Frontend: ProfileCard – Couple-Badge + Secondary-Photo-Overlay + `Alice & Ben` Display-Name",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: ProfileViewPage – Paar-Ansicht nebeneinander (beide Personen mit Körper, Kinks)",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: Chat – Header `Anna & Ben`, Avatar/Name pro Nachricht für verknüpfte Konten",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: Körper & Lifestyle + Kinks IMMER im Profil anzeigen (auch leer)",
+    "status": "completed"
+  },
+  {
+    "content": "Testen: Invite/Accept/Unlink + Duo-Register + Discover/Profile-Ansicht",
+    "status": "completed"
+  },
+  {
+    "content": "MyProfile-Editor Tab für Persona-B (Fotos/Körper/Kinks etc. für Person B bearbeiten) – Backlog",
+    "status": "pending"
   },
   {
     "content": "Phase C: Mobile Voll-Parität (React Native) – separates großes Paket",
-    "status": "in_progress"
+    "status": "pending"
   }
 ]

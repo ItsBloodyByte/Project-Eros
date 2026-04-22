@@ -12,6 +12,7 @@ import { Mail, ShieldCheck, Zap, Crown, Heart, Lock, Plane, Trash2, IdCard } fro
 import { Link } from "react-router-dom";
 import { AppFooter } from "../components/AppFooter";
 import { PremiumExtrasSection } from "../components/PremiumExtrasSection";
+import { CoupleSection } from "../components/CoupleSection";
 
 export default function AccountPage() {
   const { user, refresh } = useAuth();
@@ -213,6 +214,8 @@ export default function AccountPage() {
               </div>
             )}
           </section>
+
+          <CoupleSection />
 
           <PremiumExtrasSection />
 

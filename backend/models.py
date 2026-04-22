@@ -53,6 +53,9 @@ class RegisterRequest(BaseModel):
     age: Optional[int] = Field(default=None, ge=0, le=120)
     gender_identity: Gender
     consents: "ConsentFlags"
+    # Partner-profile ("Paar-Account"): optional second persona stored in the same account
+    account_type: Optional[Literal["single", "duo"]] = "single"
+    persona_b: Optional[Dict] = None  # shape see PartnerPersona below
 
 
 class ConsentFlags(BaseModel):

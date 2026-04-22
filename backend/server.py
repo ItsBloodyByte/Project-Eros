@@ -122,6 +122,13 @@ async def startup():
             await db.blog_posts.create_index("id", unique=True)
             await db.blog_posts.create_index("slug", unique=True)
             await db.blog_posts.create_index([("status", 1), ("published_at", -1)])
+            # Couples
+            await db.couples.create_index("id", unique=True)
+            await db.couples.create_index("user_a_id")
+            await db.couples.create_index("user_b_id")
+            await db.couple_invites.create_index("id", unique=True)
+            await db.couple_invites.create_index([("to_user_id", 1), ("status", 1)])
+            await db.couple_invites.create_index([("from_user_id", 1), ("status", 1)])
         except Exception as ex:
             logger.warning("Phase-6 index setup issue: %s", ex)
         # IP flagging with automatic expiry (minor-attempt protection)
@@ -374,11 +381,13 @@ async def register(body: RegisterRequest, request: "Request" = None):
         "registration_ip": ip,
         "requires_id_verification": bool(flagged),
         "id_verification_status": "required_due_to_ip_flag" if flagged else None,
+        "account_type": (body.account_type or "single"),
+        "persona_b": _normalize_persona_b(body.persona_b) if (body.account_type == "duo" and body.persona_b) else None,
         "created_at": now_utc().isoformat(),
         "last_active": now_utc().isoformat(),
     }
     await db.users.insert_one(doc)
-    await _audit(user_id, "register", user_id, {"ip": ip, "flagged_ip": flagged})
+    await _audit(user_id, "register", user_id, {"ip": ip, "flagged_ip": flagged, "account_type": doc.get("account_type")})
     # Auto-apply any active auto_on_register promo campaigns (e.g. "first 100 get 30 days premium")
     try:
         applied_promos = await _maybe_apply_auto_register_promos(doc)
@@ -630,6 +639,13 @@ async def discover(
                 "requires_id_verification": bool(u.get("requires_id_verification")),
                 "premium_expires_at": u.get("premium_expires_at"),
             }
+            if u.get("partner_user_id"):
+                try:
+                    pdoc = await db.users.find_one({"id": u["partner_user_id"]})
+                    if pdoc:
+                        pub["partner"] = public_user_from_doc(pdoc, viewer_location=(user.get("location") or {}).get("coordinates"))
+                except Exception:
+                    pass
             out.append(pub)
         return {"users": out, "total": total, "admin_mode": True}
 
@@ -755,7 +771,27 @@ async def discover(
         # Online-only post-filter (privacy-aware)
         if prefs.get("online_only") and not pub["is_online"]:
             continue
+        # Attach partner snapshot for linked couples (one discover entry per couple: skip partner docs below)
+        if d.get("partner_user_id"):
+            try:
+                pdoc = await db.users.find_one({"id": d["partner_user_id"]})
+                if pdoc and not pdoc.get("banned"):
+                    pub["partner"] = public_user_from_doc(pdoc, viewer_location=viewer_coords)
+            except Exception:
+                pass
         results.append(pub)
+    # De-duplicate: if both partners of a couple made it into results, keep only one entry
+    if results:
+        seen_couple: set = set()
+        deduped = []
+        for r in results:
+            cid = r.get("couple_id")
+            if cid:
+                if cid in seen_couple:
+                    continue
+                seen_couple.add(cid)
+            deduped.append(r)
+        results = deduped
     return {"results": results, "has_more": len(docs) == limit, "geo_applied": geo_applied}
 
 
@@ -808,6 +844,14 @@ async def view_user(user_id: str, user=Depends(_require_user)):
             "last_active": doc.get("last_active"),
             "role_of_target": doc.get("role", "user"),
         }
+    # Attach partner doc (if linked) so the profile view can render both people side-by-side
+    if doc.get("partner_user_id"):
+        try:
+            pdoc = await db.users.find_one({"id": doc["partner_user_id"]})
+            if pdoc and not pdoc.get("banned"):
+                pub["partner"] = public_user_from_doc(pdoc, viewer_location=(user.get("location") or {}).get("coordinates"))
+        except Exception:
+            pass
     return {**pub, "i_liked": bool(my_like), "they_liked": bool(their_like), "match_id": match, **extra}
 
 
@@ -966,14 +1010,19 @@ async def _match_or_403(match_id: str, user_id: str) -> dict:
     m = await db.matches.find_one({"id": match_id})
     if not m:
         raise HTTPException(404, "Match not found")
-    if user_id not in (m["user_a"], m["user_b"]):
+    allowed_ids = {m.get("user_a"), m.get("user_b")}
+    if user_id not in allowed_ids:
+        # Allow the linked partner of one of the match users to access as well
+        caller = await db.users.find_one({"id": user_id})
+        if caller and caller.get("partner_user_id") in allowed_ids:
+            return m
         raise HTTPException(403, "Not in match")
     return m
 
 
 @api_router.get("/matches/{match_id}/messages")
 async def list_messages(match_id: str, user=Depends(_require_user), limit: int = 100):
-    await _match_or_403(match_id, user["id"])
+    m = await _match_or_403(match_id, user["id"])
     # cleanup self-destruct expired
     now_iso = now_utc().isoformat()
     await db.messages.delete_many(
@@ -981,12 +1030,54 @@ async def list_messages(match_id: str, user=Depends(_require_user), limit: int =
     )
     cursor = db.messages.find({"match_id": match_id}).sort("created_at", 1).limit(limit)
     items = await cursor.to_list(length=limit)
-    # mark as read
+    # Build a compact lookup of sender profiles for the frontend to render per-message identity (couple chats)
+    sender_ids = list({i.get("sender_id") for i in items if i.get("sender_id")})
+    profiles: Dict = {}
+    if sender_ids:
+        async for u in db.users.find({"id": {"$in": sender_ids}}, {"id": 1, "display_name": 1, "photos": 1}):
+            primary_photo = None
+            for p in (u.get("photos") or []):
+                if p.get("is_primary"):
+                    primary_photo = p.get("data"); break
+            if not primary_photo and u.get("photos"):
+                primary_photo = u["photos"][0].get("data")
+            profiles[u["id"]] = {
+                "id": u["id"],
+                "display_name": u.get("display_name"),
+                "avatar": primary_photo,
+            }
+    # mark as read — read_by covers caller AND their partner (shared inbox)
+    my_read_ids = [user["id"]]
+    if user.get("partner_user_id"):
+        my_read_ids.append(user["partner_user_id"])
     await db.messages.update_many(
-        {"match_id": match_id, "sender_id": {"$ne": user["id"]}, "read_by": {"$ne": user["id"]}},
+        {"match_id": match_id, "sender_id": {"$nin": my_read_ids}, "read_by": {"$nin": my_read_ids}},
         {"$addToSet": {"read_by": user["id"]}},
     )
-    return {"messages": serialize_doc(items)}
+    # Couple meta so the OTHER side can render "Anna & Ben" in the chat header
+    couple_meta: Dict = {}
+    for label in ["user_a", "user_b"]:
+        uid = m.get(label)
+        if not uid:
+            continue
+        u = await db.users.find_one({"id": uid})
+        if not u:
+            continue
+        ppl = [profiles.get(uid) or {
+            "id": uid,
+            "display_name": u.get("display_name"),
+            "avatar": next((p.get("data") for p in (u.get("photos") or []) if p.get("is_primary")), (u.get("photos") or [{}])[0].get("data") if u.get("photos") else None),
+        }]
+        if u.get("partner_user_id"):
+            pu = await db.users.find_one({"id": u["partner_user_id"]})
+            if pu:
+                ppl.append({
+                    "id": pu["id"],
+                    "display_name": pu.get("display_name"),
+                    "avatar": next((p.get("data") for p in (pu.get("photos") or []) if p.get("is_primary")), (pu.get("photos") or [{}])[0].get("data") if pu.get("photos") else None),
+                })
+        couple_meta[label] = {"primary_id": uid, "people": ppl, "is_couple": len(ppl) > 1}
+    return {"messages": serialize_doc(items), "senders": profiles, "couple_meta": couple_meta}
 
 
 @api_router.post("/messages")
@@ -1022,14 +1113,35 @@ async def send_message(body: SendMessageRequest, user=Depends(_require_user)):
     }
     await db.messages.insert_one(msg)
     await db.matches.update_one({"id": body.match_id}, {"$set": {"last_message_at": msg["created_at"]}})
-    # push via WS if subscribers
-    other_id = m["user_b"] if m["user_a"] == user["id"] else m["user_a"]
+    # Determine the "other" party — accounting for couples on either side
+    match_ids = {m.get("user_a"), m.get("user_b")}
+    my_ids = {user["id"]}
+    if user.get("partner_user_id"):
+        my_ids.add(user["partner_user_id"])
+    other_id = next(iter(match_ids - my_ids), None) or (m["user_b"] if m["user_a"] == user["id"] else m["user_a"])
+    other = await db.users.find_one({"id": other_id}) if other_id else None
+    recipients = [user["id"], other_id]
+    if user.get("partner_user_id"):
+        recipients.append(user["partner_user_id"])
+    if other and other.get("partner_user_id"):
+        recipients.append(other["partner_user_id"])
+    recipients = [r for r in recipients if r]
+    # Sender profile snapshot so the counterpart's UI can show "Anna:" / "Ben:"
+    primary_photo = next((p.get("data") for p in (user.get("photos") or []) if p.get("is_primary")), None)
+    if not primary_photo and user.get("photos"):
+        primary_photo = user["photos"][0].get("data")
+    sender_snapshot = {
+        "id": user["id"],
+        "display_name": user.get("display_name"),
+        "avatar": primary_photo,
+    }
     await ws_manager.broadcast(body.match_id, {
         "type": "message",
         "message": serialize_doc(msg),
-        "for_users": [user["id"], other_id],
+        "sender": sender_snapshot,
+        "for_users": recipients,
     })
-    return serialize_doc(msg)
+    return {**serialize_doc(msg), "sender": sender_snapshot}
 
 
 @api_router.patch("/me/chat-prefs")
@@ -4250,6 +4362,273 @@ async def admin_delete_blog_post(post_id: str, user=Depends(_require_user)):
         raise HTTPException(404, "Post nicht gefunden")
     await _audit(user["id"], "blog_post_delete", post_id)
     return {"ok": True}
+
+
+# ---------- Wire ----------
+# ---------- Couples / Partner Profiles ----------
+
+def _normalize_persona_b(payload: Optional[dict]) -> Optional[dict]:
+    """Sanitize an incoming persona_b dict (second person in a duo account).
+
+    Keeps the same schema as the primary user's public fields so the UI can render both sides symmetrically.
+    """
+    if not isinstance(payload, dict):
+        return None
+    out: Dict = {}
+    str_fields = [
+        "display_name", "bio", "gender_identity", "pronouns", "orientation",
+        "body_type", "ethnicity", "smoking", "drinking", "diet",
+        "sti_status", "sti_tested_on", "cup_size",
+    ]
+    for k in str_fields:
+        v = payload.get(k)
+        if isinstance(v, str):
+            out[k] = v.strip()[:200] or None
+    list_fields = ["languages", "interests", "kinks", "photos"]
+    for k in list_fields:
+        v = payload.get(k)
+        if isinstance(v, list):
+            out[k] = v[:30]
+    num_fields = ["height_cm", "penis_length_cm", "penis_girth_cm"]
+    for k in num_fields:
+        v = payload.get(k)
+        try:
+            if v is not None:
+                out[k] = float(v)
+        except Exception:
+            pass
+    # Age / birth_date
+    if payload.get("birth_date"):
+        out["birth_date"] = str(payload["birth_date"])[:10]
+    elif payload.get("age") is not None:
+        try:
+            out["age"] = int(payload["age"])
+        except Exception:
+            pass
+    # Photos: coerce to list of {data, is_primary}
+    if isinstance(out.get("photos"), list):
+        norm_photos = []
+        for p in out["photos"]:
+            if isinstance(p, str) and p.startswith("data:image/"):
+                norm_photos.append({"data": p, "is_primary": not norm_photos})
+            elif isinstance(p, dict) and p.get("data"):
+                norm_photos.append({
+                    "data": p["data"],
+                    "is_primary": bool(p.get("is_primary")) or not norm_photos,
+                })
+        out["photos"] = norm_photos[:5]
+    # Strip Nones
+    return {k: v for k, v in out.items() if v is not None and v != ""}
+
+
+async def _get_partner_user(user_doc: dict) -> Optional[dict]:
+    pid = user_doc.get("partner_user_id")
+    if not pid:
+        return None
+    return await db.users.find_one({"id": pid})
+
+
+def _couple_people_for_chat(user_doc: dict, partner_doc: Optional[dict]) -> list:
+    """Return a list of people participating in a couple chat (for match headers)."""
+    people = [{
+        "id": user_doc["id"],
+        "display_name": user_doc.get("display_name"),
+        "photos": user_doc.get("photos") or [],
+    }]
+    if partner_doc:
+        people.append({
+            "id": partner_doc["id"],
+            "display_name": partner_doc.get("display_name"),
+            "photos": partner_doc.get("photos") or [],
+        })
+    return people
+
+
+async def _couple_identity_ids(user_doc: dict) -> List[str]:
+    """Return all user IDs that share the same couple chat identity (self + linked partner)."""
+    ids = [user_doc["id"]]
+    if user_doc.get("partner_user_id"):
+        ids.append(user_doc["partner_user_id"])
+    return ids
+
+
+@api_router.post("/couples/invite")
+async def couple_invite(payload: dict, user=Depends(_require_user)):
+    """Invite another Eros account to become your linked partner.
+
+    Accepts `email` or `user_id`. The invitee gets a notification + can accept/decline.
+    """
+    if user.get("account_type") == "duo":
+        raise HTTPException(400, "Duo-Accounts können keinen zweiten Partner verknüpfen.")
+    if user.get("partner_user_id"):
+        raise HTTPException(400, "Du bist bereits mit einem Partner verknüpft.")
+    payload = payload or {}
+    target = None
+    if payload.get("user_id"):
+        target = await db.users.find_one({"id": str(payload["user_id"])})
+    elif payload.get("email"):
+        target = await db.users.find_one({"email": str(payload["email"]).strip().lower()})
+    else:
+        raise HTTPException(400, "email oder user_id erforderlich")
+    if not target:
+        raise HTTPException(404, "Kein Konto mit diesen Daten gefunden")
+    if target["id"] == user["id"]:
+        raise HTTPException(400, "Du kannst dich nicht selbst einladen")
+    if target.get("banned"):
+        raise HTTPException(400, "Das Zielkonto ist nicht verfügbar")
+    if target.get("account_type") == "duo":
+        raise HTTPException(400, "Das Zielkonto ist bereits ein Paar-Account")
+    if target.get("partner_user_id"):
+        raise HTTPException(400, "Das Zielkonto ist bereits verknüpft")
+    # Prevent duplicate pending invites
+    existing = await db.couple_invites.find_one({
+        "from_user_id": user["id"], "to_user_id": target["id"], "status": "pending",
+    })
+    if existing:
+        return {"ok": True, "already_pending": True, "invite_id": existing["id"]}
+    invite = {
+        "id": str(uuid.uuid4()),
+        "from_user_id": user["id"],
+        "to_user_id": target["id"],
+        "from_display_name": user.get("display_name"),
+        "to_display_name": target.get("display_name"),
+        "status": "pending",
+        "created_at": now_utc().isoformat(),
+        "resolved_at": None,
+    }
+    await db.couple_invites.insert_one(invite)
+    await _audit(user["id"], "couple_invite_sent", target["id"], {"invite_id": invite["id"]})
+    # Ping the admin WS so support sees this event (also useful for user notifications later)
+    try:
+        await admin_ws_manager.broadcast({"type": "couple_invite", "invite_id": invite["id"], "channel": "couples"})
+    except Exception:
+        pass
+    return {"ok": True, "invite_id": invite["id"]}
+
+
+@api_router.get("/couples/invites")
+async def couple_list_invites(user=Depends(_require_user)):
+    """Returns all invites involving the caller (incoming + outgoing)."""
+    incoming = await db.couple_invites.find({"to_user_id": user["id"], "status": "pending"}).sort("created_at", -1).to_list(length=50)
+    outgoing = await db.couple_invites.find({"from_user_id": user["id"], "status": "pending"}).sort("created_at", -1).to_list(length=50)
+    return {"incoming": serialize_doc(incoming), "outgoing": serialize_doc(outgoing)}
+
+
+@api_router.post("/couples/invites/{invite_id}/accept")
+async def couple_accept(invite_id: str, user=Depends(_require_user)):
+    invite = await db.couple_invites.find_one({"id": invite_id})
+    if not invite or invite.get("to_user_id") != user["id"]:
+        raise HTTPException(404, "Einladung nicht gefunden")
+    if invite.get("status") != "pending":
+        raise HTTPException(400, "Einladung ist nicht mehr offen")
+    if user.get("account_type") == "duo" or user.get("partner_user_id"):
+        raise HTTPException(400, "Du bist bereits verknüpft/Paar-Account")
+    initiator = await db.users.find_one({"id": invite["from_user_id"]})
+    if not initiator or initiator.get("banned") or initiator.get("partner_user_id") or initiator.get("account_type") == "duo":
+        await db.couple_invites.update_one({"id": invite_id}, {"$set": {"status": "declined", "resolved_at": now_utc().isoformat(), "reason": "initiator_unavailable"}})
+        raise HTTPException(400, "Einladung ungültig (Initiator nicht mehr verfügbar)")
+    couple_id = str(uuid.uuid4())
+    now_iso = now_utc().isoformat()
+    await db.couples.insert_one({
+        "id": couple_id,
+        "user_a_id": initiator["id"],
+        "user_b_id": user["id"],
+        "initiator_id": initiator["id"],
+        "status": "linked",
+        "created_at": now_iso,
+        "linked_at": now_iso,
+    })
+    # Update both users
+    await db.users.update_one({"id": initiator["id"]}, {"$set": {"couple_id": couple_id, "partner_user_id": user["id"]}})
+    await db.users.update_one({"id": user["id"]}, {"$set": {"couple_id": couple_id, "partner_user_id": initiator["id"]}})
+    # Close any outstanding invites on either side
+    await db.couple_invites.update_many(
+        {"$or": [{"from_user_id": initiator["id"]}, {"to_user_id": initiator["id"]},
+                  {"from_user_id": user["id"]}, {"to_user_id": user["id"]}],
+         "status": "pending"},
+        {"$set": {"status": "superseded", "resolved_at": now_iso}},
+    )
+    await db.couple_invites.update_one({"id": invite_id}, {"$set": {"status": "accepted", "resolved_at": now_iso, "couple_id": couple_id}})
+    await _audit(user["id"], "couple_linked", couple_id, {"initiator": initiator["id"], "partner": user["id"]})
+    return {"ok": True, "couple_id": couple_id}
+
+
+@api_router.post("/couples/invites/{invite_id}/decline")
+async def couple_decline(invite_id: str, user=Depends(_require_user)):
+    invite = await db.couple_invites.find_one({"id": invite_id})
+    if not invite or invite.get("to_user_id") != user["id"]:
+        raise HTTPException(404, "Einladung nicht gefunden")
+    if invite.get("status") != "pending":
+        raise HTTPException(400, "Einladung ist nicht mehr offen")
+    await db.couple_invites.update_one({"id": invite_id}, {"$set": {"status": "declined", "resolved_at": now_utc().isoformat()}})
+    await _audit(user["id"], "couple_invite_declined", invite_id)
+    return {"ok": True}
+
+
+@api_router.delete("/couples/invites/{invite_id}")
+async def couple_revoke(invite_id: str, user=Depends(_require_user)):
+    """Initiator cancels their own pending invite."""
+    invite = await db.couple_invites.find_one({"id": invite_id})
+    if not invite or invite.get("from_user_id") != user["id"]:
+        raise HTTPException(404, "Einladung nicht gefunden")
+    if invite.get("status") != "pending":
+        raise HTTPException(400, "Einladung ist nicht mehr offen")
+    await db.couple_invites.update_one({"id": invite_id}, {"$set": {"status": "revoked", "resolved_at": now_utc().isoformat()}})
+    return {"ok": True}
+
+
+@api_router.post("/couples/unlink")
+async def couple_unlink(user=Depends(_require_user)):
+    """Unilateral unlink: current user dissolves the couple. Partner is also unlinked.
+
+    Matches/Chats remain intact; they stay on the account that originally initiated each like.
+    """
+    couple_id = user.get("couple_id")
+    if not couple_id:
+        raise HTTPException(400, "Du bist aktuell nicht verknüpft")
+    couple = await db.couples.find_one({"id": couple_id})
+    partner_id = user.get("partner_user_id")
+    now_iso = now_utc().isoformat()
+    await db.users.update_one({"id": user["id"]}, {"$unset": {"couple_id": "", "partner_user_id": ""}})
+    if partner_id:
+        await db.users.update_one({"id": partner_id}, {"$unset": {"couple_id": "", "partner_user_id": ""}})
+    if couple:
+        await db.couples.update_one(
+            {"id": couple_id},
+            {"$set": {"status": "broken", "broken_at": now_iso, "broken_by": user["id"]}},
+        )
+    await _audit(user["id"], "couple_unlink", couple_id, {"partner": partner_id})
+    return {"ok": True}
+
+
+@api_router.get("/couples/me")
+async def couple_me(user=Depends(_require_user)):
+    """Return the caller's couple info (partner user snapshot + persona_b if duo account)."""
+    out = {
+        "account_type": user.get("account_type") or "single",
+        "couple_id": user.get("couple_id"),
+        "partner": None,
+        "persona_b": _persona_b_public(user.get("persona_b")) if user.get("account_type") == "duo" else None,
+    }
+    if user.get("partner_user_id"):
+        p = await db.users.find_one({"id": user["partner_user_id"]})
+        if p:
+            out["partner"] = public_user_from_doc(p)
+    return out
+
+
+@api_router.patch("/me/persona-b")
+async def update_persona_b(payload: dict, user=Depends(_require_user)):
+    """Update persona_b for a duo account (single-account couple)."""
+    if user.get("account_type") != "duo":
+        raise HTTPException(400, "Dein Konto ist kein Paar-Account")
+    clean = _normalize_persona_b(payload or {})
+    if not clean:
+        raise HTTPException(400, "Keine gültigen Felder übermittelt")
+    current = user.get("persona_b") or {}
+    merged = {**current, **clean}
+    await db.users.update_one({"id": user["id"]}, {"$set": {"persona_b": merged}})
+    return {"ok": True, "persona_b": _persona_b_public(merged)}
 
 
 # ---------- Wire ----------
