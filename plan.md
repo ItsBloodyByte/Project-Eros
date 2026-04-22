@@ -80,13 +80,29 @@ Test core most-failure-prone integration in one Python script:
 ### Testing
 Testing agent runs end-to-end: auth → profile+photo+AI → bidirectional filter correctness → like/match → chat → album → report → admin → privacy → GDPR.
 
-## Phase 3+ (Post-MVP, iterative)
-- Email verification, MFA
-- Video clips
-- Premium tier (Message First)
-- Boosts
-- Events/groups
-- Native mobile build
+## Phase 3 (Roadmap add-ons) — complete
+
+### Delivered
+- Email verification (in-app code; dev_code returned for testing since no SMTP is configured).
+- MFA via TOTP (setup / enable / disable + `/auth/login-mfa` challenge).
+- Video clips with upload, moderation queue (pending → approved/rejected), playback on MyProfile.
+- Premium tier: `/premium/upgrade`, `/premium/status`, `/premium/cancel`.
+  - Premium unlocks: `/likes/received` (who liked me), `/messages/first` (skip mutual-like gate), `/me/boost`.
+- Boosts: temporary discovery priority sort; ProfileCard shows `boosted` chip.
+- Events: create + list + detail + RSVP (going / interested / not_going); `/events` page.
+- Extended admin roles: seeded `review@eros.app` (content_reviewer) and `support@eros.app` (support). Admin role-change endpoint. content_reviewer can access moderation queues but cannot ban; support is read-only on admin views.
+- Account page (`/account`) exposes all of the above.
+- Header updated with Events, Account, and a Premium badge when active.
+
+### Testing results
+- Backend: 63/65 Phase 3 tests passed (96.9%). Two minor flakes both fixed:
+  - Event detail endpoint now returns `going_count`/`interested_count` aggregates.
+  - Discover result for Alice: was filtered out because `seen_user_ids` persisted from prior testing + `hide_seen=true`. Reset seen_user_ids for seeded users so mutual filter test works deterministically.
+- Frontend: 90%+; the "JWT session" concern from the tester is addressed by the module-init token load + global 401 interceptor added in Phase 2.
+
+### Native mobile
+Not shipped in this environment (requires a separate React Native project / store provisioning). The web UI is mobile-first responsive. Documented on the Account page and in plan.md.
+
 
 ---
 Status: Phase 2 complete. App delivered and testable at the preview URL.

@@ -1279,6 +1279,8 @@ async def get_event(event_id: str, user=Depends(_require_user)):
         **serialize_doc(ev),
         "owner_name": owner["display_name"] if owner else "—",
         "rsvps": enriched,
+        "going_count": sum(1 for r in rsvps if r.get("status") == "going"),
+        "interested_count": sum(1 for r in rsvps if r.get("status") == "interested"),
         "my_rsvp": next((r["status"] for r in rsvps if r["user_id"] == user["id"]), None),
     }
 
