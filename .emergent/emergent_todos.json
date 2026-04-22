@@ -1,0 +1,38 @@
+[
+  {
+    "content": "Phase 1: Core POC — Gemini Vision NSFW + face detection, bidirectional filter logic in MongoDB",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1: Fix POC until passing",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Get design guidelines from design_agent",
+    "status": "in_progress"
+  },
+  {
+    "content": "Phase 2: Backend implementation (auth, profile, photos, discovery, likes/matches, chat, albums, reports, admin, GDPR)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Frontend implementation (all pages + FilterDrawer, NsfwBlur, ChatWindow, etc.)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: All user stories covered in development",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: End-to-end testing via testing_agent_v3",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Fix all testing issues",
+    "status": "pending"
+  },
+  {
+    "content": "Finish and deliver",
+    "status": "pending"
+  }
+]
