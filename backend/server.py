@@ -1021,26 +1021,44 @@ async def ws_chat(websocket: WebSocket, match_id: str, token: str = Query(...)):
 
 
 # ---------- Admin Realtime Notifications ----------
+# Known moderation notification channels (event types).
+ADMIN_NOTIFICATION_CHANNELS = [
+    "new_report",
+    "minor_registration_attempt",
+    "flagged_registration",
+    "id_verification_submitted",
+    "auto_shadow_restrict",
+    "photo_retention_set",
+]
+
+
 class AdminWSManager:
-    """Broadcasts moderation events to all connected admin/moderator sockets."""
+    """Broadcasts moderation events to all connected admin/moderator sockets.
+
+    Each connection subscribes to a subset of channels (event types).
+    """
     def __init__(self):
-        self.connections: List[WebSocket] = []
+        # list of (ws, set(channels)|None)  — None == all
+        self.connections: List = []
         self._lock = asyncio.Lock()
 
-    async def connect(self, ws: WebSocket):
+    async def connect(self, ws: WebSocket, channels=None):
         await ws.accept()
         async with self._lock:
-            self.connections.append(ws)
+            self.connections.append((ws, channels))
 
     async def disconnect(self, ws: WebSocket):
         async with self._lock:
-            self.connections = [w for w in self.connections if w is not ws]
+            self.connections = [(w, c) for (w, c) in self.connections if w is not ws]
 
     async def broadcast(self, payload: dict):
-        dead: List[WebSocket] = []
+        evt_type = payload.get("type", "")
+        dead: List = []
         async with self._lock:
             conns = list(self.connections)
-        for w in conns:
+        for w, channels in conns:
+            if channels is not None and evt_type not in channels:
+                continue
             try:
                 await w.send_json(payload)
             except Exception:
@@ -1073,20 +1091,33 @@ async def notify_admins(payload: dict) -> None:
 
 
 @app.websocket("/api/ws/admin")
-async def ws_admin(websocket: WebSocket, token: str = Query(...)):
+async def ws_admin(websocket: WebSocket, token: str = Query(...), channels: Optional[str] = Query(None)):
     try:
         payload = decode_token(token)
     except HTTPException:
         await websocket.close(code=4401)
         return
-    user = await db.users.find_one({"id": payload["sub"]}, {"role": 1})
+    user = await db.users.find_one({"id": payload["sub"]}, {"role": 1, "admin_notification_channels": 1})
     if not user or user.get("role") not in {"admin", "moderator", "superadmin", "content_reviewer"}:
         await websocket.close(code=4403)
         return
-    await admin_ws_manager.connect(websocket)
+    # Channel resolution order: query string (ad-hoc), stored user prefs, else all.
+    if channels:
+        requested = {c.strip() for c in channels.split(",") if c.strip()}
+        subs = (requested & set(ADMIN_NOTIFICATION_CHANNELS)) or None
+    else:
+        stored = user.get("admin_notification_channels")
+        if stored is None:
+            subs = None  # all
+        else:
+            subs = (set(stored) & set(ADMIN_NOTIFICATION_CHANNELS)) or set()
+    await admin_ws_manager.connect(websocket, subs)
     try:
         # Send a greeting with recent unread notifications so newly-connected mods catch up
-        recent = await db.admin_notifications.find({}).sort("created_at", -1).limit(20).to_list(length=20)
+        recent_q: Dict = {}
+        if subs is not None:
+            recent_q = {"type": {"$in": list(subs)}}
+        recent = await db.admin_notifications.find(recent_q).sort("created_at", -1).limit(20).to_list(length=20)
         for n in reversed(recent):
             try:
                 await websocket.send_json({
@@ -1120,8 +1151,40 @@ async def ws_admin(websocket: WebSocket, token: str = Query(...)):
 @api_router.get("/admin/notifications")
 async def list_admin_notifications(user=Depends(_require_user), limit: int = 50):
     await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
-    items = await db.admin_notifications.find({}).sort("created_at", -1).limit(min(limit, 200)).to_list(length=limit)
-    return {"notifications": serialize_doc(items)}
+    # Respect stored channel subscriptions. None == all.
+    stored = user.get("admin_notification_channels")
+    q: Dict = {}
+    if stored is not None:
+        channels = list(set(stored) & set(ADMIN_NOTIFICATION_CHANNELS))
+        q = {"type": {"$in": channels}} if channels else {"type": {"$in": ["__never__"]}}
+    items = await db.admin_notifications.find(q).sort("created_at", -1).limit(min(limit, 200)).to_list(length=limit)
+    return {"notifications": serialize_doc(items), "subscribed_channels": stored, "available_channels": ADMIN_NOTIFICATION_CHANNELS}
+
+
+@api_router.get("/admin/notifications/channels")
+async def get_notification_channels(user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
+    stored = user.get("admin_notification_channels")
+    return {
+        "channels": stored if stored is not None else ADMIN_NOTIFICATION_CHANNELS,
+        "all_subscribed": stored is None,
+        "available_channels": ADMIN_NOTIFICATION_CHANNELS,
+    }
+
+
+@api_router.post("/admin/notifications/channels")
+async def set_notification_channels(payload: dict, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
+    payload = payload or {}
+    if payload.get("all_subscribed"):
+        await db.users.update_one({"id": user["id"]}, {"$unset": {"admin_notification_channels": ""}})
+        return {"channels": ADMIN_NOTIFICATION_CHANNELS, "all_subscribed": True, "available_channels": ADMIN_NOTIFICATION_CHANNELS}
+    raw = payload.get("channels") or []
+    if not isinstance(raw, list):
+        raise HTTPException(400, "channels must be a list")
+    cleaned = [c for c in raw if c in ADMIN_NOTIFICATION_CHANNELS]
+    await db.users.update_one({"id": user["id"]}, {"$set": {"admin_notification_channels": cleaned}})
+    return {"channels": cleaned, "all_subscribed": False, "available_channels": ADMIN_NOTIFICATION_CHANNELS}
 
 
 @api_router.post("/admin/notifications/{nid}/ack")

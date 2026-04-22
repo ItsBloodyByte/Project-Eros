@@ -69,7 +69,7 @@ export default function DiscoverPage() {
                   {t("discover.title")}
                 </h1>
                 <p className="mt-2 text-sm sm:text-base text-[hsl(var(--muted-foreground))] max-w-prose">
-                  {t("discover.subtitle") || "Menschen, die zu dir passen — respektvoll, sichtbar, in deiner Nähe."}
+                  {t("discover.subtitle") || "Die Plattform für alle, die wissen, was sie wollen."}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">

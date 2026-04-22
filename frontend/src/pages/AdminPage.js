@@ -187,6 +187,7 @@ export default function AdminPage() {
   // Realtime admin moderation notifications (WebSocket)
   const [liveEvents, setLiveEvents] = useState([]);
   const [bellOpen, setBellOpen] = useState(false);
+  const [channelsSig, setChannelsSig] = useState("*");
   useEffect(() => {
     if (!user || !["admin", "moderator", "superadmin", "content_reviewer"].includes(user.role)) return;
     // Load recent persisted notifications first
@@ -206,7 +207,9 @@ export default function AdminPage() {
     let reconnectTimer;
     const connect = () => {
       try {
-        ws = new WebSocket(`${wsUrl}/api/ws/admin?token=${encodeURIComponent(token)}`);
+        const qs = new URLSearchParams({ token });
+        if (channelsSig && channelsSig !== "*") qs.set("channels", channelsSig);
+        ws = new WebSocket(`${wsUrl}/api/ws/admin?${qs.toString()}`);
         ws.onmessage = (ev) => {
           try {
             const msg = JSON.parse(ev.data);
@@ -242,7 +245,7 @@ export default function AdminPage() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       try { ws?.close(); } catch {}
     };
-  }, [user?.role, user?.id]);
+  }, [user?.role, user?.id, channelsSig]);
 
   const unreadCount = liveEvents.filter((e) => !e._ack).length;
   const ackAllNotifications = async () => {
@@ -251,6 +254,70 @@ export default function AdminPage() {
       setLiveEvents((prev) => prev.map((e) => ({ ...e, _ack: true })));
     } catch {}
   };
+
+  // Per-moderator subscription channels
+  const [channelsState, setChannelsState] = useState({ channels: [], all_subscribed: true, available_channels: [] });
+  const [channelsOpen, setChannelsOpen] = useState(false);
+  const [channelsSaving, setChannelsSaving] = useState(false);
+
+  useEffect(() => {
+    setChannelsSig(
+      channelsState.all_subscribed ? "*" : (channelsState.channels || []).slice().sort().join(",")
+    );
+  }, [channelsState.all_subscribed, channelsState.channels]);
+
+  useEffect(() => {
+    if (!user || !["admin", "moderator", "superadmin", "content_reviewer"].includes(user.role)) return;
+    (async () => {
+      try {
+        const { data } = await api.get("/admin/notifications/channels");
+        setChannelsState(data);
+      } catch {}
+    })();
+  }, [user?.role, user?.id]);
+
+  const toggleChannel = (c) => {
+    setChannelsState((prev) => {
+      const allChannels = prev.available_channels || [];
+      const current = prev.all_subscribed ? [...allChannels] : [...(prev.channels || [])];
+      const next = current.includes(c) ? current.filter((x) => x !== c) : [...current, c];
+      return { ...prev, channels: next, all_subscribed: false };
+    });
+  };
+
+  const saveChannels = async () => {
+    setChannelsSaving(true);
+    try {
+      const { data } = await api.post("/admin/notifications/channels", {
+        channels: channelsState.channels,
+        all_subscribed: false,
+      });
+      setChannelsState(data);
+      toast.success("Benachrichtigungs-Kanäle gespeichert");
+      setChannelsOpen(false);
+    } catch (e) { toast.error(e.response?.data?.detail || "Speichern fehlgeschlagen"); }
+    finally { setChannelsSaving(false); }
+  };
+
+  const enableAllChannels = async () => {
+    setChannelsSaving(true);
+    try {
+      const { data } = await api.post("/admin/notifications/channels", { all_subscribed: true });
+      setChannelsState(data);
+      toast.success("Alle Kanäle aktiviert");
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
+    finally { setChannelsSaving(false); }
+  };
+
+  const CHANNEL_LABELS = {
+    new_report: "Neue Meldungen",
+    minor_registration_attempt: "Minderjährige Registrierung blockiert",
+    flagged_registration: "Registrierung von geflaggter IP",
+    id_verification_submitted: "ID-Verifizierung eingereicht",
+    auto_shadow_restrict: "Auto-Mod Shadow-Restrict",
+    photo_retention_set: "Foto-Aufbewahrung gesetzt",
+  };
+  const isChannelActive = (c) => channelsState.all_subscribed || (channelsState.channels || []).includes(c);
 
   const updateStatus = async (id, status) => {
     await api.post(`/admin/reports/${id}/status`, { status });
@@ -367,10 +434,22 @@ export default function AdminPage() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-[380px] max-h-[480px] overflow-y-auto">
-                <div className="px-3 py-2 flex items-center justify-between border-b">
+                <div className="px-3 py-2 flex items-center justify-between border-b gap-2">
                   <div className="font-medium text-sm">Moderations-Events</div>
-                  <button className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" onClick={ackAllNotifications} data-testid="admin-bell-ack-all">Alle markieren</button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                      onClick={() => { setChannelsOpen(true); setBellOpen(false); }}
+                      data-testid="admin-bell-channels"
+                    >Kanäle</button>
+                    <button className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" onClick={ackAllNotifications} data-testid="admin-bell-ack-all">Alle markieren</button>
+                  </div>
                 </div>
+                {!channelsState.all_subscribed && (
+                  <div className="px-3 py-1.5 bg-[hsl(var(--secondary))]/40 text-[11px] text-[hsl(var(--muted-foreground))] border-b">
+                    Abonniert: {(channelsState.channels || []).length}/{channelsState.available_channels?.length || 0} Kanäle
+                  </div>
+                )}
                 {liveEvents.length === 0 && <div className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">Noch keine Benachrichtigungen.</div>}
                 <ul className="divide-y divide-[hsl(var(--border))]/60">
                   {liveEvents.slice(0, 50).map((e, i) => (
@@ -406,6 +485,53 @@ export default function AdminPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          {/* Notification Channels Dialog */}
+          <Dialog open={channelsOpen} onOpenChange={setChannelsOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="font-display text-2xl">Benachrichtigungs-Kanäle</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-2 text-sm">
+                <p className="text-[hsl(var(--muted-foreground))] text-xs">
+                  Wähle, welche Moderations-Events dich erreichen sollen. Die Glocke oben rechts zeigt dann nur ausgewählte Kanäle — andere Teammitglieder können sich um den Rest kümmern.
+                </p>
+                <div className="rounded-md border divide-y divide-[hsl(var(--border))]/60">
+                  {(channelsState.available_channels || []).map((c) => (
+                    <label key={c} className="flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer hover:bg-[hsl(var(--secondary))]/40" data-testid={`channel-${c}`}>
+                      <div>
+                        <div className="font-medium">{CHANNEL_LABELS[c] || c}</div>
+                        <div className="text-[11px] text-[hsl(var(--muted-foreground))] font-mono">{c}</div>
+                      </div>
+                      <Switch
+                        checked={isChannelActive(c)}
+                        onCheckedChange={() => toggleChannel(c)}
+                        data-testid={`channel-toggle-${c}`}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                    onClick={enableAllChannels}
+                    disabled={channelsSaving}
+                    data-testid="channels-all-on"
+                  >Alle aktivieren</button>
+                  <div className="text-[11px] text-[hsl(var(--muted-foreground))]">
+                    Änderungen greifen nach Speichern und Neuaufbau der Verbindung.
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setChannelsOpen(false)}>Abbrechen</Button>
+                <Button onClick={saveChannels} disabled={channelsSaving} data-testid="channels-save">
+                  {channelsSaving ? "Speichern…" : "Speichern"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Tabs defaultValue="reports">
             <TabsList className="flex-wrap h-auto">
               <TabsTrigger value="reports" data-testid="admin-tab-reports">Reports</TabsTrigger>
