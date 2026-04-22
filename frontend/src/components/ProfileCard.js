@@ -102,6 +102,12 @@ export function ProfileCard({ user, visited = false }) {
               <Eye className="h-3.5 w-3.5" />
             </span>
           )}
+          {/* Mobile-only mood icon, placed next to the online indicator */}
+          {user.current_mood && (
+            <span className="md:hidden" data-testid="profile-card-mood-mobile">
+              <MoodBadge mood={user.current_mood} iconOnly size="sm" />
+            </span>
+          )}
           {user.is_online && (
             <span className="online-dot" title="Gerade online" data-testid="profile-card-online-indicator" />
           )}
@@ -128,22 +134,14 @@ export function ProfileCard({ user, visited = false }) {
           </div>
         )}
 
-        {/* Mood status badge — icon-only on mobile, full pill on desktop */}
+        {/* Mood status badge — full pill on desktop only (mobile variant sits next to online-dot in top-right) */}
         {user.current_mood && (
-          <>
-            <div
-              className="md:hidden absolute left-2.5 bottom-[62px]"
-              data-testid="profile-card-mood-mobile"
-            >
-              <MoodBadge mood={user.current_mood} iconOnly size="sm" />
-            </div>
-            <div
-              className="hidden md:block absolute left-2.5 bottom-[62px]"
-              data-testid="profile-card-mood"
-            >
-              <MoodBadge mood={user.current_mood} size="sm" />
-            </div>
-          </>
+          <div
+            className="hidden md:block absolute left-2.5 bottom-[62px]"
+            data-testid="profile-card-mood"
+          >
+            <MoodBadge mood={user.current_mood} size="sm" />
+          </div>
         )}
 
         {/* Bottom info overlay */}
