@@ -38,6 +38,96 @@ export default function AdminPage() {
   });
   const [reportDetail, setReportDetail] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [editUser, setEditUser] = useState(null); // full user doc
+  const [editForm, setEditForm] = useState(null); // edited fields
+  const [editSaving, setEditSaving] = useState(false);
+
+  const openEditUser = async (uid) => {
+    try {
+      const { data } = await api.get(`/admin/users/${uid}`);
+      setEditUser(data.user);
+      setEditForm({
+        display_name: data.user.display_name || "",
+        email: data.user.email || "",
+        age: data.user.age || 18,
+        gender_identity: data.user.gender_identity || "",
+        pronouns: data.user.pronouns || "",
+        orientation: data.user.orientation || "",
+        bio: data.user.bio || "",
+        height_cm: data.user.height_cm || "",
+        body_type: data.user.body_type || "",
+        ethnicity: data.user.ethnicity || "",
+        smoking: data.user.smoking || "",
+        drinking: data.user.drinking || "",
+        diet: data.user.diet || "",
+        sti_status: data.user.sti_status || "",
+        cup_size: data.user.cup_size || "",
+        penis_length_cm: data.user.penis_length_cm || "",
+        penis_girth_cm: data.user.penis_girth_cm || "",
+        id_verified: !!data.user.id_verified,
+        id_verification_status: data.user.id_verification_status || "",
+        email_verified: !!data.user.email_verified,
+        shadow_restricted: !!data.user.shadow_restricted,
+        banned: !!data.user.banned,
+        ban_reason: data.user.ban_reason || "",
+        role: data.user.role || "user",
+        premium_days: 0,
+        boost_minutes: 0,
+      });
+    } catch (e) { toast.error(e.response?.data?.detail || "Konnte Nutzer nicht laden"); }
+  };
+
+  const saveEditUser = async () => {
+    if (!editUser) return;
+    setEditSaving(true);
+    try {
+      const payload = { ...editForm };
+      delete payload.premium_days; delete payload.boost_minutes;
+      // Numeric conversions
+      if (payload.age !== "" && payload.age !== null) payload.age = Number(payload.age);
+      if (payload.height_cm !== "" && payload.height_cm !== null) payload.height_cm = Number(payload.height_cm) || null;
+      if (payload.penis_length_cm !== "") payload.penis_length_cm = Number(payload.penis_length_cm) || null;
+      if (payload.penis_girth_cm !== "") payload.penis_girth_cm = Number(payload.penis_girth_cm) || null;
+      // Remove empty-string fields that should remain untouched (would set to empty)
+      const clean = {};
+      for (const [k, v] of Object.entries(payload)) {
+        if (v === "" && typeof editUser[k] !== "string") continue;
+        clean[k] = v;
+      }
+      await api.patch(`/admin/users/${editUser.id}`, clean);
+      // Role change via dedicated endpoint to allow superadmin check
+      if (editForm.role && editForm.role !== editUser.role) {
+        await api.post(`/admin/users/${editUser.id}/role`, { role: editForm.role });
+      }
+      toast.success("Profil gespeichert");
+      await loadAll();
+      setEditUser(null); setEditForm(null);
+    } catch (e) { toast.error(e.response?.data?.detail || "Speichern fehlgeschlagen"); }
+    finally { setEditSaving(false); }
+  };
+
+  const grantPremium = async (action) => {
+    if (!editUser) return;
+    try {
+      const body = { action };
+      if (action !== "revoke") {
+        body.days = Number(editForm.premium_days || 0);
+        body.boost_minutes = Number(editForm.boost_minutes || 0);
+      }
+      const { data } = await api.post(`/admin/users/${editUser.id}/premium`, body);
+      setEditUser((u) => ({ ...u, premium_expires_at: data.premium_expires_at, boost_expires_at: data.boost_expires_at }));
+      toast.success(action === "revoke" ? "Premium entzogen" : "Premium aktualisiert");
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
+  };
+
+  const deleteUserPhoto = async (pid) => {
+    if (!editUser) return;
+    try {
+      await api.delete(`/admin/users/${editUser.id}/photos/${pid}`);
+      setEditUser((u) => ({ ...u, photos: (u.photos || []).filter((p) => p.id !== pid) }));
+      toast.success("Foto entfernt");
+    } catch (e) { toast.error("Fehlgeschlagen"); }
+  };
 
   const openReport = async (id) => {
     setReportLoading(true);
@@ -249,7 +339,8 @@ export default function AdminPage() {
                           {u.id_verified && <Badge>ID</Badge>}
                           {!u.banned && !u.shadow_restricted && <Badge variant="secondary">aktiv</Badge>}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="space-x-1">
+                          <Button size="sm" variant="outline" onClick={() => openEditUser(u.id)} data-testid={`admin-edit-user-${u.id}`}>Bearbeiten</Button>
                           {u.banned
                             ? <Button size="sm" onClick={() => unban(u.id)}>Entbannen</Button>
                             : <Button size="sm" variant="destructive" onClick={() => ban(u.id)}>Bannen</Button>}
@@ -552,6 +643,167 @@ export default function AdminPage() {
               </div>
             </TabsContent>
           </Tabs>
+
+          {/* Admin Edit User Dialog */}
+          <Dialog open={!!editUser} onOpenChange={(v) => { if (!v) { setEditUser(null); setEditForm(null); } }}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="font-display text-2xl">Nutzer bearbeiten {editUser && <span className="text-sm font-normal text-[hsl(var(--muted-foreground))]">· {editUser.display_name}</span>}</DialogTitle>
+              </DialogHeader>
+              {editForm && editUser && (
+                <div className="space-y-5 text-sm">
+                  {/* Premium & Boost */}
+                  <div className="rounded-md border p-4 space-y-3 bg-[hsl(var(--secondary))]/30">
+                    <div className="font-display text-base flex items-center justify-between">
+                      <span>Premium & Boost</span>
+                      <div className="flex items-center gap-1.5 text-xs">
+                        {editUser.premium_expires_at && new Date(editUser.premium_expires_at) > new Date()
+                          ? <Badge className="bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]">Premium aktiv bis {editUser.premium_expires_at.slice(0,10)}</Badge>
+                          : <Badge variant="outline">Kein Premium</Badge>}
+                        {editUser.boost_expires_at && new Date(editUser.boost_expires_at) > new Date()
+                          && <Badge className="bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]">Boost bis {editUser.boost_expires_at.slice(11,16)} UTC</Badge>}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+                      <div>
+                        <Label className="text-xs">Premium Tage</Label>
+                        <Input type="number" min="0" max="3650" value={editForm.premium_days}
+                               onChange={(e) => setEditForm({ ...editForm, premium_days: e.target.value })}
+                               data-testid="admin-edit-premium-days" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Boost Minuten</Label>
+                        <Input type="number" min="0" max="10080" value={editForm.boost_minutes}
+                               onChange={(e) => setEditForm({ ...editForm, boost_minutes: e.target.value })}
+                               data-testid="admin-edit-boost-minutes" />
+                      </div>
+                      <div className="flex gap-2 md:col-span-2">
+                        <Button size="sm" onClick={() => grantPremium("grant")} data-testid="admin-premium-grant">Neu setzen</Button>
+                        <Button size="sm" variant="secondary" onClick={() => grantPremium("extend")} data-testid="admin-premium-extend">Verlängern</Button>
+                        <Button size="sm" variant="destructive" onClick={() => grantPremium("revoke")} data-testid="admin-premium-revoke">Entziehen</Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Account & Role */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label>Anzeigename</Label>
+                      <Input value={editForm.display_name} onChange={(e) => setEditForm({ ...editForm, display_name: e.target.value })} data-testid="admin-edit-name" />
+                    </div>
+                    <div>
+                      <Label>E-Mail</Label>
+                      <Input value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} data-testid="admin-edit-email" />
+                    </div>
+                    <div>
+                      <Label>Alter</Label>
+                      <Input type="number" min="18" max="120" value={editForm.age} onChange={(e) => setEditForm({ ...editForm, age: e.target.value })} data-testid="admin-edit-age" />
+                    </div>
+                    <div>
+                      <Label>Rolle</Label>
+                      <Select value={editForm.role} onValueChange={(v) => setEditForm({ ...editForm, role: v })}>
+                        <SelectTrigger data-testid="admin-edit-role"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="user">User</SelectItem>
+                          <SelectItem value="support">Support</SelectItem>
+                          <SelectItem value="content_reviewer">Content Reviewer</SelectItem>
+                          <SelectItem value="moderator">Moderator</SelectItem>
+                          <SelectItem value="admin">Admin</SelectItem>
+                          {user?.role === "superadmin" && <SelectItem value="superadmin">Superadmin</SelectItem>}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Geschlechtsidentität</Label>
+                      <Input value={editForm.gender_identity} onChange={(e) => setEditForm({ ...editForm, gender_identity: e.target.value })} placeholder="woman / man / non_binary / …" />
+                    </div>
+                    <div>
+                      <Label>Pronomen</Label>
+                      <Input value={editForm.pronouns} onChange={(e) => setEditForm({ ...editForm, pronouns: e.target.value })} />
+                    </div>
+                    <div>
+                      <Label>Orientierung</Label>
+                      <Input value={editForm.orientation} onChange={(e) => setEditForm({ ...editForm, orientation: e.target.value })} placeholder="straight / gay / bi / …" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label>Bio</Label>
+                    <textarea className="w-full min-h-[80px] rounded-md border bg-background p-2 text-sm" value={editForm.bio} onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })} data-testid="admin-edit-bio" />
+                  </div>
+
+                  {/* Body & Lifestyle */}
+                  <div className="rounded-md border p-3 space-y-3">
+                    <div className="font-display text-base">Körper & Lifestyle</div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      <div><Label className="text-xs">Größe (cm)</Label><Input type="number" value={editForm.height_cm} onChange={(e) => setEditForm({ ...editForm, height_cm: e.target.value })} /></div>
+                      <div><Label className="text-xs">Körpertyp</Label><Input value={editForm.body_type} onChange={(e) => setEditForm({ ...editForm, body_type: e.target.value })} /></div>
+                      <div><Label className="text-xs">Ethnizität</Label><Input value={editForm.ethnicity} onChange={(e) => setEditForm({ ...editForm, ethnicity: e.target.value })} /></div>
+                      <div><Label className="text-xs">Rauchen</Label><Input value={editForm.smoking} onChange={(e) => setEditForm({ ...editForm, smoking: e.target.value })} /></div>
+                      <div><Label className="text-xs">Alkohol</Label><Input value={editForm.drinking} onChange={(e) => setEditForm({ ...editForm, drinking: e.target.value })} /></div>
+                      <div><Label className="text-xs">Ernährung</Label><Input value={editForm.diet} onChange={(e) => setEditForm({ ...editForm, diet: e.target.value })} /></div>
+                      <div><Label className="text-xs">STI-Status</Label><Input value={editForm.sti_status} onChange={(e) => setEditForm({ ...editForm, sti_status: e.target.value })} /></div>
+                      <div><Label className="text-xs">Cup Size</Label><Input value={editForm.cup_size} onChange={(e) => setEditForm({ ...editForm, cup_size: e.target.value })} /></div>
+                      <div><Label className="text-xs">Penis Länge (cm)</Label><Input type="number" step="0.1" value={editForm.penis_length_cm} onChange={(e) => setEditForm({ ...editForm, penis_length_cm: e.target.value })} /></div>
+                      <div><Label className="text-xs">Penis Umfang (cm)</Label><Input type="number" step="0.1" value={editForm.penis_girth_cm} onChange={(e) => setEditForm({ ...editForm, penis_girth_cm: e.target.value })} /></div>
+                    </div>
+                  </div>
+
+                  {/* Status toggles */}
+                  <div className="rounded-md border p-3 space-y-2">
+                    <div className="font-display text-base">Status & Flags</div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      <label className="flex items-center gap-2"><Switch checked={!!editForm.id_verified} onCheckedChange={(v) => setEditForm({ ...editForm, id_verified: v, id_verification_status: v ? "approved" : editForm.id_verification_status })} data-testid="admin-toggle-idverified" /> ID verifiziert</label>
+                      <label className="flex items-center gap-2"><Switch checked={!!editForm.email_verified} onCheckedChange={(v) => setEditForm({ ...editForm, email_verified: v })} /> E-Mail verifiziert</label>
+                      <label className="flex items-center gap-2"><Switch checked={!!editForm.shadow_restricted} onCheckedChange={(v) => setEditForm({ ...editForm, shadow_restricted: v })} /> Shadow restricted</label>
+                      <label className="flex items-center gap-2"><Switch checked={!!editForm.banned} onCheckedChange={(v) => setEditForm({ ...editForm, banned: v })} /> Gebannt</label>
+                    </div>
+                    {editForm.banned && (
+                      <div>
+                        <Label className="text-xs">Bann-Grund</Label>
+                        <Input value={editForm.ban_reason} onChange={(e) => setEditForm({ ...editForm, ban_reason: e.target.value })} />
+                      </div>
+                    )}
+                    <div>
+                      <Label className="text-xs">ID Verifizierungs-Status</Label>
+                      <Select value={editForm.id_verification_status || "none"} onValueChange={(v) => setEditForm({ ...editForm, id_verification_status: v === "none" ? "" : v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">— nicht gesetzt —</SelectItem>
+                          <SelectItem value="pending">pending</SelectItem>
+                          <SelectItem value="approved">approved</SelectItem>
+                          <SelectItem value="rejected">rejected</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Photos management */}
+                  {(editUser.photos || []).length > 0 && (
+                    <div className="rounded-md border p-3 space-y-2">
+                      <div className="font-display text-base">Fotos ({(editUser.photos || []).length})</div>
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                        {(editUser.photos || []).map((p) => (
+                          <div key={p.id} className="relative aspect-[3/4] rounded-md overflow-hidden border bg-[hsl(var(--muted))]">
+                            <img src={p.data} alt="" className={`h-full w-full object-cover ${p.nsfw_score >= 0.75 ? "blur-md" : ""}`} />
+                            <div className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-[10px] px-1.5 py-0.5 flex items-center justify-between">
+                              <span>NSFW {((p.nsfw_score || 0) * 100).toFixed(0)}%</span>
+                              <button onClick={() => deleteUserPhoto(p.id)} className="underline" data-testid={`admin-delete-photo-${p.id}`}>löschen</button>
+                            </div>
+                            {p.is_primary && <div className="absolute left-1 top-1 rounded-full bg-black/55 text-white text-[9px] px-1.5 py-0.5">Haupt</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              <DialogFooter className="flex-wrap gap-2">
+                <Button variant="ghost" onClick={() => { setEditUser(null); setEditForm(null); }}>Abbrechen</Button>
+                <Button onClick={saveEditUser} disabled={editSaving} data-testid="admin-edit-save">{editSaving ? "Speichern…" : "Speichern"}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Report Detail Dialog */}
           <Dialog open={!!reportDetail} onOpenChange={(v) => { if (!v) setReportDetail(null); }}>

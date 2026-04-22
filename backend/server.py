@@ -1137,6 +1137,151 @@ async def admin_list_users(user=Depends(_require_user), q: Optional[str] = None,
     return {"users": serialize_doc(items)}
 
 
+@api_router.get("/admin/users/{user_id}")
+async def admin_get_user(user_id: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin"])
+    u = await db.users.find_one({"id": user_id}, {"password_hash": 0})
+    if not u:
+        raise HTTPException(404, "User not found")
+    return {"user": serialize_doc(u)}
+
+
+_ADMIN_EDITABLE_FIELDS = {
+    "display_name", "age", "email", "gender_identity", "pronouns", "orientation", "bio",
+    "relationship_types", "seeking_roles", "kinks",
+    "height_cm", "body_type", "ethnicity", "languages", "interests",
+    "smoking", "drinking", "diet", "sti_status", "sti_tested_on",
+    "cup_size", "penis_length_cm", "penis_girth_cm",
+    "preferences", "privacy", "location",
+    "verified", "id_verified", "id_verification_status",
+    "email_verified", "banned", "ban_reason", "shadow_restricted",
+    "boost_expires_at", "premium_expires_at",
+}
+
+
+@api_router.patch("/admin/users/{user_id}")
+async def admin_update_user(user_id: str, payload: dict, user=Depends(_require_user)):
+    """Admin-only: override any user field. Bypasses regular immutability (e.g. age)."""
+    await _require_role(user, ["admin", "superadmin"])
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    clean: Dict = {}
+    unset: Dict = {}
+    for k, v in (payload or {}).items():
+        if k not in _ADMIN_EDITABLE_FIELDS:
+            continue
+        if v is None:
+            unset[k] = ""
+        else:
+            clean[k] = v
+    # Normalize email lower-case & uniqueness
+    if "email" in clean and clean["email"]:
+        clean["email"] = str(clean["email"]).lower().strip()
+        dup = await db.users.find_one({"email": clean["email"], "id": {"$ne": user_id}})
+        if dup:
+            raise HTTPException(409, "Email already in use")
+    # Derive penis_category from length if provided
+    if "penis_length_cm" in clean:
+        try:
+            length = float(clean["penis_length_cm"])
+            if length < 12:
+                clean["penis_category"] = "small"
+            elif length < 15:
+                clean["penis_category"] = "average"
+            elif length < 18:
+                clean["penis_category"] = "large"
+            else:
+                clean["penis_category"] = "xlarge"
+        except Exception:
+            pass
+    update_ops: Dict = {}
+    if clean:
+        update_ops["$set"] = clean
+    if unset:
+        update_ops["$unset"] = unset
+    if update_ops:
+        await db.users.update_one({"id": user_id}, update_ops)
+    await _audit(user["id"], "admin_update_user", user_id, {"fields": list(clean.keys()) + [f"-{k}" for k in unset.keys()]})
+    fresh = await db.users.find_one({"id": user_id}, {"password_hash": 0})
+    return {"user": serialize_doc(fresh)}
+
+
+@api_router.post("/admin/users/{user_id}/premium")
+async def admin_set_premium(user_id: str, payload: dict, user=Depends(_require_user)):
+    """Admin-only: grant/extend/revoke premium and boost by ISO date or day offset."""
+    await _require_role(user, ["admin", "superadmin"])
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    action = (payload or {}).get("action", "grant")  # grant | extend | revoke
+    days = int((payload or {}).get("days", 0) or 0)
+    boost_minutes = int((payload or {}).get("boost_minutes", 0) or 0)
+    now = now_utc()
+    ops_set: Dict = {}
+    ops_unset: Dict = {}
+    if action == "revoke":
+        ops_unset["premium_expires_at"] = ""
+        ops_unset["boost_expires_at"] = ""
+    else:
+        # grant or extend
+        from datetime import timedelta
+        base = now
+        if action == "extend":
+            try:
+                cur = target.get("premium_expires_at")
+                if cur and cur > now.isoformat():
+                    base = datetime.fromisoformat(cur)
+            except Exception:
+                base = now
+        if days > 0:
+            ops_set["premium_expires_at"] = (base + timedelta(days=days)).isoformat()
+        if boost_minutes > 0:
+            boost_base = now
+            if action == "extend":
+                try:
+                    cur = target.get("boost_expires_at")
+                    if cur and cur > now.isoformat():
+                        boost_base = datetime.fromisoformat(cur)
+                except Exception:
+                    boost_base = now
+            ops_set["boost_expires_at"] = (boost_base + timedelta(minutes=boost_minutes)).isoformat()
+    update_ops: Dict = {}
+    if ops_set: update_ops["$set"] = ops_set
+    if ops_unset: update_ops["$unset"] = ops_unset
+    if update_ops:
+        await db.users.update_one({"id": user_id}, update_ops)
+    await _audit(user["id"], "admin_set_premium", user_id, {"action": action, "days": days, "boost_minutes": boost_minutes})
+    fresh = await db.users.find_one({"id": user_id}, {"password_hash": 0})
+    return {
+        "ok": True,
+        "premium_expires_at": fresh.get("premium_expires_at"),
+        "boost_expires_at": fresh.get("boost_expires_at"),
+    }
+
+
+@api_router.post("/admin/users/{user_id}/role")
+async def admin_set_role(user_id: str, payload: dict, user=Depends(_require_user)):
+    """Superadmin-only: change a user's role."""
+    await _require_role(user, ["admin", "superadmin"])
+    new_role = (payload or {}).get("role")
+    if new_role not in {"user", "support", "content_reviewer", "moderator", "admin", "superadmin"}:
+        raise HTTPException(400, "Invalid role")
+    if new_role == "superadmin" and user.get("role") != "superadmin":
+        raise HTTPException(403, "Only superadmins can assign superadmin role")
+    await db.users.update_one({"id": user_id}, {"$set": {"role": new_role}})
+    await _audit(user["id"], "admin_set_role", user_id, {"role": new_role})
+    return {"ok": True}
+
+
+@api_router.delete("/admin/users/{user_id}/photos/{photo_id}")
+async def admin_delete_photo(user_id: str, photo_id: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin"])
+    await db.users.update_one({"id": user_id}, {"$pull": {"photos": {"id": photo_id}}})
+    await _audit(user["id"], "admin_delete_photo", user_id, {"photo_id": photo_id})
+    return {"ok": True}
+
+
 @api_router.get("/admin/matches")
 async def admin_list_matches(user=Depends(_require_user), user_id: Optional[str] = None):
     await _require_role(user, ["admin", "moderator", "superadmin"])

@@ -26,7 +26,7 @@ export default function MatchesPage() {
     <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
       <div className="app-content flex flex-col min-h-screen">
         <AppHeader />
-        <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10">
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10">
           <header className="pb-4">
             <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Nachrichten</div>
             <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">Deine Matches</h1>
