@@ -807,7 +807,7 @@ export default function AdminPage() {
 
           {/* Report Detail Dialog */}
           <Dialog open={!!reportDetail} onOpenChange={(v) => { if (!v) setReportDetail(null); }}>
-            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="font-display text-2xl">Report-Details</DialogTitle>
               </DialogHeader>
@@ -815,41 +815,152 @@ export default function AdminPage() {
                 <div className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">Lädt…</div>
               ) : reportDetail?.report ? (
                 <div className="space-y-4 text-sm">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <InfoCell label="Report-ID" value={<span className="font-mono text-xs">{reportDetail.report.id}</span>} />
+                  {/* Core report meta */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <InfoCell label="Grund" value={<Badge className="rounded-full">{reportDetail.report.reason}</Badge>} />
                     <InfoCell label="Status" value={<Badge variant={reportDetail.report.status==="resolved"?"secondary":"outline"}>{reportDetail.report.status}</Badge>} />
                     <InfoCell label="Ziel-Typ" value={reportDetail.report.target_type} />
-                    <InfoCell label="Ziel-ID" value={<span className="font-mono text-xs">{reportDetail.report.target_id}</span>} />
                     <InfoCell label="Erstellt" value={<span className="font-mono text-xs">{(reportDetail.report.created_at || "").replace("T"," ").slice(0,19)}</span>} />
-                    <InfoCell label="Reporter-Historie" value={`${reportDetail.reporter_history_count ?? 0} Reports`} />
-                    <InfoCell label="Meldungen gegen Ziel" value={`${reportDetail.target_report_count ?? 0}`} />
-                  </div>
-                  <div className="rounded-md border p-3 bg-[hsl(var(--secondary))]/40">
-                    <div className="text-xs uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))] mb-1">Grund</div>
-                    <div className="whitespace-pre-wrap break-words">{reportDetail.report.reason || "—"}</div>
                   </div>
 
+                  {/* Reporter-provided detail (context) */}
+                  <div className="rounded-md border p-3 bg-[hsl(var(--secondary))]/40" data-testid="report-detail-text">
+                    <div className="text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))] mb-1">Beschreibung des Reporters</div>
+                    {reportDetail.report.detail ? (
+                      <div className="whitespace-pre-wrap break-words">{reportDetail.report.detail}</div>
+                    ) : (
+                      <div className="text-[hsl(var(--muted-foreground))] italic">Keine zusätzliche Beschreibung angegeben — bitte unten Kontext prüfen.</div>
+                    )}
+                  </div>
+
+                  {/* Quick stats bar */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <InfoCell label="Reports durch Reporter" value={`${reportDetail.reporter_history_count ?? 0}`} />
+                    <InfoCell label="Meldungen gegen Ziel" value={`${reportDetail.target_report_count ?? 0}`} />
+                    <InfoCell label="Offen ggü. Ziel" value={`${reportDetail.reported_stats?.open ?? 0}`} />
+                    <InfoCell label="Erledigt ggü. Ziel" value={`${reportDetail.reported_stats?.resolved ?? 0}`} />
+                  </div>
+
+                  {/* People involved */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <UserMiniCard title="Reporter" u={reportDetail.reporter} />
                     <UserMiniCard title="Gemeldet" u={reportDetail.reported} />
                   </div>
 
+                  {/* Target context: Photo */}
                   {reportDetail.target_context?.photo && (
                     <div className="rounded-md border p-3 space-y-2">
-                      <div className="text-xs uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">Gemeldetes Foto</div>
+                      <div className="text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">Gemeldetes Foto</div>
                       <img src={reportDetail.target_context.photo.data} alt="gemeldet" className="max-h-64 object-contain rounded" />
                       <div className="text-xs text-[hsl(var(--muted-foreground))]">
                         NSFW: {((reportDetail.target_context.photo.nsfw_score || 0) * 100).toFixed(0)}% · Gesicht: {reportDetail.target_context.photo.has_face ? "ja" : "nein"}
                       </div>
                     </div>
                   )}
-                  {reportDetail.target_context?.message && (
-                    <div className="rounded-md border p-3">
-                      <div className="text-xs uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))] mb-1">Gemeldete Nachricht</div>
-                      <div className="whitespace-pre-wrap">{reportDetail.target_context.message.text}</div>
-                      <div className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1 font-mono">
-                        {reportDetail.target_context.message.created_at}
+
+                  {/* Target context: Album */}
+                  {reportDetail.target_context?.album && (
+                    <div className="rounded-md border p-3 space-y-2">
+                      <div className="text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">Gemeldetes Album</div>
+                      <div className="font-medium">{reportDetail.target_context.album.title} {reportDetail.target_context.album.is_nsfw && <Badge variant="outline" className="ml-1">18+</Badge>}</div>
+                      {reportDetail.target_context.album.description && <div className="text-xs text-[hsl(var(--muted-foreground))]">{reportDetail.target_context.album.description}</div>}
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 mt-1.5">
+                        {(reportDetail.target_context.album.photos || []).map((p) => (
+                          <div key={p.id} className="aspect-square rounded overflow-hidden border bg-[hsl(var(--muted))]">
+                            <img src={p.data} alt="" className={`h-full w-full object-cover ${p.nsfw_score >= 0.75 ? "blur-md" : ""}`} />
+                          </div>
+                        ))}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Target context: Single message (highlighted in chat thread below) */}
+                  {reportDetail.target_context?.message && (
+                    <div className="rounded-md border border-[hsl(var(--accent))]/40 bg-[hsl(var(--accent))]/5 p-3">
+                      <div className="text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))] mb-1">Gemeldete Nachricht</div>
+                      <div className="whitespace-pre-wrap break-words">{reportDetail.target_context.message.text || "(kein Text)"}</div>
+                      <div className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1 font-mono">{reportDetail.target_context.message.created_at}</div>
+                    </div>
+                  )}
+
+                  {/* Chat thread (if match exists) */}
+                  {reportDetail.chat_thread && (
+                    <div className="rounded-md border overflow-hidden" data-testid="report-chat-thread">
+                      <div className="flex items-center justify-between px-3 py-2 bg-[hsl(var(--secondary))]/40 border-b">
+                        <div className="flex items-center gap-2">
+                          <div className="text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">Gesamter Chat-Verlauf</div>
+                          <Badge variant="outline">{reportDetail.chat_thread.message_count} Nachrichten</Badge>
+                        </div>
+                        <div className="text-[11px] text-[hsl(var(--muted-foreground))] font-mono">
+                          Match seit {(reportDetail.chat_thread.match.created_at || "").slice(0,10)}
+                        </div>
+                      </div>
+                      <div className="max-h-[360px] overflow-y-auto p-3 space-y-2 bg-[hsl(var(--background))]">
+                        {(reportDetail.chat_thread.messages || []).length === 0 && (
+                          <div className="text-center text-xs text-[hsl(var(--muted-foreground))] py-6">Dieser Match enthält noch keine Nachrichten.</div>
+                        )}
+                        {(reportDetail.chat_thread.messages || []).map((m) => {
+                          const p = reportDetail.chat_thread.participants[m.sender_id] || {};
+                          const isReporter = m.sender_id === reportDetail.report.reporter_id;
+                          return (
+                            <div
+                              key={m.id}
+                              className={[
+                                "rounded-md border px-3 py-2 text-sm",
+                                m.highlighted
+                                  ? "border-[hsl(var(--destructive))]/60 bg-[hsl(var(--destructive))]/10 ring-2 ring-[hsl(var(--destructive))]/40"
+                                  : isReporter
+                                    ? "border-[hsl(var(--border))] bg-[hsl(var(--card))]"
+                                    : "border-[hsl(var(--accent))]/30 bg-[hsl(var(--accent))]/5",
+                              ].join(" ")}
+                              data-testid={`report-chat-msg-${m.id}`}
+                            >
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="font-medium truncate">{p.display_name || m.sender_id.slice(0,8)}</span>
+                                  <Badge variant="outline" className="text-[10px]">{isReporter ? "Reporter" : "Gemeldet"}</Badge>
+                                  {m.highlighted && <Badge className="text-[10px] bg-[hsl(var(--destructive))] text-white">gemeldete Nachricht</Badge>}
+                                </div>
+                                <span className="font-mono text-[10.5px] text-[hsl(var(--muted-foreground))] shrink-0">{(m.created_at || "").replace("T"," ").slice(0,19)}</span>
+                              </div>
+                              {m.text && <div className="whitespace-pre-wrap break-words">{m.text}</div>}
+                              {m.media_url && (
+                                <img src={m.media_url} alt="media" className="mt-1.5 max-h-40 rounded" />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* No match context for user-report */}
+                  {reportDetail.report.target_type === "user" && !reportDetail.chat_thread && (
+                    <div className="rounded-md border p-3 bg-[hsl(var(--secondary))]/30 text-xs text-[hsl(var(--muted-foreground))]">
+                      Kein aktiver Match zwischen Reporter und Ziel vorhanden. Es kann sein, dass der Match vor der Meldung aufgelöst wurde.
+                    </div>
+                  )}
+
+                  {/* Other reports against target */}
+                  {(reportDetail.recent_reports_against_target || []).length > 0 && (
+                    <div className="rounded-md border p-3 space-y-2">
+                      <div className="text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">Weitere Meldungen gegen dieses Ziel ({reportDetail.recent_reports_against_target.length})</div>
+                      <ul className="divide-y divide-[hsl(var(--border))]/60 text-xs">
+                        {reportDetail.recent_reports_against_target.map((r) => (
+                          <li key={r.id} className="py-1.5 flex items-center gap-2 justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Badge variant="outline" className="text-[10px]">{r.reason}</Badge>
+                              <Badge variant={r.status==="resolved"?"secondary":"outline"} className="text-[10px]">{r.status}</Badge>
+                              <span className="truncate">{r.detail || <span className="italic text-[hsl(var(--muted-foreground))]">(keine Beschreibung)</span>}</span>
+                            </div>
+                            <button
+                              className="text-[11px] underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] shrink-0"
+                              onClick={() => openReport(r.id)}
+                              data-testid={`report-link-${r.id}`}
+                            >öffnen</button>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>
@@ -860,6 +971,11 @@ export default function AdminPage() {
                     <Button variant="outline" onClick={() => updateStatus(reportDetail.report.id, "reviewing")} data-testid="report-detail-reviewing">Prüfen</Button>
                     <Button onClick={async () => { await updateStatus(reportDetail.report.id, "resolved"); setReportDetail(null); }} data-testid="report-detail-resolve">Erledigt</Button>
                     <Button variant="ghost" onClick={async () => { await updateStatus(reportDetail.report.id, "rejected"); setReportDetail(null); }}>Verwerfen</Button>
+                    {reportDetail.reported?.id && (
+                      <Button variant="outline" onClick={() => { setReportDetail(null); openEditUser(reportDetail.reported.id); }} data-testid="report-detail-edit-reported">
+                        Gemeldeten bearbeiten
+                      </Button>
+                    )}
                     {reportDetail.report.target_type === "user" && reportDetail.reported?.id && (
                       <Button variant="destructive" onClick={async () => { await ban(reportDetail.reported.id, reportDetail.report.reason || "Policy violation"); setReportDetail(null); }} data-testid="report-detail-ban">
                         User bannen

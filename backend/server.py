@@ -1039,25 +1039,74 @@ async def admin_report_detail(report_id: str, user=Depends(_require_user)):
             "shadow_restricted": bool(u.get("shadow_restricted")),
             "id_verified": bool(u.get("id_verified")),
             "age": u.get("age"),
+            "primary_photo": next((p.get("data") for p in (u.get("photos") or []) if p.get("is_primary")),
+                                  ((u.get("photos") or [{}])[0].get("data") if u.get("photos") else None)),
+        }
+
+    async def _load_match_thread(match_id: str, highlight_message_id: Optional[str] = None):
+        m = await db.matches.find_one({"id": match_id})
+        if not m:
+            return None
+        msgs = await db.messages.find({"match_id": match_id}).sort("created_at", 1).to_list(length=2000)
+        participants = {}
+        for uid in [m.get("user_a"), m.get("user_b")]:
+            if uid:
+                participants[uid] = await _user_summary(uid)
+        return {
+            "match": {
+                "id": m.get("id"),
+                "user_a": m.get("user_a"),
+                "user_b": m.get("user_b"),
+                "created_at": m.get("created_at"),
+                "last_message_at": m.get("last_message_at"),
+            },
+            "participants": participants,
+            "messages": [
+                {
+                    "id": msg.get("id"),
+                    "sender_id": msg.get("sender_id"),
+                    "text": msg.get("text"),
+                    "media_url": msg.get("media_url"),
+                    "media_type": msg.get("media_type"),
+                    "created_at": msg.get("created_at"),
+                    "read_at": msg.get("read_at"),
+                    "highlighted": msg.get("id") == highlight_message_id,
+                } for msg in msgs
+            ],
+            "message_count": len(msgs),
         }
 
     reporter = await _user_summary(rep.get("reporter_id"))
     reported = None
     target_context: Dict = {}
+    chat_thread = None
+
     if rep.get("target_type") == "user":
         reported = await _user_summary(rep.get("target_id"))
+        # Find any matches between reporter and target (past or present) — chats may have been deleted/unmatched
+        if rep.get("reporter_id") and rep.get("target_id"):
+            match_doc = await db.matches.find_one({
+                "$or": [
+                    {"user_a": rep["reporter_id"], "user_b": rep["target_id"]},
+                    {"user_a": rep["target_id"], "user_b": rep["reporter_id"]},
+                ]
+            })
+            if match_doc:
+                chat_thread = await _load_match_thread(match_doc["id"])
+            else:
+                # Check orphaned messages (e.g. after unmatch) between the two users
+                orphan_count = await db.messages.count_documents({
+                    "$or": [
+                        {"sender_id": rep["reporter_id"]},
+                        {"sender_id": rep["target_id"]},
+                    ]
+                })
+                target_context["no_active_match"] = True
+                target_context["orphan_messages_hint"] = orphan_count > 0
     elif rep.get("target_type") == "photo":
-        # find owner of the photo
         owner = await db.users.find_one({"photos.id": rep.get("target_id")}, {"password_hash": 0})
         if owner:
-            reported = {
-                "id": owner.get("id"),
-                "display_name": owner.get("display_name"),
-                "email": owner.get("email"),
-                "role": owner.get("role", "user"),
-                "banned": bool(owner.get("banned")),
-                "shadow_restricted": bool(owner.get("shadow_restricted")),
-            }
+            reported = await _user_summary(owner.get("id"))
             photo = next((p for p in (owner.get("photos") or []) if p.get("id") == rep.get("target_id")), None)
             if photo:
                 target_context["photo"] = {
@@ -1077,21 +1126,65 @@ async def admin_report_detail(report_id: str, user=Depends(_require_user)):
                 "match_id": msg.get("match_id"),
             }
             reported = await _user_summary(msg.get("sender_id"))
-    # Reporter history on target
+            if msg.get("match_id"):
+                chat_thread = await _load_match_thread(msg["match_id"], highlight_message_id=msg.get("id"))
+    elif rep.get("target_type") == "album":
+        album = await db.albums.find_one({"id": rep.get("target_id")})
+        if album:
+            reported = await _user_summary(album.get("owner_id"))
+            target_context["album"] = {
+                "id": album.get("id"),
+                "title": album.get("title"),
+                "description": album.get("description"),
+                "is_nsfw": bool(album.get("is_nsfw")),
+                "photo_count": len(album.get("photos") or []),
+                "photos": [
+                    {"id": p.get("id"), "data": p.get("data"),
+                     "nsfw_score": p.get("nsfw_score"), "has_face": p.get("has_face")}
+                    for p in (album.get("photos") or [])[:12]
+                ],
+            }
+
+    # Histories
     reporter_history_count = 0
     if rep.get("reporter_id"):
         reporter_history_count = await db.reports.count_documents({"reporter_id": rep["reporter_id"]})
     target_report_count = 0
+    recent_reports_against_target: List = []
     if rep.get("target_id"):
         target_report_count = await db.reports.count_documents({"target_id": rep["target_id"]})
+        # Grab the last 10 reports against target for context
+        other = await db.reports.find({"target_id": rep["target_id"], "id": {"$ne": rep["id"]}})\
+            .sort("created_at", -1).limit(10).to_list(length=10)
+        recent_reports_against_target = [
+            {
+                "id": r.get("id"),
+                "reason": r.get("reason"),
+                "detail": r.get("detail"),
+                "status": r.get("status"),
+                "target_type": r.get("target_type"),
+                "created_at": r.get("created_at"),
+                "reporter_id": r.get("reporter_id"),
+            } for r in other
+        ]
+
+    # Reported user's open/resolved counts
+    reported_stats = None
+    if reported:
+        open_r = await db.reports.count_documents({"target_id": reported["id"], "status": {"$in": ["open", "reviewing"]}})
+        resolved_r = await db.reports.count_documents({"target_id": reported["id"], "status": "resolved"})
+        reported_stats = {"open": open_r, "resolved": resolved_r}
 
     return {
         "report": serialize_doc(rep),
         "reporter": reporter,
         "reported": reported,
+        "reported_stats": reported_stats,
         "target_context": target_context,
+        "chat_thread": chat_thread,
         "reporter_history_count": reporter_history_count,
         "target_report_count": target_report_count,
+        "recent_reports_against_target": recent_reports_against_target,
     }
 
 
