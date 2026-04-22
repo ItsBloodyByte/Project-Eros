@@ -1,487 +1,565 @@
 {
   "brand": {
-    "name": "Inclusive Premium Dating (Grid Discovery)",
+    "name": "Eros",
     "attributes": [
-      "premium",
-      "inclusive/LGBTQ+ first-class",
-      "editorial",
-      "warm-but-sophisticated",
-      "privacy-forward",
-      "calm (non-gamey)",
-      "trustworthy"
+      "schlicht",
+      "modern",
+      "innovativ",
+      "vertrauenswürdig",
+      "inklusive (18+, LGBTQ+)",
+      "ruhig/premium statt gimmicky"
     ],
-    "anti_patterns": [
-      "no swipe/game UI",
-      "no cliché hearts",
-      "no neon",
-      "no loud gradients",
-      "no purple for AI/moderation affordances"
-    ]
+    "north_star": "Eine kohärente, systemweite UI (Light+Dark gleichwertig) mit warmem Apricot-Akzent, posterartigen Profilkarten und sehr subtiler Motion."
   },
   "inspiration_refs": {
-    "notes": "Use editorial dark UI + grid discovery + bottom-sheet filters. Keep surfaces solid; use subtle texture/noise and warm accents.",
+    "notes": "Nicht 1:1 kopieren; als Inception für Layout/Motion nutzen.",
     "links": [
       {
-        "title": "Behance: Hume Dating App UI Kit (dark, premium)",
-        "url": "https://www.behance.net/gallery/149804677/Hume-Dating-App-UI-Kit"
+        "title": "60fps.design – Bottom Sheet interactions",
+        "url": "https://60fps.design/shots/filter/bottom-sheet",
+        "takeaways": [
+          "Sheets/Drawer: Drag-to-close, weiche Federung, klare Griffleiste",
+          "In-Context Filter statt Fullscreen-Navigation",
+          "Motion: kurze, präzise Übergänge (Opacity/Translate/Scale)"
+        ]
       },
       {
-        "title": "Behance: Datify Dating App UI Kit (modern, filter-heavy)",
-        "url": "https://www.behance.net/gallery/184565601/Datify-Dating-App-UI-Kit"
-      },
-      {
-        "title": "Dribbble search: dating app UI (grid, filters)",
-        "url": "https://dribbble.com/search/dating-app-ui"
+        "title": "shadcn-admin (Admin patterns)",
+        "url": "https://github.com/satnaing/shadcn-admin",
+        "takeaways": [
+          "Tab/Sidebar + DataTable-first",
+          "Command palette (Cmd+K) für Admin",
+          "Dichte Layouts, aber gleiche Tokens"
+        ]
       }
     ]
   },
-  "typography": {
-    "font_pairing": {
+  "design_tokens": {
+    "implementation": {
+      "rule": "Alle Farben als CSS Variablen in :root und .dark; in Tailwind via hsl(var(--token)). Keine Hexwerte in Komponenten.",
+      "files": [
+        "/app/frontend/src/index.css (base tokens)",
+        "/app/frontend/src/App.css (noise overlay vorhanden)"
+      ]
+    },
+    "fonts": {
       "display": {
-        "name": "EB Garamond",
-        "use": "H1/H2, profile names, editorial section headings",
-        "google_fonts_import": "https://fonts.googleapis.com/css2?family=EB+Garamond:opsz,wght@8..40,500;8..40,600;8..40,700&display=swap"
+        "family": "Playfair Display",
+        "fallback": "ui-serif, Georgia, serif",
+        "usage": "Brand/hero headings, Profilname, Legal H1/H2 sparsam",
+        "notes": "Editorial warmth ohne kitschig zu wirken; unterstützt Umlaute/ß."
       },
       "body": {
-        "name": "Figtree",
-        "use": "UI labels, body copy, filters, chat",
-        "google_fonts_import": "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap"
+        "family": "Figtree",
+        "fallback": "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
+        "usage": "UI copy, Formulare, Chat, Admin",
+        "notes": "Sehr gut für lange deutsche Wörter; hohe Lesbarkeit."
       },
-      "mono_optional": {
-        "name": "IBM Plex Mono",
-        "use": "Admin moderation IDs, timestamps, audit logs",
-        "google_fonts_import": "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      "mono": {
+        "family": "IBM Plex Mono",
+        "usage": "Admin Audit Log, IDs, technische Werte"
+      },
+      "tailwind_usage_examples": [
+        "className=\"font-display\"",
+        "className=\"font-sans\" (maps to body via global font-family)",
+        "className=\"font-mono\""
+      ]
+    },
+    "type_scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-display tracking-tight",
+      "h2": "text-base md:text-lg text-muted-foreground",
+      "section_title": "text-lg font-semibold",
+      "body": "text-sm md:text-base leading-6",
+      "small": "text-xs text-muted-foreground"
+    },
+    "radius_scale": {
+      "xs": "10px",
+      "sm": "14px",
+      "md": "18px",
+      "lg": "24px",
+      "usage_rules": [
+        "Cards: radius-md (18px)",
+        "Poster profile cards: radius-lg (24px)",
+        "Chips/Pills: rounded-full",
+        "Inputs: radius-sm (14px)"
+      ]
+    },
+    "shadow_scale": {
+      "principles": [
+        "Sehr subtil, Y-offset only, niedrige Alpha",
+        "Keine harten Drop Shadows; lieber weiche Ambient + 1px highlight"
+      ],
+      "tokens": {
+        "shadow-sm": "0 1px 0 hsla(0,0%,100%,0.04), 0 10px 30px hsla(220,30%,2%,0.35)",
+        "shadow-md": "0 1px 0 hsla(0,0%,100%,0.05), 0 18px 50px hsla(220,30%,2%,0.45)"
       }
     },
-    "text_size_hierarchy": {
-      "h1": "text-4xl sm:text-5xl lg:text-6xl",
-      "h2": "text-base md:text-lg",
-      "body": "text-sm md:text-base",
-      "small": "text-xs"
+    "motion": {
+      "durations": {
+        "fast": "120ms",
+        "base": "180ms",
+        "slow": "260ms"
+      },
+      "easing": {
+        "out": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "in": "cubic-bezier(0.7, 0, 0.84, 0)"
+      },
+      "allowed": [
+        "opacity",
+        "transform: translateY/translateX/scale (klein)",
+        "box-shadow (nur auf Cards/Buttons)"
+      ],
+      "forbidden": [
+        "transition: all",
+        "große Rotationen",
+        "dauerhafte pulsierende Animationen außer Online-Dot"
+      ],
+      "reduced_motion": {
+        "rule": "@media (prefers-reduced-motion: reduce) => durations auf 0ms, keine parallax/scale",
+        "example": "motion-safe:... / motion-reduce:transition-none"
+      }
     },
-    "tracking": {
-      "display": "tracking-[-0.01em]",
-      "body": "tracking-[-0.005em]"
+    "color_system": {
+      "goal": "Neutral + warmes Apricot als Akzent (nicht pink/coral), in Light und Dark konsistent.",
+      "semantic_tokens": {
+        "light": {
+          "background": "30 33% 98%",
+          "foreground": "220 18% 12%",
+          "card": "0 0% 100%",
+          "card-foreground": "220 18% 12%",
+          "popover": "0 0% 100%",
+          "popover-foreground": "220 18% 12%",
+          "primary": "220 18% 12%",
+          "primary-foreground": "30 33% 98%",
+          "secondary": "30 18% 94%",
+          "secondary-foreground": "220 18% 12%",
+          "muted": "30 18% 94%",
+          "muted-foreground": "220 10% 40%",
+          "accent": "24 78% 62%",
+          "accent-foreground": "220 18% 12%",
+          "border": "220 10% 86%",
+          "input": "220 10% 86%",
+          "ring": "24 78% 62%",
+          "destructive": "6 72% 46%",
+          "destructive-foreground": "0 0% 98%",
+          "success": "156 52% 40%",
+          "warning": "32 92% 56%",
+          "info": "200 72% 46%",
+          "nsfw": "28 70% 55%",
+          "verified": "210 70% 45%",
+          "online": "156 52% 40%",
+          "offline": "220 8% 55%",
+          "overlay": "220 18% 12% / 0.55"
+        },
+        "dark": {
+          "background": "220 18% 6%",
+          "foreground": "30 20% 96%",
+          "card": "220 16% 9%",
+          "card-foreground": "30 20% 96%",
+          "popover": "220 16% 9%",
+          "popover-foreground": "30 20% 96%",
+          "primary": "30 20% 96%",
+          "primary-foreground": "220 18% 8%",
+          "secondary": "220 14% 14%",
+          "secondary-foreground": "30 20% 96%",
+          "muted": "220 12% 16%",
+          "muted-foreground": "30 8% 72%",
+          "accent": "24 78% 58%",
+          "accent-foreground": "220 18% 8%",
+          "border": "220 12% 18%",
+          "input": "220 12% 18%",
+          "ring": "24 78% 58%",
+          "destructive": "6 72% 52%",
+          "destructive-foreground": "0 0% 98%",
+          "success": "156 52% 40%",
+          "warning": "32 92% 56%",
+          "info": "200 72% 46%",
+          "nsfw": "28 70% 55%",
+          "verified": "210 70% 55%",
+          "online": "156 52% 40%",
+          "offline": "220 8% 55%",
+          "overlay": "220 30% 2% / 0.55"
+        }
+      },
+      "accent_notes": [
+        "Apricot/Peach: warm, entsättigt, nicht coral-rot.",
+        "Accent wird für Like/Primary CTA, aktive Chips, Fokus-Ring genutzt.",
+        "Verified ist bewusst blau (Trust), nicht Accent."
+      ],
+      "gradient_policy": {
+        "allowed": [
+          "Nur als Section background (Hero) oder dekorative Radials",
+          "Max 20% viewport",
+          "Sehr mild: niedrige Alpha"
+        ],
+        "forbidden": [
+          "purple/pink combos",
+          "Gradients auf text-heavy areas",
+          "Gradients auf kleinen Elementen <100px"
+        ],
+        "recommended_background_radials": {
+          "light": "radial-gradient(900px circle at 20% 10%, hsla(24,78%,62%,0.10), transparent 55%), radial-gradient(700px circle at 80% 0%, hsla(210,70%,55%,0.08), transparent 60%)",
+          "dark": "radial-gradient(900px circle at 20% 10%, hsla(24,78%,58%,0.14), transparent 55%), radial-gradient(700px circle at 80% 0%, hsla(210,70%,55%,0.10), transparent 60%)"
+        }
+      }
     },
-    "line_height": {
-      "display": "leading-[1.05]",
-      "body": "leading-[1.45]"
+    "spacing": {
+      "base": "4px",
+      "scale": {
+        "1": "4px",
+        "2": "8px",
+        "3": "12px",
+        "4": "16px",
+        "5": "20px",
+        "6": "24px",
+        "8": "32px",
+        "10": "40px",
+        "12": "48px",
+        "16": "64px"
+      },
+      "layout_rules": [
+        "Mobile-first: großzügige Innenabstände (p-4 bis p-6)",
+        "Zwischen Sektionen: gap-6 bis gap-10",
+        "Textblöcke max-w-prose für Legal/longform"
+      ]
     }
   },
-  "color_system": {
-    "strategy": "Dark-first, warm neutral base + ocean-teal accent + apricot highlight. No saturated gradients; keep gradients decorative and under 20% viewport.",
-    "tokens_hsl": {
-      "dark": {
-        "--background": "220 18% 6%",
-        "--foreground": "30 20% 96%",
-        "--card": "220 16% 9%",
-        "--card-foreground": "30 20% 96%",
-        "--popover": "220 16% 9%",
-        "--popover-foreground": "30 20% 96%",
-        "--primary": "30 20% 96%",
-        "--primary-foreground": "220 18% 8%",
-        "--secondary": "220 14% 14%",
-        "--secondary-foreground": "30 20% 96%",
-        "--muted": "220 12% 16%",
-        "--muted-foreground": "30 8% 72%",
-        "--accent": "174 52% 42%",
-        "--accent-foreground": "220 18% 8%",
-        "--border": "220 12% 18%",
-        "--input": "220 12% 18%",
-        "--ring": "174 52% 42%",
-        "--destructive": "6 72% 52%",
-        "--destructive-foreground": "0 0% 98%"
-      },
-      "light": {
-        "--background": "30 33% 98%",
-        "--foreground": "220 18% 12%",
-        "--card": "0 0% 100%",
-        "--card-foreground": "220 18% 12%",
-        "--popover": "0 0% 100%",
-        "--popover-foreground": "220 18% 12%",
-        "--primary": "220 18% 12%",
-        "--primary-foreground": "30 33% 98%",
-        "--secondary": "30 18% 94%",
-        "--secondary-foreground": "220 18% 12%",
-        "--muted": "30 18% 94%",
-        "--muted-foreground": "220 10% 40%",
-        "--accent": "174 52% 34%",
-        "--accent-foreground": "30 33% 98%",
-        "--border": "220 10% 86%",
-        "--input": "220 10% 86%",
-        "--ring": "174 52% 34%",
-        "--destructive": "6 72% 46%",
-        "--destructive-foreground": "0 0% 98%"
-      },
-      "semantic_extras": {
-        "--success": "156 52% 40%",
-        "--warning": "32 92% 56%",
-        "--info": "200 72% 46%",
-        "--nsfw": "12 72% 52%",
-        "--verified": "174 52% 42%",
-        "--online": "156 52% 40%",
-        "--offline": "220 8% 55%"
-      }
-    },
-    "allowed_gradients": {
-      "hero_decorative_only": {
-        "css": "radial-gradient(900px circle at 20% 10%, hsla(174,52%,42%,0.18), transparent 55%), radial-gradient(700px circle at 80% 0%, hsla(32,92%,56%,0.12), transparent 60%)",
-        "rule": "Use only as a background overlay on hero/top chrome; never behind long text; keep under 20% viewport."
-      }
-    },
-    "texture": {
-      "noise_overlay": {
-        "css": "background-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22%3E%3Cfilter id=%22n%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22120%22 height=%22120%22 filter=%22url(%23n)%22 opacity=%220.08%22/%3E%3C/svg%3E')",
-        "usage": "Apply to app shell background only (fixed, pointer-events-none), opacity 0.06–0.10."
-      }
-    }
-  },
-  "design_tokens_css": {
-    "drop_in_index_css": "/* Add Google Fonts <link> tags in public/index.html or @import here. Prefer <link> for performance. */\n\n@layer base {\n  :root {\n    --font-display: 'EB Garamond', ui-serif, Georgia, serif;\n    --font-body: 'Figtree', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;\n    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;\n\n    /* Radius scale */\n    --radius-xs: 10px;\n    --radius-sm: 14px;\n    --radius-md: 18px;\n    --radius-lg: 24px;\n\n    /* Shadow scale (dark-first) */\n    --shadow-sm: 0 1px 0 hsla(0,0%,100%,0.04), 0 10px 30px hsla(220,30%,2%,0.35);\n    --shadow-md: 0 1px 0 hsla(0,0%,100%,0.05), 0 18px 50px hsla(220,30%,2%,0.45);\n\n    /* Motion */\n    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);\n    --ease-in: cubic-bezier(0.7, 0, 0.84, 0);\n    --dur-1: 120ms;\n    --dur-2: 180ms;\n    --dur-3: 260ms;\n  }\n\n  body {\n    font-family: var(--font-body);\n  }\n\n  .font-display {\n    font-family: var(--font-display);\n  }\n\n  .font-mono {\n    font-family: var(--font-mono);\n  }\n}\n\n/* Replace shadcn tokens with our palette */\n@layer base {\n  :root {\n    --background: 30 33% 98%;\n    --foreground: 220 18% 12%;\n    --card: 0 0% 100%;\n    --card-foreground: 220 18% 12%;\n    --popover: 0 0% 100%;\n    --popover-foreground: 220 18% 12%;\n    --primary: 220 18% 12%;\n    --primary-foreground: 30 33% 98%;\n    --secondary: 30 18% 94%;\n    --secondary-foreground: 220 18% 12%;\n    --muted: 30 18% 94%;\n    --muted-foreground: 220 10% 40%;\n    --accent: 174 52% 34%;\n    --accent-foreground: 30 33% 98%;\n    --destructive: 6 72% 46%;\n    --destructive-foreground: 0 0% 98%;\n    --border: 220 10% 86%;\n    --input: 220 10% 86%;\n    --ring: 174 52% 34%;\n    --radius: 18px;\n\n    /* Extra semantic tokens */\n    --success: 156 52% 40%;\n    --warning: 32 92% 56%;\n    --info: 200 72% 46%;\n    --nsfw: 12 72% 52%;\n    --verified: 174 52% 34%;\n    --online: 156 52% 40%;\n    --offline: 220 8% 55%;\n  }\n\n  .dark {\n    --background: 220 18% 6%;\n    --foreground: 30 20% 96%;\n    --card: 220 16% 9%;\n    --card-foreground: 30 20% 96%;\n    --popover: 220 16% 9%;\n    --popover-foreground: 30 20% 96%;\n    --primary: 30 20% 96%;\n    --primary-foreground: 220 18% 8%;\n    --secondary: 220 14% 14%;\n    --secondary-foreground: 30 20% 96%;\n    --muted: 220 12% 16%;\n    --muted-foreground: 30 8% 72%;\n    --accent: 174 52% 42%;\n    --accent-foreground: 220 18% 8%;\n    --destructive: 6 72% 52%;\n    --destructive-foreground: 0 0% 98%;\n    --border: 220 12% 18%;\n    --input: 220 12% 18%;\n    --ring: 174 52% 42%;\n\n    --success: 156 52% 40%;\n    --warning: 32 92% 56%;\n    --info: 200 72% 46%;\n    --nsfw: 12 72% 52%;\n    --verified: 174 52% 42%;\n    --online: 156 52% 40%;\n    --offline: 220 8% 55%;\n  }\n}\n\n@layer utilities {\n  .app-shell-bg {\n    background-color: hsl(var(--background));\n    background-image: radial-gradient(900px circle at 20% 10%, hsla(174,52%,42%,0.18), transparent 55%), radial-gradient(700px circle at 80% 0%, hsla(32,92%,56%,0.12), transparent 60%);\n  }\n  .noise-overlay {\n    background-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22%3E%3Cfilter id=%22n%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22120%22 height=%22120%22 filter=%22url(%23n)%22 opacity=%220.08%22/%3E%3C/svg%3E');\n  }\n}\n"
-  },
-  "layout_grid": {
-    "app_shell": {
-      "max_width": "max-w-6xl",
-      "padding": "px-4 sm:px-6",
-      "top_chrome": "sticky top-0 z-40 backdrop-blur supports-[backdrop-filter]:bg-background/70 border-b border-border"
-    },
-    "gallery_grid": {
-      "mobile": "grid-cols-2 gap-3",
-      "sm": "sm:grid-cols-3 sm:gap-4",
-      "lg": "lg:grid-cols-4 lg:gap-5",
-      "card_aspect": "aspect-[3/4]"
-    },
-    "profile_detail": {
-      "mobile": "single column; sticky action bar bottom",
-      "lg": "two-column: media left (60%), details right (40%) with sticky panel"
-    },
-    "admin": {
-      "layout": "sidebar + content; tables with sticky header"
-    }
-  },
-  "component_patterns": {
+  "component_system": {
+    "primary_library": "shadcn/ui (vorhanden in /app/frontend/src/components/ui/*.jsx)",
     "component_path": {
-      "shadcn": [
-        "/app/frontend/src/components/ui/button.jsx",
-        "/app/frontend/src/components/ui/card.jsx",
-        "/app/frontend/src/components/ui/badge.jsx",
-        "/app/frontend/src/components/ui/avatar.jsx",
-        "/app/frontend/src/components/ui/drawer.jsx",
-        "/app/frontend/src/components/ui/sheet.jsx",
-        "/app/frontend/src/components/ui/scroll-area.jsx",
-        "/app/frontend/src/components/ui/slider.jsx",
-        "/app/frontend/src/components/ui/switch.jsx",
-        "/app/frontend/src/components/ui/checkbox.jsx",
-        "/app/frontend/src/components/ui/toggle-group.jsx",
-        "/app/frontend/src/components/ui/tabs.jsx",
-        "/app/frontend/src/components/ui/dialog.jsx",
-        "/app/frontend/src/components/ui/alert-dialog.jsx",
-        "/app/frontend/src/components/ui/textarea.jsx",
-        "/app/frontend/src/components/ui/input.jsx",
-        "/app/frontend/src/components/ui/select.jsx",
-        "/app/frontend/src/components/ui/separator.jsx",
-        "/app/frontend/src/components/ui/tooltip.jsx",
-        "/app/frontend/src/components/ui/skeleton.jsx",
-        "/app/frontend/src/components/ui/table.jsx",
-        "/app/frontend/src/components/ui/sonner.jsx"
-      ],
-      "recommended_new_components": [
-        "/app/frontend/src/components/ProfileCard.js",
-        "/app/frontend/src/components/FilterDrawer.js",
-        "/app/frontend/src/components/NsfwBlurOverlay.js",
-        "/app/frontend/src/components/ChatBubble.js",
-        "/app/frontend/src/components/MatchBanner.js",
-        "/app/frontend/src/components/ConsentCheckboxGroup.js"
-      ]
+      "button": "/app/frontend/src/components/ui/button.jsx",
+      "card": "/app/frontend/src/components/ui/card.jsx",
+      "badge": "/app/frontend/src/components/ui/badge.jsx",
+      "tabs": "/app/frontend/src/components/ui/tabs.jsx",
+      "table": "/app/frontend/src/components/ui/table.jsx",
+      "sheet": "/app/frontend/src/components/ui/sheet.jsx",
+      "drawer": "/app/frontend/src/components/ui/drawer.jsx",
+      "dialog": "/app/frontend/src/components/ui/dialog.jsx",
+      "input": "/app/frontend/src/components/ui/input.jsx",
+      "textarea": "/app/frontend/src/components/ui/textarea.jsx",
+      "select": "/app/frontend/src/components/ui/select.jsx",
+      "switch": "/app/frontend/src/components/ui/switch.jsx",
+      "toggle_group": "/app/frontend/src/components/ui/toggle-group.jsx",
+      "scroll_area": "/app/frontend/src/components/ui/scroll-area.jsx",
+      "skeleton": "/app/frontend/src/components/ui/skeleton.jsx",
+      "sonner": "/app/frontend/src/components/ui/sonner.jsx",
+      "calendar": "/app/frontend/src/components/ui/calendar.jsx",
+      "avatar": "/app/frontend/src/components/ui/avatar.jsx",
+      "tooltip": "/app/frontend/src/components/ui/tooltip.jsx",
+      "popover": "/app/frontend/src/components/ui/popover.jsx",
+      "command": "/app/frontend/src/components/ui/command.jsx",
+      "pagination": "/app/frontend/src/components/ui/pagination.jsx"
     },
-    "ProfileCard": {
-      "purpose": "Gallery discovery card with photo, name, pronouns, rounded distance, online dot, verified badge, quick actions.",
-      "structure": [
-        "Card (rounded-xl/--radius-md) with overflow-hidden",
-        "AspectRatio 3/4 image (lazy) + gradient scrim at bottom (very subtle, not saturated)",
-        "Top-left: Verified badge (if verified)",
-        "Top-right: Online dot + tooltip",
-        "Bottom: name (display font), pronouns, age, ~distance, relationship intent chips"
-      ],
-      "tailwind_classes": {
-        "card": "group relative overflow-hidden rounded-[var(--radius-md)] border border-border bg-card shadow-[var(--shadow-sm)]",
-        "image": "h-full w-full object-cover transition-[transform,filter] duration-300 ease-[var(--ease-out)] group-hover:scale-[1.02]",
-        "scrim": "pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/55 to-transparent",
-        "meta_wrap": "absolute inset-x-0 bottom-0 p-3",
-        "name": "font-display text-lg text-white",
-        "sub": "text-xs text-white/80",
-        "chip": "bg-black/35 text-white border-white/10"
+    "buttons": {
+      "style": "Luxury/Elegant (slim, tall, rounded 10–12px, subtle shadow)",
+      "variants": {
+        "primary": {
+          "tailwind": "bg-accent text-accent-foreground hover:bg-accent/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "motion": "transition-colors duration-[var(--dur-2)]"
+        },
+        "secondary": {
+          "tailwind": "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          "motion": "transition-colors duration-[var(--dur-2)]"
+        },
+        "ghost": {
+          "tailwind": "bg-transparent hover:bg-muted text-foreground",
+          "motion": "transition-colors duration-[var(--dur-2)]"
+        },
+        "destructive": {
+          "tailwind": "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+          "motion": "transition-colors duration-[var(--dur-2)]"
+        }
       },
+      "sizes": {
+        "sm": "h-9 px-3 text-sm",
+        "md": "h-10 px-4 text-sm",
+        "lg": "h-11 px-5 text-base"
+      },
+      "press_interaction": {
+        "rule": "Nur transform/opacity",
+        "tailwind": "active:scale-[0.98]"
+      }
+    },
+    "chips": {
+      "use": "toggle-group + badge",
       "states": {
-        "hover": "Slight scale on image + border color shift to accent/30; show quick-action buttons (Like/Save/Hide) with opacity transition.",
-        "seen": "Reduce saturation slightly (filter: saturate(0.9)) + add small 'Seen' badge.",
-        "nsfw": "If NSFW score high: image blurred + overlay component; card shows 'Sensitive' badge."
+        "default": "bg-muted text-muted-foreground border border-border",
+        "hover": "hover:bg-muted/70",
+        "selected": "data-[state=on]:bg-accent data-[state=on]:text-accent-foreground data-[state=on]:border-transparent",
+        "focus": "focus-visible:ring-2 focus-visible:ring-ring"
       },
-      "data_testids": {
-        "card": "profile-card",
-        "open_profile": "profile-card-open-button",
-        "like": "profile-card-like-button",
-        "hide": "profile-card-hide-button",
-        "online": "profile-card-online-indicator",
-        "distance": "profile-card-distance-text"
-      }
+      "layout": "horizontal scroll strip: flex gap-2 overflow-x-auto no-scrollbar py-2"
     },
-    "FilterDrawer": {
-      "purpose": "Bottom drawer on mobile; right-side sheet on desktop. Handles many filters without overwhelm.",
-      "pattern": "Use Drawer for mobile (bottom sheet) + Sheet for desktop (right). Inside: ScrollArea + Accordion sections.",
-      "sections": [
-        "Basics: age range (Slider), distance radius (Slider), online now (Switch), with photo only (Switch)",
-        "Identity: gender(s) (ToggleGroup multi), orientation (Select), pronouns (Select)",
-        "Relationship: type (ToggleGroup), seeking roles (ToggleGroup), open to (Checkbox group)",
-        "Safety: only verified (Switch), only face photo (Switch), hide already seen (Switch)",
-        "Kinks (NSFW flagged): collapsed by default with explicit consent gate"
-      ],
-      "ux_rules": [
-        "Show active filter count badge on the Filter button.",
-        "Each section has a short helper line (muted text) and a 'Reset section' ghost button.",
-        "Sticky footer inside drawer: Reset all (ghost) + Apply (primary).",
-        "Bidirectional matching explanation tooltip: 'We only show people whose preferences also match yours.'"
-      ],
-      "tailwind_classes": {
-        "drawer_content": "rounded-t-[28px] border border-border bg-card shadow-[var(--shadow-md)]",
-        "section_title": "font-display text-base",
-        "helper": "text-xs text-muted-foreground",
-        "sticky_footer": "sticky bottom-0 border-t border-border bg-card/95 backdrop-blur px-4 py-3"
-      },
-      "data_testids": {
-        "open": "filters-open-button",
-        "apply": "filters-apply-button",
-        "reset": "filters-reset-button",
-        "age": "filters-age-slider",
-        "distance": "filters-distance-slider",
-        "verified": "filters-only-verified-switch",
-        "nsfw_section": "filters-nsfw-section"
-      }
+    "inputs": {
+      "base": "bg-background text-foreground placeholder:text-muted-foreground",
+      "focus": "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      "invalid": "aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:ring-destructive",
+      "disabled": "disabled:opacity-50 disabled:cursor-not-allowed"
     },
-    "NsfwBlurOverlay": {
-      "purpose": "AI moderation blur overlay with explicit 18+ consent reveal.",
-      "behavior": [
-        "Default: blur(18px) + slight dim + 'Sensitive media' label",
-        "CTA: 'Reveal (18+)' opens AlertDialog with consent copy + checkbox",
-        "After consent: animate blur to 0 over 220ms; store per-session reveal state"
-      ],
-      "copy": {
-        "title": "Sensitive media",
-        "body": "This image may contain nudity or explicit content. Confirm you are 18+ and consent to view.",
-        "checkbox": "I am 18+ and I consent to view sensitive media."
-      },
-      "tailwind_classes": {
-        "overlay": "absolute inset-0 grid place-items-center bg-black/35",
-        "blur_layer": "absolute inset-0 backdrop-blur-[18px]",
-        "cta": "rounded-full bg-white/10 px-4 py-2 text-sm text-white border border-white/15 hover:bg-white/14 transition-[background-color,border-color] duration-180"
-      },
-      "data_testids": {
-        "container": "nsfw-overlay",
-        "reveal": "nsfw-reveal-button",
-        "consent_checkbox": "nsfw-consent-checkbox",
-        "confirm": "nsfw-consent-confirm-button"
-      }
-    },
-    "ChatBubble": {
-      "purpose": "Post-match chat bubbles with optional read receipts/typing indicators.",
-      "layout": [
-        "Left (them): muted surface bubble",
-        "Right (me): accent-tinted bubble (solid, not gradient)",
-        "Timestamp in mono, subtle"
-      ],
-      "tailwind_classes": {
-        "wrap": "max-w-[78%] rounded-[20px] px-3 py-2",
-        "me": "bg-accent text-accent-foreground",
-        "them": "bg-secondary text-secondary-foreground",
-        "meta": "mt-1 text-[11px] text-muted-foreground font-mono"
-      },
-      "data_testids": {
-        "bubble": "chat-bubble",
-        "message_text": "chat-message-text",
-        "read_receipt": "chat-read-receipt"
-      }
-    },
-    "MatchBanner": {
-      "purpose": "Subtle new-match celebration + match state on profile.",
-      "behavior": [
-        "Use a thin banner with accent border + soft glow shadow",
-        "Optional 1.5s shimmer line (opacity 0.12) across banner; no confetti",
-        "CTA: 'Say hi' primary button"
-      ],
-      "tailwind_classes": {
-        "banner": "rounded-[var(--radius-md)] border border-accent/30 bg-card shadow-[var(--shadow-sm)]",
-        "title": "font-display text-lg",
-        "sub": "text-sm text-muted-foreground"
-      },
-      "data_testids": {
-        "banner": "match-banner",
-        "cta": "match-banner-say-hi-button"
-      }
-    },
-    "ConsentCheckboxGroup": {
-      "purpose": "Onboarding consent gates for GDPR + sensitive data (orientation/kinks) + NSFW viewing.",
-      "rules": [
-        "No pre-checked boxes",
-        "Explain why each consent is needed",
-        "Block progression until required consents checked",
-        "Provide 'Learn more' Dialog with plain-language summary"
-      ],
-      "tailwind_classes": {
-        "item": "flex gap-3 rounded-[var(--radius-sm)] border border-border bg-card p-3",
-        "title": "text-sm font-medium",
-        "desc": "text-xs text-muted-foreground"
-      },
-      "data_testids": {
-        "group": "consent-checkbox-group",
-        "continue": "onboarding-continue-button"
-      }
+    "badges": {
+      "verified": "Badge variant outline + icon; color via text-[hsl(var(--verified))] border-[hsl(var(--verified))]",
+      "online": "online-dot + sr-only label",
+      "visited": "eye icon in muted foreground",
+      "id_verified": "shield-check icon + tooltip"
     }
   },
-  "page_level_layout_sketches": {
-    "gallery_discovery": {
-      "hierarchy": [
-        "Top sticky bar: Brand wordmark (display font) + Search (optional) + Filters button with active-count badge",
-        "Sub-row: 'Your filters are mutual' tooltip + quick chips (Online, Verified, Distance) for fast toggles",
-        "Main: Grid of ProfileCard (infinite scroll) with skeleton placeholders",
-        "Bottom: subtle 'You’re all caught up' empty state with reset filters CTA"
-      ],
-      "performance": [
-        "Use native loading='lazy' on images",
-        "Use Skeleton component while loading",
-        "Avoid heavy box-shadows on hundreds of cards; keep shadow subtle"
-      ]
+  "page_archetypes": {
+    "global_shell": {
+      "nav": {
+        "pattern": "Sticky top nav (mobile) + optional left rail (desktop)",
+        "classes": "sticky top-0 z-40 backdrop-blur supports-[backdrop-filter]:bg-background/70 border-b",
+        "content": [
+          "Brand wordmark 'Eros' (font-display)",
+          "Search/Command (admin), Notifications, Theme toggle",
+          "Primary actions contextual (Filter, Profil bearbeiten, etc.)"
+        ]
+      },
+      "background": {
+        "rule": "Sehr milde Radials + Noise overlay (bereits vorhanden).",
+        "classes": "app-shell-bg dark:app-shell-bg"
+      }
     },
-    "profile_detail": {
-      "hierarchy": [
-        "Hero media: carousel of photos with NSFW overlay per image",
-        "Identity block: Name (display), pronouns, orientation, badges (verified/online), rounded distance",
-        "About: short bio + 'Looking for' chips",
-        "Albums: locked/private sections with unlock request CTA",
-        "Actions: Like / Pass / Report (Report is tertiary, but visible)"
-      ],
-      "match_states": [
-        "Not matched: show Like button + 'Chat unlocks after mutual match' helper",
-        "Matched: show MatchBanner + 'Open chat' primary"
-      ]
+    "discover_grid": {
+      "layout": {
+        "grid": "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4",
+        "card_aspect": "aspect-[3/4] (poster)",
+        "scroll": "infinite/pagination; skeleton placeholders"
+      },
+      "quick_filters": {
+        "pattern": "Sticky chip strip unter Nav; horizontal scroll",
+        "component": "ToggleGroup",
+        "advanced": "Sheet/Drawer von rechts oder bottom (mobile)"
+      },
+      "profile_card": {
+        "treatment": [
+          "Poster-Foto full-bleed",
+          "Bottom gradient scrim (nur für Lesbarkeit, sehr mild)",
+          "Overlay: Name, Alter, Distanz, 2–3 Facts",
+          "Badges: Verified, Online, Visited"
+        ],
+        "classes": {
+          "root": "group relative overflow-hidden rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] bg-card",
+          "image": "h-full w-full object-cover transition-opacity duration-[var(--dur-3)]",
+          "scrim": "absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/55 to-transparent",
+          "hover": "hover:shadow-[var(--shadow-md)] transition-shadow duration-[var(--dur-2)]"
+        },
+        "actions": {
+          "like": "Button primary icon-only (heart)",
+          "pass": "Button secondary icon-only (x)",
+          "save": "ghost (bookmark)"
+        },
+        "testids": {
+          "card": "discover-profile-card",
+          "like": "discover-like-button",
+          "pass": "discover-pass-button",
+          "open": "discover-open-profile-link"
+        }
+      }
     },
-    "chat": {
-      "hierarchy": [
-        "Top bar: Avatar + name + online dot + overflow menu (privacy toggles)",
-        "Message list: ScrollArea with date separators",
-        "Composer: Textarea + send button + attach self-destruct media",
-        "Optional: typing indicator line (muted)"
-      ],
-      "privacy": [
-        "Self-destruct media: show countdown chip on bubble",
-        "Read receipts toggle in chat settings"
-      ]
+    "profile_view": {
+      "hero": {
+        "pattern": "Editorial hero photo (aspect ratio 16/10 mobile, 21/9 desktop) + thumbnail row",
+        "scrim": "vertical gradient overlay for legibility (no loud gradients)",
+        "classes": {
+          "hero": "relative overflow-hidden rounded-[var(--radius-lg)]",
+          "scrim": "absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent"
+        }
+      },
+      "content": {
+        "sections": [
+          "Bio (max-w-prose)",
+          "Attribute chips",
+          "Kinks/Preferences (collapsible)",
+          "Safety actions (report/block)"
+        ],
+        "actions_footer": "Sticky action bar on mobile (Like/Match/Chat/Report)"
+      }
+    },
+    "my_profile_editor": {
+      "pattern": "Form-heavy, sectioned cards",
+      "photo_manager": {
+        "pattern": "DnD grid max 5, primary photo larger tile",
+        "components": ["Card", "AspectRatio", "Dialog", "Button"],
+        "states": ["uploading", "error", "limit reached"]
+      },
+      "conditional_fields": "Gender-conditional fields: use Collapsible + helper text"
     },
     "onboarding": {
-      "pattern": "Multi-step wizard with progress indicator; each step is one primary task.",
-      "steps": [
-        "1) Consent (GDPR + sensitive data + NSFW viewing policy)",
-        "2) Basics (name, age, pronouns, gender identity)",
-        "3) Preferences (bidirectional age/gender + one-way filters)",
-        "4) Photos (upload + AI moderation feedback + face photo suggestion)",
-        "5) Finish (preview profile card)"
+      "pattern": "Progressive form with Progress component + stepper",
+      "layout": "single column, max-w-md, left-aligned",
+      "consents": "Checkbox list with clear legal links"
+    },
+    "matches_list": {
+      "pattern": "List of match cards with avatar + last message + unread badge",
+      "classes": "divide-y border rounded-[var(--radius-md)] overflow-hidden"
+    },
+    "chat": {
+      "layout": {
+        "header": "sticky top nav with profile mini + safety menu",
+        "stream": "ScrollArea; day separators",
+        "composer": "sticky bottom input + attachments"
+      },
+      "bubbles": {
+        "mine": "bg-accent text-accent-foreground rounded-2xl rounded-br-md",
+        "theirs": "bg-secondary text-secondary-foreground rounded-2xl rounded-bl-md",
+        "meta": "text-xs text-muted-foreground"
+      },
+      "nsfw_blur": {
+        "pattern": "Blur overlay with consent CTA",
+        "classes": "relative overflow-hidden rounded-[var(--radius-md)]",
+        "overlay": "absolute inset-0 backdrop-blur-md bg-black/35 grid place-items-center",
+        "cta": "Button primary: 'Ansehen' + Switch 'Immer anzeigen'"
+      },
+      "self_destruct": "Message chip with timer icon; subtle warning color"
+    },
+    "account_settings": {
+      "pattern": "Security-first cards: Email verifizieren, MFA, ID Upload, Payments",
+      "payments": "Use Tabs for providers; keep same tokens",
+      "id_verification": "Upload dropzone + status badge + helper copy"
+    },
+    "settings": {
+      "pattern": "Preference list with Switches; language Select; theme toggle",
+      "theme": "System preference aware + explicit toggle"
+    },
+    "admin": {
+      "layout": {
+        "desktop": "Left sidebar + top bar + content",
+        "mobile": "Tabs/Sheet navigation"
+      },
+      "components": ["Tabs", "Table", "Pagination", "Command", "Dialog", "Sheet"],
+      "table_rules": [
+        "Sticky header",
+        "Row hover bg-muted/40",
+        "Bulk actions bar appears when rows selected"
       ],
-      "layout": [
-        "Centered column on desktop but left-aligned content; max-w-md",
-        "Sticky bottom CTA bar on mobile"
-      ]
+      "audit_log": "Use font-mono for IDs/timestamps"
+    },
+    "legal_markdown": {
+      "typography": {
+        "container": "prose prose-neutral dark:prose-invert max-w-prose",
+        "headings": "font-display tracking-tight",
+        "links": "underline decoration-accent/60 underline-offset-4 hover:decoration-accent"
+      },
+      "nav": "Chip-style page switcher (ToggleGroup)"
+    },
+    "footer": {
+      "pattern": "Minimal, legal links, muted text",
+      "classes": "border-t py-8 text-sm text-muted-foreground"
     }
   },
   "micro_interactions": {
-    "ProfileCard_hover": {
-      "motion": "Image scale 1.02 + quick actions fade/slide up 6px",
-      "css": "transition-[opacity,transform,background-color,border-color] duration-180 ease-[var(--ease-out)]",
-      "accessibility": "Respect prefers-reduced-motion; keep focus-visible ring"
-    },
-    "NSFW_reveal": {
-      "motion": "Blur fades out + overlay opacity to 0",
-      "duration": "220ms",
-      "easing": "var(--ease-out)"
-    },
-    "new_match": {
-      "motion": "Banner enters with y: 10px -> 0 and opacity 0 -> 1; optional shimmer line",
-      "duration": "260ms",
-      "library": "framer-motion (recommended)"
-    },
-    "online_dot": {
-      "motion": "Soft pulse using box-shadow spread (not transform) to avoid layout jank",
-      "css": "@keyframes onlinePulse { 0%{ box-shadow:0 0 0 0 hsla(156,52%,40%,0.35);} 70%{ box-shadow:0 0 0 8px hsla(156,52%,40%,0);} 100%{ box-shadow:0 0 0 0 hsla(156,52%,40%,0);} }"
-    }
+    "hover": [
+      "Cards: shadow-sm -> shadow-md (transition-shadow)",
+      "Buttons: color shift only + active scale",
+      "Chips: background tint"
+    ],
+    "scroll": [
+      "Sticky chip strip with subtle border",
+      "Discover grid: skeleton shimmer (Skeleton component)"
+    ],
+    "feedback": [
+      "Use Sonner toasts for success/error",
+      "Inline validation messages under inputs"
+    ]
+  },
+  "accessibility": {
+    "contrast": [
+      "Body text must meet WCAG AA on background/card",
+      "Accent foreground must be readable (avoid white-on-peach if too low contrast)"
+    ],
+    "focus": "Always visible focus ring: ring-2 ring-ring ring-offset-2",
+    "touch": "Min tap target 44px; icon buttons use h-10 w-10",
+    "language": "German long words: avoid fixed widths; allow wrapping; use hyphenation in legal prose if needed"
+  },
+  "data_testid_policy": {
+    "rule": "Alle interaktiven und daten-kritischen Elemente müssen data-testid behalten/erhalten. Neue Elemente: kebab-case, rollenbasiert.",
+    "examples": [
+      "data-testid=\"theme-toggle-button\"",
+      "data-testid=\"discover-advanced-filter-open-button\"",
+      "data-testid=\"chat-message-send-button\"",
+      "data-testid=\"admin-reports-table\""
+    ]
+  },
+  "image_urls": {
+    "note": "Für Dating-Profile keine Stock-Faces hardcoden; nutze User-Uploads. Für Marketing/empty states nur abstrakte/neutral imagery.",
+    "categories": [
+      {
+        "category": "empty_state_abstract",
+        "description": "Abstrakte, ruhige Shapes/Textures für leere Zustände (Matches leer, Events leer)",
+        "urls": []
+      },
+      {
+        "category": "legal_page_header",
+        "description": "Sehr dezente Textur/Pattern (kein Gradient-Overkill) für Legal Header",
+        "urls": []
+      }
+    ]
   },
   "libraries": {
     "recommended": [
       {
         "name": "framer-motion",
-        "why": "Micro-interactions (drawer transitions, match banner entrance, subtle shimmer)",
+        "why": "Feine micro-animations (sheet entrance, card hover) ohne CSS hacks",
         "install": "npm i framer-motion",
-        "usage_note": "Use motion.div for entrance/exit; respect prefers-reduced-motion."
-      },
-      {
-        "name": "react-intersection-observer",
-        "why": "Infinite scroll + lazy reveal animations without scroll listeners",
-        "install": "npm i react-intersection-observer",
-        "usage_note": "Trigger next page fetch when sentinel enters view."
-      }
-    ]
-  },
-  "image_urls": {
-    "profile_card_placeholders": [
-      {
-        "url": "https://images.pexels.com/photos/9349255/pexels-photo-9349255.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-        "description": "Premium editorial portrait placeholder for demo profiles",
-        "category": "seed/demo"
-      },
-      {
-        "url": "https://images.pexels.com/photos/31465343/pexels-photo-31465343.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-        "description": "Warm friendly portrait placeholder",
-        "category": "seed/demo"
+        "usage_notes": [
+          "Nur opacity/translate/scale",
+          "Respect prefers-reduced-motion"
+        ]
       }
     ],
-    "marketing_hero_optional": [
-      {
-        "url": "https://images.unsplash.com/photo-1521033719794-41049d18b8d4?crop=entropy&cs=srgb&fm=jpg&ixlib=rb-4.1.0&q=85",
-        "description": "Warm sunset silhouette for optional landing/empty states (keep subtle, not cliché)",
-        "category": "hero/empty-state"
-      }
-    ]
-  },
-  "dark_first_guidance": {
-    "default": "Set <html class='dark'> by default for production feel; provide toggle in Settings.",
-    "mapping_rules": [
-      "Cards are slightly lighter than background (card 9% vs bg 6%)",
-      "Borders are visible but subtle (border 18%)",
-      "Accent used for primary actions, verified, focus ring; never for large backgrounds",
-      "Text on images uses scrim; avoid heavy gradients"
-    ]
-  },
-  "accessibility": {
-    "rules": [
-      "WCAG AA contrast for text on surfaces",
-      "Always show focus-visible ring: ring-2 ring-[hsl(var(--ring))] ring-offset-2 ring-offset-background",
-      "Respect prefers-reduced-motion: disable pulses/shimmers and reduce durations",
-      "NSFW reveal requires explicit consent checkbox; never auto-reveal"
+    "avoid": [
+      "Heavy 3D/particles (Trust/Safety Kontext; Performance auf Mobile)",
+      "Over-animated gradients"
     ]
   },
   "instructions_to_main_agent": [
-    "Replace default CRA App.css centered header usage; do not center the whole app container.",
-    "Update /app/frontend/src/index.css tokens with the provided HSL values and add font variables.",
-    "Use shadcn components from /app/frontend/src/components/ui (Drawer/Sheet/ScrollArea/Slider/Switch/Checkbox/ToggleGroup/Dialog).",
-    "Implement all new components as .js (not .tsx).",
-    "Add data-testid to every interactive element and key info text (filters, like buttons, reveal consent, chat send, report submit, GDPR export/delete).",
-    "NSFW: blur overlay must be per-image; reveal requires AlertDialog consent; store reveal state in memory/session only.",
-    "Gallery: use CSS grid + skeletons + lazy images; avoid heavy shadows to prevent scroll jank.",
-    "Chat: only accessible after mutual match; show helper copy otherwise.",
-    "Admin: use Table + Tabs + filters; keep typography more utilitarian (body font + mono for IDs)."
+    "Update /app/frontend/src/index.css tokens: replace current --accent (teal) with apricot values above; keep other neutrals.",
+    "Ensure Tailwind config uses hsl(var(--...)) mapping (already convention).",
+    "Do not remove existing data-testid attributes; add new ones for any new interactive element.",
+    "Use shadcn/ui components from /components/ui/*.jsx; do not introduce raw HTML dropdown/calendar/toast.",
+    "Discover: implement poster grid cards with overlay scrim + badges; avoid swipe stack.",
+    "Profile view: hero photo with subtle scrim; sticky action bar on mobile.",
+    "Admin: table-first with Tabs + Command; same tokens, denser spacing.",
+    "Legal: Markdown rendered with prose classes; accent underline links."
   ],
-  "General UI UX Design Guidelines": [
-    "- You must **not** apply universal transition. Eg: `transition: all`. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms",
-    "- You must **not** center align the app container, ie do not add `.App { text-align: center; }` in the css file. This disrupts the human natural reading flow of text",
-    "- NEVER: use AI assistant Emoji characters like`🤖🧠💭💡🔮🎯📚🎭🎬🎪🎉🎊🎁🎀🎂🍰🎈🎨🎰💰💵💳🏦💎🪙💸🤑📊📈📉💹🔢🏆🥇 etc for icons. Always use **FontAwesome cdn** or **lucid-react** library already installed in the package.json",
-    "\n **GRADIENT RESTRICTION RULE**\nNEVER use dark/saturated gradient combos (e.g., purple/pink) on any UI element.  Prohibited gradients: blue-500 to purple 600, purple 500 to pink-500, green-500 to blue-500, red to pink etc\nNEVER use dark gradients for logo, testimonial, footer etc\nNEVER let gradients cover more than 20% of the viewport.\nNEVER apply gradients to text-heavy content or reading areas.\nNEVER use gradients on small UI elements (<100px width).\nNEVER stack multiple gradient layers in the same viewport.\n\n**ENFORCEMENT RULE:**\n    • Id gradient area exceeds 20% of viewport OR affects readability, **THEN** use solid colors\n\n**How and where to use:**\n   • Section backgrounds (not content backgrounds)\n   • Hero section header content. Eg: dark to light to dark color\n   • Decorative overlays and accent elements only\n   • Hero section with 2-3 mild color\n   • Gradients creation can be done for any angle say horizontal, vertical or diagonal\n\n- For AI chat, voice application, **do not use purple color. Use color like light green, ocean blue, peach orange etc**",
-    "\n\n</Font Guidelines>\n\n- Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead. \n   \n- Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.\n\n- Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.\n   \n- Before generating UI, infer the visual style from the problem statement (palette, contrast, mood, motion) and immediately instantiate it by setting global design tokens (primary, secondary/accent, background, foreground, ring, state colors), rather than relying on any library defaults. Don't make the background dark as a default step, always understand problem first and define colors accordingly\n    Eg: - if it implies playful/energetic, choose a colorful scheme\n           - if it implies monochrome/minimal, choose a black–white/neutral scheme\n\n**Component Reuse:**\n\t- Prioritize using pre-existing components from src/components/ui when applicable\n\t- Create new components that match the style and conventions of existing components when needed\n\t- Examine existing components to understand the project's component patterns before creating new ones\n\n**IMPORTANT**: Do not use HTML based component like dropdown, calendar, toast etc. You **MUST** always use `/app/frontend/src/components/ui/ ` only as a primary components as these are modern and stylish component\n\n**Best Practices:**\n\t- Use Shadcn/UI as the primary component library for consistency and accessibility\n\t- Import path: ./components/[component-name]\n\n**Export Conventions:**\n\t- Components MUST use named exports (export const ComponentName = ...)\n\t- Pages MUST use default exports (export default function PageName() {...})\n\n**Toasts:**\n  - Use `sonner` for toasts\"\n  - Sonner component are located in `/app/src/components/ui/sonner.tsx`\n\nUse 2–4 color gradients, subtle textures/noise overlays, or CSS-based noise to avoid flat visuals."
+  "general_ui_ux_design_guidelines": [
+    "You must **not** apply universal transition. Eg: `transition: all`. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms",
+    "You must **not** center align the app container, ie do not add `.App { text-align: center; }` in the css file. This disrupts the human natural reading flow of text",
+    "NEVER: use AI assistant Emoji characters like`🤖🧠💭💡🔮🎯📚🎭🎬🎪🎉🎊🎁🎀🎂🍰🎈🎨🎰💰💵💳🏦💎🪙💸🤑📊📈📉💹🔢🏆🥇 etc for icons. Always use **FontAwesome cdn** or **lucid-react** library already installed in the package.json",
+    "GRADIENT RESTRICTION RULE",
+    "NEVER use dark/saturated gradient combos (e.g., purple/pink) on any UI element.  Prohibited gradients: blue-500 to purple 600, purple 500 to pink-500, green-500 to blue-500, red to pink etc",
+    "NEVER use dark gradients for logo, testimonial, footer etc",
+    "NEVER let gradients cover more than 20% of the viewport.",
+    "NEVER apply gradients to text-heavy content or reading areas.",
+    "NEVER use gradients on small UI elements (<100px width).",
+    "NEVER stack multiple gradient layers in the same viewport.",
+    "ENFORCEMENT RULE:",
+    "    • Id gradient area exceeds 20% of viewport OR affects readability, **THEN** use solid colors",
+    "How and where to use:",
+    "   • Section backgrounds (not content backgrounds)",
+    "   • Hero section header content. Eg: dark to light to dark color",
+    "   • Decorative overlays and accent elements only",
+    "   • Hero section with 2-3 mild color",
+    "   • Gradients creation can be done for any angle say horizontal, vertical or diagonal",
+    "- For AI chat, voice application, **do not use purple color. Use color like light green, ocean blue, peach orange etc**",
+    "- Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "- Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "- Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "- Before generating UI, infer the visual style from the problem statement (palette, contrast, mood, motion) and immediately instantiate it by setting global design tokens (primary, secondary/accent, background, foreground, ring, state colors), rather than relying on any library defaults. Don't make the background dark as a default step, always understand problem first and define colors accordingly",
+    "Component Reuse:",
+    "\t- Prioritize using pre-existing components from src/components/ui when applicable",
+    "\t- Create new components that match the style and conventions of existing components when needed",
+    "\t- Examine existing components to understand the project's component patterns before creating new ones",
+    "IMPORTANT: Do not use HTML based component like dropdown, calendar, toast etc. You **MUST** always use `/app/frontend/src/components/ui/ ` only as a primary components as these are modern and stylish component",
+    "Best Practices:",
+    "\t- Use Shadcn/UI as the primary component library for consistency and accessibility",
+    "\t- Import path: ./components/[component-name]",
+    "Export Conventions:",
+    "\t- Components MUST use named exports (export const ComponentName = ...)",
+    "\t- Pages MUST use default exports (export default function PageName() {...})",
+    "Toasts:",
+    "  - Use `sonner` for toasts",
+    "  - Sonner component are located in `/app/src/components/ui/sonner.tsx`",
+    "Use 2–4 color gradients, subtle textures/noise overlays, or CSS-based noise to avoid flat visuals."
   ]
 }
