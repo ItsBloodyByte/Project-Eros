@@ -1,6 +1,6 @@
 [
   {
-    "content": "Backend: Payments - Mehrere Anbieter-Optionen (Stripe live, weitere Platzhalter)",
+    "content": "Backend: Payments - Mehrere Anbieter-Optionen",
     "status": "completed"
   },
   {
@@ -8,27 +8,15 @@
     "status": "completed"
   },
   {
-    "content": "Backend: Chat Link-Blocker (dot/space + aggressive Variante, ohne False-Positives bei 'es/de/me')",
+    "content": "Backend: Chat Link-Blocker + Frontend-Fehlermeldung",
     "status": "completed"
   },
   {
-    "content": "Frontend: Chat - Fehlermeldung bei Link-Block (\"Links sind im Chat nicht erlaubt.\")",
+    "content": "Backend + Frontend: Legal Pages (Public + Admin Editor + Footer)",
     "status": "completed"
   },
   {
-    "content": "Backend: Legal Pages CRUD + 6 Default-Seiten",
+    "content": "Testing: 96.8% Pass-Rate Backend-Tests",
     "status": "completed"
-  },
-  {
-    "content": "Frontend: Legal Pages öffentlich (/legal/:key) + Footer mit Links",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: Admin Tab 'Rechtliches' mit Markdown-Editor",
-    "status": "completed"
-  },
-  {
-    "content": "Testing: Backend-Tests für neue Features",
-    "status": "in_progress"
   }
 ]
