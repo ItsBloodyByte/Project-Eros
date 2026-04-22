@@ -1,6 +1,6 @@
 """Pydantic models."""
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict
 from datetime import datetime, timezone
 import uuid
 
@@ -374,8 +374,17 @@ class PaymentPackage(BaseModel):
 
 
 class PaymentConfigUpdate(BaseModel):
-    provider: Literal["stripe", "disabled"] = "disabled"
+    provider: Literal["stripe", "paypal", "mollie", "klarna", "paddle", "custom", "disabled"] = "disabled"
     stripe_api_key: Optional[str] = None
+    # Per-provider credential map. Only updated fields overwrite stored ones.
+    # Example:
+    #   {"stripe": {"secret_key": "sk_..."},
+    #    "paypal": {"client_id": "...", "secret": "..."},
+    #    "mollie": {"api_key": "..."},
+    #    "klarna": {"username": "...", "password": "..."},
+    #    "paddle": {"vendor_id": "...", "api_key": "..."},
+    #    "custom": {"endpoint": "...", "token": "..."}}
+    provider_keys: Optional[Dict[str, Dict[str, str]]] = None
     enabled: bool = False
     packages: Optional[List[PaymentPackage]] = None
 
@@ -399,3 +408,9 @@ class AdminUserUpdate(BaseModel):
     premium_expires_at: Optional[datetime] = None
     shadow_restricted: Optional[bool] = None
     shadow_reason: Optional[str] = None
+
+
+
+class LegalPageUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    content_markdown: str = Field(default="", max_length=200_000)

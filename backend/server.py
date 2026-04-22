@@ -34,7 +34,7 @@ from auth import (
     decode_token,
     get_current_user_payload,
 )
-from helpers import now_utc, public_user_from_doc, rounded_distance_km, haversine_km, serialize_doc, parse_dt
+from helpers import now_utc, public_user_from_doc, rounded_distance_km, haversine_km, serialize_doc, parse_dt, contains_link_like
 from moderation import moderate_image
 from models import (
     RegisterRequest,
@@ -76,6 +76,7 @@ from models import (
     PaymentPackage,
     AIConfigUpdate,
     AdminUserUpdate,
+    LegalPageUpdate,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -107,6 +108,7 @@ async def startup():
         await db.audit.create_index("created_at")
         await db.events.create_index("id", unique=True)
         await db.events.create_index("starts_at")
+        await db.legal_pages.create_index("key", unique=True)
         logger.info("Mongo indexes ensured.")
     except Exception as e:
         logger.exception("Index creation failed: %s", e)
@@ -673,6 +675,8 @@ async def send_message(body: SendMessageRequest, user=Depends(_require_user)):
     m = await _match_or_403(body.match_id, user["id"])
     if not body.text and not body.media_data_url:
         raise HTTPException(400, "Message must have text or media")
+    if body.text and contains_link_like(body.text):
+        raise HTTPException(400, "Links sind im Chat nicht erlaubt.")
     nsfw_score = None
     if body.media_data_url:
         if not body.media_data_url.startswith("data:image/"):
@@ -1280,6 +1284,8 @@ async def message_first(body: MessageFirstRequest, user=Depends(_require_user)):
     Creates or reuses an "intro" match-like channel."""
     if not _is_premium(user):
         raise HTTPException(402, "Premium required to message first")
+    if body.text and contains_link_like(body.text):
+        raise HTTPException(400, "Links sind im Chat nicht erlaubt.")
     target = await db.users.find_one({"id": body.target_user_id})
     if not target or target.get("banned"):
         raise HTTPException(404, "User not found")
@@ -1729,6 +1735,7 @@ async def _get_payment_config() -> Dict:
             "provider": "disabled",
             "enabled": False,
             "stripe_api_key": os.environ.get("STRIPE_API_KEY", ""),
+            "provider_keys": {"stripe": {"secret_key": os.environ.get("STRIPE_API_KEY", "")}},
             "packages": DEFAULT_PACKAGES,
         }
     cfg.pop("_id", None)
@@ -1736,7 +1743,24 @@ async def _get_payment_config() -> Dict:
         cfg["packages"] = DEFAULT_PACKAGES
     if not cfg.get("stripe_api_key"):
         cfg["stripe_api_key"] = os.environ.get("STRIPE_API_KEY", "")
+    if not cfg.get("provider_keys"):
+        cfg["provider_keys"] = {"stripe": {"secret_key": cfg.get("stripe_api_key") or ""}}
     return cfg
+
+
+def _mask(val: str) -> str:
+    if not val:
+        return ""
+    s = str(val)
+    return ("***" + s[-4:]) if len(s) >= 4 else "***"
+
+
+def _mask_provider_keys(provider_keys: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
+    """Return provider_keys with every value masked (for admin GET)."""
+    out: Dict[str, Dict[str, str]] = {}
+    for pid, keys in (provider_keys or {}).items():
+        out[pid] = {k: _mask(v) for k, v in (keys or {}).items()}
+    return out
 
 
 def _find_package(cfg: Dict, pkg_id: str) -> Optional[Dict]:
@@ -1753,6 +1777,7 @@ async def list_packages(user=Depends(_require_user)):
     return {
         "enabled": bool(cfg.get("enabled")) and cfg.get("provider") != "disabled",
         "provider": cfg.get("provider", "disabled"),
+        "supported": cfg.get("provider", "disabled") == "stripe",
         "packages": pkgs,
     }
 
@@ -1761,10 +1786,16 @@ async def list_packages(user=Depends(_require_user)):
 async def admin_get_payment_config(user=Depends(_require_user)):
     await _require_role(user, ["admin", "superadmin"])
     cfg = await _get_payment_config()
-    # mask api key
+    # mask legacy stripe api key
     key = cfg.get("stripe_api_key") or ""
-    cfg["stripe_api_key_masked"] = ("***" + key[-4:]) if key else ""
+    cfg["stripe_api_key_masked"] = _mask(key)
     cfg.pop("stripe_api_key", None)
+    # mask per-provider keys and return as *_masked
+    cfg["provider_keys_masked"] = _mask_provider_keys(cfg.get("provider_keys") or {})
+    cfg.pop("provider_keys", None)
+    # inform which providers have a live server-side integration
+    cfg["supported_providers"] = ["stripe"]
+    cfg["known_providers"] = ["stripe", "paypal", "mollie", "klarna", "paddle", "custom"]
     return cfg
 
 
@@ -1772,6 +1803,22 @@ async def admin_get_payment_config(user=Depends(_require_user)):
 async def admin_set_payment_config(body: PaymentConfigUpdate, user=Depends(_require_user)):
     await _require_role(user, ["admin", "superadmin"])
     existing = await _get_payment_config()
+    # Merge provider_keys: only overwrite for provided keys (so admin can leave fields empty to keep)
+    merged_keys = dict(existing.get("provider_keys") or {})
+    if body.provider_keys:
+        for pid, keys in body.provider_keys.items():
+            current = dict(merged_keys.get(pid) or {})
+            for k, v in (keys or {}).items():
+                if v:  # only overwrite when user actually provided a non-empty value
+                    current[k] = v
+            merged_keys[pid] = current
+    # Legacy stripe_api_key sync
+    stripe_api_key = existing.get("stripe_api_key", "")
+    if body.stripe_api_key:
+        stripe_api_key = body.stripe_api_key
+        merged_keys.setdefault("stripe", {})["secret_key"] = body.stripe_api_key
+    elif (merged_keys.get("stripe") or {}).get("secret_key"):
+        stripe_api_key = merged_keys["stripe"]["secret_key"]
     doc = {
         "key": PAYMENT_CONFIG_KEY,
         "provider": body.provider,
@@ -1780,16 +1827,14 @@ async def admin_set_payment_config(body: PaymentConfigUpdate, user=Depends(_requ
         "updated_by": user["id"],
         "packages": [p.model_dump() for p in body.packages] if body.packages is not None
                     else existing.get("packages", DEFAULT_PACKAGES),
+        "stripe_api_key": stripe_api_key,
+        "provider_keys": merged_keys,
     }
-    # only update api key if explicitly provided and non-empty
-    if body.stripe_api_key:
-        doc["stripe_api_key"] = body.stripe_api_key
-    else:
-        doc["stripe_api_key"] = existing.get("stripe_api_key", "")
     await db.settings.update_one({"key": PAYMENT_CONFIG_KEY}, {"$set": doc}, upsert=True)
     await _audit(user["id"], "payment_config_update",
                  meta={"provider": body.provider, "enabled": body.enabled,
-                       "packages": len(doc["packages"])})
+                       "packages": len(doc["packages"]),
+                       "provider_keys": list(merged_keys.keys())})
     return {"ok": True}
 
 
@@ -1797,13 +1842,22 @@ async def admin_set_payment_config(body: PaymentConfigUpdate, user=Depends(_requ
 async def create_checkout(body: CheckoutRequest, request: Request, user=Depends(_require_user)):
     cfg = await _get_payment_config()
     if not cfg.get("enabled") or cfg.get("provider") == "disabled":
-        raise HTTPException(400, "Payments are disabled")
+        raise HTTPException(400, "Zahlungen sind deaktiviert")
     pkg = _find_package(cfg, body.package_id)
     if not pkg:
-        raise HTTPException(400, "Unknown or disabled package")
-    api_key = cfg.get("stripe_api_key") or os.environ.get("STRIPE_API_KEY", "")
+        raise HTTPException(400, "Unbekanntes oder deaktiviertes Paket")
+    provider = cfg.get("provider", "disabled")
+    if provider != "stripe":
+        # Other providers are accepted in config but not yet integrated server-side.
+        raise HTTPException(
+            501,
+            f"Anbieter '{provider}' ist konfiguriert, aber noch nicht integriert. "
+            f"Bitte Stripe verwenden oder Admin kontaktieren.",
+        )
+    pkeys = (cfg.get("provider_keys") or {}).get("stripe") or {}
+    api_key = pkeys.get("secret_key") or cfg.get("stripe_api_key") or os.environ.get("STRIPE_API_KEY", "")
     if not api_key:
-        raise HTTPException(500, "Payment provider not configured")
+        raise HTTPException(500, "Stripe API-Key fehlt")
     host_url = str(request.base_url).rstrip("/")
     webhook_url = f"{host_url}/api/webhook/stripe"
     stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
@@ -1826,9 +1880,10 @@ async def create_checkout(body: CheckoutRequest, request: Request, user=Depends(
         "amount": pkg["amount"],
         "currency": pkg.get("currency", "eur"),
         "payment_status": "initiated",
+        "provider": provider,
         "created_at": now_utc().isoformat(),
     })
-    return {"url": session.url, "session_id": session.session_id}
+    return {"url": session.url, "session_id": session.session_id, "provider": provider}
 
 
 async def _apply_successful_payment(session_id: str, metadata: Dict):
@@ -1897,6 +1952,119 @@ async def stripe_webhook(request: Request):
         raise HTTPException(400, "Invalid webhook")
     if evt.payment_status == "paid":
         await _apply_successful_payment(evt.session_id, evt.metadata or {})
+    return {"ok": True}
+
+
+# ---------- Legal / Info Pages (CMS-light) ----------
+LEGAL_PAGE_KEYS = {
+    "terms": "Nutzungsbedingungen",
+    "privacy": "Datenschutzerklärung",
+    "imprint": "Impressum",
+    "community": "Community-Richtlinien",
+    "cookies": "Cookie-Hinweis",
+    "cancellation": "Widerrufsbelehrung",
+}
+
+_DEFAULT_LEGAL_CONTENT = {
+    "terms": (
+        "# Nutzungsbedingungen\n\n"
+        "_Stand: bitte durch Administrator:in aktualisieren._\n\n"
+        "Willkommen bei Eros. Mit der Nutzung unserer Plattform erklärst du dich mit "
+        "diesen Nutzungsbedingungen einverstanden.\n\n"
+        "## 1. Volljährigkeit\n"
+        "Die Nutzung ist ausschließlich Personen ab **18 Jahren** gestattet.\n\n"
+        "## 2. Respektvoller Umgang\n"
+        "Diskriminierung, Belästigung und Hassrede führen zum sofortigen Ausschluss.\n\n"
+        "## 3. Inhalte\n"
+        "Du behältst die Rechte an deinen Inhalten, räumst uns aber das Recht ein, "
+        "sie im Rahmen der Plattform darzustellen.\n\n"
+        "## 4. Haftung\n"
+        "Wir haften nur für grobe Fahrlässigkeit und Vorsatz, sofern gesetzlich zulässig.\n\n"
+        "## 5. Änderungen\n"
+        "Diese Bedingungen können angepasst werden; wesentliche Änderungen werden angekündigt.\n"
+    ),
+    "privacy": (
+        "# Datenschutzerklärung\n\n"
+        "_Stand: bitte durch Administrator:in aktualisieren._\n\n"
+        "Wir verarbeiten deine Daten gemäß DSGVO. Eine ausführliche Fassung wird hier gepflegt.\n\n"
+        "## Verantwortlich\nBitte Kontaktdaten einfügen.\n\n"
+        "## Zwecke\n- Bereitstellung des Dienstes\n- Moderation (inkl. KI-gestützter Bildprüfung)\n"
+        "- Sicherheit und Betrugsprävention\n\n"
+        "## Betroffenenrechte\nAuskunft, Berichtigung, Löschung, Datenübertragbarkeit, Widerspruch.\n"
+    ),
+    "imprint": (
+        "# Impressum\n\n"
+        "_Bitte durch Administrator:in ausfüllen._\n\n"
+        "**Anbieter:** \n\n**Anschrift:** \n\n**E-Mail:** \n\n**Telefon:** \n\n"
+        "**Registergericht / HRB:** \n\n**Vertretungsberechtigt:** \n\n"
+        "**Umsatzsteuer-ID:** \n"
+    ),
+    "community": (
+        "# Community-Richtlinien\n\n"
+        "Sei freundlich, respektvoll und aufrichtig. Keine Belästigung, keine Diskriminierung, "
+        "keine sexuellen Inhalte ohne Einvernehmen. Links im Chat sind untersagt.\n"
+    ),
+    "cookies": (
+        "# Cookie-Hinweis\n\n"
+        "Wir verwenden technisch notwendige Cookies/LocalStorage-Einträge (z. B. für Login). "
+        "Tracking-Cookies werden **nicht** eingesetzt.\n"
+    ),
+    "cancellation": (
+        "# Widerrufsbelehrung\n\n"
+        "Hinweise zum Widerrufsrecht bei digitalen Diensten und Abonnements. "
+        "Bitte durch Administrator:in konkretisieren.\n"
+    ),
+}
+
+
+async def _ensure_default_legal_pages():
+    for key, title in LEGAL_PAGE_KEYS.items():
+        doc = await db.legal_pages.find_one({"key": key})
+        if not doc:
+            await db.legal_pages.insert_one({
+                "key": key,
+                "title": title,
+                "content_markdown": _DEFAULT_LEGAL_CONTENT.get(key, ""),
+                "updated_at": now_utc().isoformat(),
+                "updated_by": None,
+            })
+
+
+@api_router.get("/legal")
+async def list_legal():
+    """Public: list available legal pages (key + title only)."""
+    await _ensure_default_legal_pages()
+    items = await db.legal_pages.find({}, {"_id": 0, "key": 1, "title": 1, "updated_at": 1}).to_list(50)
+    return {"pages": items}
+
+
+@api_router.get("/legal/{key}")
+async def get_legal(key: str):
+    """Public: fetch a legal page by key."""
+    if key not in LEGAL_PAGE_KEYS:
+        raise HTTPException(404, "Unbekannte Seite")
+    await _ensure_default_legal_pages()
+    doc = await db.legal_pages.find_one({"key": key})
+    if not doc:
+        raise HTTPException(404, "Seite nicht gefunden")
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.put("/admin/legal/{key}")
+async def admin_update_legal(key: str, body: LegalPageUpdate, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    if key not in LEGAL_PAGE_KEYS:
+        raise HTTPException(404, "Unbekannte Seite")
+    upd = {
+        "key": key,
+        "title": body.title,
+        "content_markdown": body.content_markdown,
+        "updated_at": now_utc().isoformat(),
+        "updated_by": user["id"],
+    }
+    await db.legal_pages.update_one({"key": key}, {"$set": upd}, upsert=True)
+    await _audit(user["id"], "legal_update", key, {"title": body.title, "length": len(body.content_markdown)})
     return {"ok": True}
 
 

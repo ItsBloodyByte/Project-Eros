@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { toast } from "sonner";
 import { Mail, ShieldCheck, Zap, Crown, Heart, Lock, Plane, Trash2, IdCard } from "lucide-react";
 import { Link } from "react-router-dom";
+import { AppFooter } from "../components/AppFooter";
 
 export default function AccountPage() {
   const { user, refresh } = useAuth();
@@ -297,6 +298,7 @@ export default function AccountPage() {
             <div className="text-sm text-[hsl(var(--muted-foreground))]">Die Web-App ist mobile-first responsiv. Ein eigenständiger React-Native-Build ist im Roadmap vorgesehen.</div>
           </section>
         </main>
+        <AppFooter />
       </div>
     </div>
   );

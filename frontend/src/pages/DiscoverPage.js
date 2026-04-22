@@ -4,6 +4,7 @@ import { useAuth } from "../lib/AuthContext";
 import { FilterDrawer } from "../components/FilterDrawer";
 import { QuickFilterBar } from "../components/QuickFilterBar";
 import { ProfileCard } from "../components/ProfileCard";
+import { AppFooter } from "../components/AppFooter";
 import { AppHeader } from "../components/AppHeader";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
@@ -105,6 +106,7 @@ export default function DiscoverPage() {
             </>
           )}
         </main>
+        <AppFooter />
       </div>
     </div>
   );

@@ -85,7 +85,8 @@ export default function ChatPage() {
       });
       setText("");
     } catch (e) {
-      toast.error("Send failed");
+      const detail = e?.response?.data?.detail;
+      toast.error(detail || "Nachricht konnte nicht gesendet werden");
     }
   };
 

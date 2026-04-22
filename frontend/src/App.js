@@ -17,6 +17,7 @@ import SettingsPage from "./pages/SettingsPage";
 import AdminPage from "./pages/AdminPage";
 import AccountPage from "./pages/AccountPage";
 import EventsPage from "./pages/EventsPage";
+import LegalPage from "./pages/LegalPage";
 import "./App.css";
 
 function Protected({ children }) {
@@ -41,6 +42,8 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/legal" element={<LegalPage />} />
+      <Route path="/legal/:key" element={<LegalPage />} />
       <Route path="/onboarding" element={<Protected><OnboardingPage /></Protected>} />
       <Route path="/" element={<Protected><DiscoverPage /></Protected>} />
       <Route path="/profile/:id" element={<Protected><ProfileViewPage /></Protected>} />

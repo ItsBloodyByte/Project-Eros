@@ -21,7 +21,19 @@ export default function AdminPage() {
   const [verifs, setVerifs] = useState([]);
   const [search, setSearch] = useState("");
   const [aiCfg, setAiCfg] = useState({ provider: "gemini", model: "gemini-2.5-flash", base_url: "", enabled: true, api_key: "", api_key_masked: "" });
-  const [payCfg, setPayCfg] = useState({ provider: "disabled", enabled: false, stripe_api_key: "", stripe_api_key_masked: "", packages: [] });
+  const [legalKey, setLegalKey] = useState("terms");
+  const [legal, setLegal] = useState({ title: "", content_markdown: "", updated_at: "" });
+  const [payCfg, setPayCfg] = useState({
+    provider: "disabled",
+    enabled: false,
+    stripe_api_key: "",
+    stripe_api_key_masked: "",
+    packages: [],
+    provider_keys: {},          // editable values (empty = keep stored)
+    provider_keys_masked: {},   // shown next to each field
+    supported_providers: ["stripe"],
+    known_providers: ["stripe","paypal","mollie","klarna","paddle","custom"],
+  });
 
   const loadAll = async () => {
     try {
@@ -51,6 +63,10 @@ export default function AdminPage() {
           stripe_api_key: "",
           stripe_api_key_masked: pc.data.stripe_api_key_masked || "",
           packages: pc.data.packages || [],
+          provider_keys: {},
+          provider_keys_masked: pc.data.provider_keys_masked || {},
+          supported_providers: pc.data.supported_providers || ["stripe"],
+          known_providers: pc.data.known_providers || ["stripe","paypal","mollie","klarna","paddle","custom"],
         });
       } catch {}
     }
@@ -68,6 +84,20 @@ export default function AdminPage() {
     try { await api.post("/admin/verifications/review", { user_id, decision }); toast.success("Entscheidung gespeichert"); await loadAll(); }
     catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
   };
+  const loadLegal = async (key) => {
+    try {
+      const { data } = await api.get(`/legal/${key}`);
+      setLegalKey(key);
+      setLegal({ title: data.title || "", content_markdown: data.content_markdown || "", updated_at: data.updated_at || "" });
+    } catch (e) { toast.error("Konnte Seite nicht laden"); }
+  };
+  const saveLegal = async () => {
+    try {
+      await api.put(`/admin/legal/${legalKey}`, { title: legal.title, content_markdown: legal.content_markdown });
+      toast.success("Rechtliche Seite gespeichert");
+      await loadLegal(legalKey);
+    } catch (e) { toast.error(e.response?.data?.detail || "Speichern fehlgeschlagen"); }
+  };
   const saveAi = async () => {
     try {
       const payload = { provider: aiCfg.provider, model: aiCfg.model, base_url: aiCfg.base_url || null, enabled: aiCfg.enabled };
@@ -81,15 +111,26 @@ export default function AdminPage() {
   const savePay = async () => {
     try {
       const payload = {
-        provider: payCfg.provider, enabled: payCfg.enabled,
+        provider: payCfg.provider,
+        enabled: payCfg.enabled,
         packages: payCfg.packages,
+        provider_keys: payCfg.provider_keys, // only non-empty values overwrite
       };
       if (payCfg.stripe_api_key?.trim()) payload.stripe_api_key = payCfg.stripe_api_key.trim();
       await api.post("/admin/payment-config", payload);
       toast.success("Zahlungs-Konfiguration gespeichert");
-      setPayCfg((c) => ({ ...c, stripe_api_key: "" }));
+      setPayCfg((c) => ({ ...c, stripe_api_key: "", provider_keys: {} }));
       loadAll();
     } catch (e) { toast.error(e.response?.data?.detail || "Speichern fehlgeschlagen"); }
+  };
+  const setProviderKey = (pid, field, value) => {
+    setPayCfg((c) => ({
+      ...c,
+      provider_keys: {
+        ...(c.provider_keys || {}),
+        [pid]: { ...((c.provider_keys || {})[pid] || {}), [field]: value },
+      },
+    }));
   };
   const updatePkg = (idx, patch) => {
     setPayCfg((c) => ({ ...c, packages: c.packages.map((p, i) => (i === idx ? { ...p, ...patch } : p)) }));
@@ -131,6 +172,7 @@ export default function AdminPage() {
               <TabsTrigger value="verifications" data-testid="admin-tab-verifications">Verifizierungen</TabsTrigger>
               {isSuper && <TabsTrigger value="ai" data-testid="admin-tab-ai">KI-Konfig</TabsTrigger>}
               {isSuper && <TabsTrigger value="payments" data-testid="admin-tab-payments">Zahlungen</TabsTrigger>}
+              {isSuper && <TabsTrigger value="legal" data-testid="admin-tab-legal" onClick={() => loadLegal(legalKey)}>Rechtliches</TabsTrigger>}
               <TabsTrigger value="audit" data-testid="admin-tab-audit">Audit</TabsTrigger>
             </TabsList>
 
@@ -290,20 +332,76 @@ export default function AdminPage() {
                       <Switch checked={payCfg.enabled} onCheckedChange={(v) => setPayCfg({ ...payCfg, enabled: v })} data-testid="pay-enabled-switch" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                      <Label>Provider</Label>
+                      <Label>Aktiver Anbieter</Label>
                       <Select value={payCfg.provider} onValueChange={(v) => setPayCfg({ ...payCfg, provider: v })}>
                         <SelectTrigger data-testid="pay-provider-select"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="disabled">Deaktiviert</SelectItem>
-                          <SelectItem value="stripe">Stripe</SelectItem>
+                          {(payCfg.known_providers || []).map((p) => (
+                            <SelectItem key={p} value={p}>
+                              {p === "stripe" ? "Stripe" : p === "paypal" ? "PayPal" : p === "mollie" ? "Mollie" : p === "klarna" ? "Klarna" : p === "paddle" ? "Paddle" : "Benutzerdefiniert"}
+                              {(payCfg.supported_providers || []).includes(p) ? " ✓" : " (Platzhalter)"}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
+                      <div className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1">
+                        ✓ = live integriert. Andere Anbieter können Keys speichern, benötigen aber noch eine Integration.
+                      </div>
                     </div>
-                    <div>
-                      <Label>Stripe API-Key {payCfg.stripe_api_key_masked && <span className="text-xs text-[hsl(var(--muted-foreground))]">({payCfg.stripe_api_key_masked} gespeichert)</span>}</Label>
-                      <Input type="password" value={payCfg.stripe_api_key} onChange={(e) => setPayCfg({ ...payCfg, stripe_api_key: e.target.value })} placeholder="sk_test_..." data-testid="pay-apikey-input" />
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="font-display text-base">Anbieter-Schlüssel</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* Stripe */}
+                      <div className="rounded-md border p-3 space-y-2" data-testid="provider-card-stripe">
+                        <div className="font-medium flex items-center justify-between">
+                          <span>Stripe <span className="text-xs text-[hsl(var(--accent))]">live</span></span>
+                        </div>
+                        <Label className="text-xs">Secret Key {payCfg.provider_keys_masked?.stripe?.secret_key && <span className="text-[hsl(var(--muted-foreground))]">({payCfg.provider_keys_masked.stripe.secret_key} gespeichert)</span>}</Label>
+                        <Input type="password" placeholder="sk_live_..." onChange={(e) => setProviderKey("stripe", "secret_key", e.target.value)} data-testid="pay-stripe-secret-input" />
+                      </div>
+                      {/* PayPal */}
+                      <div className="rounded-md border p-3 space-y-2" data-testid="provider-card-paypal">
+                        <div className="font-medium">PayPal <span className="text-xs text-[hsl(var(--muted-foreground))]">(Platzhalter)</span></div>
+                        <Label className="text-xs">Client ID {payCfg.provider_keys_masked?.paypal?.client_id && <span className="text-[hsl(var(--muted-foreground))]">({payCfg.provider_keys_masked.paypal.client_id} gespeichert)</span>}</Label>
+                        <Input type="password" onChange={(e) => setProviderKey("paypal", "client_id", e.target.value)} data-testid="pay-paypal-client-input" />
+                        <Label className="text-xs">Secret {payCfg.provider_keys_masked?.paypal?.secret && <span className="text-[hsl(var(--muted-foreground))]">({payCfg.provider_keys_masked.paypal.secret} gespeichert)</span>}</Label>
+                        <Input type="password" onChange={(e) => setProviderKey("paypal", "secret", e.target.value)} data-testid="pay-paypal-secret-input" />
+                      </div>
+                      {/* Mollie */}
+                      <div className="rounded-md border p-3 space-y-2" data-testid="provider-card-mollie">
+                        <div className="font-medium">Mollie <span className="text-xs text-[hsl(var(--muted-foreground))]">(Platzhalter)</span></div>
+                        <Label className="text-xs">API Key {payCfg.provider_keys_masked?.mollie?.api_key && <span className="text-[hsl(var(--muted-foreground))]">({payCfg.provider_keys_masked.mollie.api_key} gespeichert)</span>}</Label>
+                        <Input type="password" onChange={(e) => setProviderKey("mollie", "api_key", e.target.value)} data-testid="pay-mollie-key-input" />
+                      </div>
+                      {/* Klarna */}
+                      <div className="rounded-md border p-3 space-y-2" data-testid="provider-card-klarna">
+                        <div className="font-medium">Klarna <span className="text-xs text-[hsl(var(--muted-foreground))]">(Platzhalter)</span></div>
+                        <Label className="text-xs">Username</Label>
+                        <Input type="password" onChange={(e) => setProviderKey("klarna", "username", e.target.value)} data-testid="pay-klarna-user-input" />
+                        <Label className="text-xs">Password</Label>
+                        <Input type="password" onChange={(e) => setProviderKey("klarna", "password", e.target.value)} data-testid="pay-klarna-pass-input" />
+                      </div>
+                      {/* Paddle */}
+                      <div className="rounded-md border p-3 space-y-2" data-testid="provider-card-paddle">
+                        <div className="font-medium">Paddle <span className="text-xs text-[hsl(var(--muted-foreground))]">(Platzhalter)</span></div>
+                        <Label className="text-xs">Vendor ID</Label>
+                        <Input type="password" onChange={(e) => setProviderKey("paddle", "vendor_id", e.target.value)} />
+                        <Label className="text-xs">API Key</Label>
+                        <Input type="password" onChange={(e) => setProviderKey("paddle", "api_key", e.target.value)} />
+                      </div>
+                      {/* Custom */}
+                      <div className="rounded-md border p-3 space-y-2" data-testid="provider-card-custom">
+                        <div className="font-medium">Benutzerdefiniert <span className="text-xs text-[hsl(var(--muted-foreground))]">(Platzhalter)</span></div>
+                        <Label className="text-xs">Endpoint</Label>
+                        <Input onChange={(e) => setProviderKey("custom", "endpoint", e.target.value)} placeholder="https://..." />
+                        <Label className="text-xs">Token</Label>
+                        <Input type="password" onChange={(e) => setProviderKey("custom", "token", e.target.value)} />
+                      </div>
                     </div>
                   </div>
 
@@ -348,7 +446,49 @@ export default function AdminPage() {
                   <div className="flex justify-end">
                     <Button onClick={savePay} data-testid="pay-save-button">Speichern</Button>
                   </div>
-                  <div className="text-xs text-[hsl(var(--muted-foreground))]">Hinweis: ID-Verifizierung ist generell kostenlos und wird hier nicht als Paket verwaltet.</div>
+                  <div className="text-xs text-[hsl(var(--muted-foreground))]">Hinweis: ID-Verifizierung ist generell kostenlos und wird hier nicht als Paket verwaltet. Nur „Stripe" führt aktuell einen echten Checkout durch.</div>
+                </div>
+              </TabsContent>
+            )}
+
+            {isSuper && (
+              <TabsContent value="legal" className="mt-4">
+                <div className="rounded-md border bg-card p-5 space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="font-display text-lg">Rechtliche Seiten</div>
+                    <Select value={legalKey} onValueChange={(v) => loadLegal(v)}>
+                      <SelectTrigger className="w-[260px]" data-testid="legal-page-select"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="terms">Nutzungsbedingungen</SelectItem>
+                        <SelectItem value="privacy">Datenschutzerklärung</SelectItem>
+                        <SelectItem value="imprint">Impressum</SelectItem>
+                        <SelectItem value="community">Community-Richtlinien</SelectItem>
+                        <SelectItem value="cookies">Cookie-Hinweis</SelectItem>
+                        <SelectItem value="cancellation">Widerrufsbelehrung</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Titel</Label>
+                    <Input value={legal.title} onChange={(e) => setLegal({ ...legal, title: e.target.value })} data-testid="legal-title-input" />
+                  </div>
+                  <div>
+                    <Label>Inhalt (Markdown)</Label>
+                    <textarea
+                      value={legal.content_markdown}
+                      onChange={(e) => setLegal({ ...legal, content_markdown: e.target.value })}
+                      className="w-full min-h-[320px] rounded-md border bg-background p-3 font-mono text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))]"
+                      data-testid="legal-content-textarea"
+                    />
+                    <div className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
+                      Markdown unterstützt: # Überschriften, **fett**, _kursiv_, Listen, Links.
+                      Zuletzt geändert: {(legal.updated_at || "").slice(0,10) || "—"}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <a href={`/legal/${legalKey}`} target="_blank" rel="noreferrer" className="text-sm underline text-[hsl(var(--muted-foreground))]" data-testid="legal-preview-link">Vorschau öffnen ↗</a>
+                    <Button onClick={saveLegal} data-testid="legal-save-button">Speichern</Button>
+                  </div>
                 </div>
               </TabsContent>
             )}

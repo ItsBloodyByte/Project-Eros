@@ -81,6 +81,71 @@ def _penis_category(cm):
     return "XXL"
 
 
+# --- Link detection (incl. obfuscated variants) ---
+import re as _re  # noqa: E402
+
+# TLDs of 3+ chars — safer to match without a dot (just whitespace).
+_TLDS_LONG = (
+    r"(?:com|net|org|app|info|xyz|top|icu|pro|dev|one|biz|shop|store|online|"
+    r"site|tech|link|click|live|cloud|fun|host|party|stream|style|today|page|"
+    r"web|news|blog|video|chat|porn|xxx|cam|tube|vip|bet|casino|download)"
+)
+
+# All TLDs including 2-char country codes. Only matched when a DOT is present.
+_TLDS_ALL = (
+    r"(?:com|net|org|de|at|ch|io|app|co|uk|eu|me|biz|tv|gg|shop|store|online|"
+    r"site|tech|link|click|live|cloud|tk|ml|ga|cf|fr|es|it|nl|ru|us|ca|au|jp|"
+    r"info|name|xyz|top|icu|pro|dev|one|page|web|news|blog|video|chat|porn|"
+    r"xxx|cam|tube|vip|bet|casino|download|fun|host|party|stream|style|today)"
+)
+
+_DOT_WORDS = _re.compile(r"\s*(?:\(\s*dot\s*\)|\[\s*dot\s*\]|\{\s*dot\s*\}|·|•)\s*", _re.IGNORECASE)
+
+
+def _normalize_for_link_check(text: str) -> str:
+    if not text:
+        return ""
+    t = text.lower()
+    t = _DOT_WORDS.sub(".", t)
+    t = _re.sub(r"[ \t]+", " ", t)
+    return t
+
+
+# Dotted form (also tolerates whitespace around the dot). Accepts all TLDs.
+_URL_DOTTED_RE = _re.compile(
+    r"(?:(?:https?|ftp)\s*:\s*/\s*/\s*)?"
+    r"(?:[a-z0-9\-]{2,}\s*\.\s*)+"
+    rf"{_TLDS_ALL}(?=[^a-z0-9]|$)",
+    _re.IGNORECASE,
+)
+
+# Space-only form (no dot) — stricter: requires a 3+char domain label AND a long TLD,
+# so common German words ("es", "de", "me") don't trigger false positives.
+_URL_SPACED_RE = _re.compile(
+    r"(?<![a-z0-9])[a-z0-9\-]{3,}\s+"
+    rf"{_TLDS_LONG}(?=[^a-z0-9]|$)",
+    _re.IGNORECASE,
+)
+
+# Also catch bare email addresses (they imply a contact handoff).
+_EMAIL_RE = _re.compile(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", _re.IGNORECASE)
+
+
+def contains_link_like(text: str) -> bool:
+    """Detect obvious + obfuscated URLs and emails in user text."""
+    if not text:
+        return False
+    norm = _normalize_for_link_check(text)
+    if _URL_DOTTED_RE.search(norm) or _URL_SPACED_RE.search(norm) or _EMAIL_RE.search(norm):
+        return True
+    # Aggressive second pass: remove single spaces between letters (e.g. "g o o g l e . c o m")
+    aggressive = _re.sub(r"(?<=[a-z0-9])\s(?=[a-z0-9])", "", norm)
+    if aggressive != norm:
+        if _URL_DOTTED_RE.search(aggressive) or _EMAIL_RE.search(aggressive):
+            return True
+    return False
+
+
 def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
                          privacy: Optional[dict] = None) -> dict:
     photos = doc.get("photos", []) or []
