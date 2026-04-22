@@ -8,7 +8,7 @@ import { Badge } from "../components/ui/badge";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
 import { ReportDialog } from "../components/ReportDialog";
 import { MatchBanner } from "../components/MatchBanner";
-import { Heart, MapPin, Lock, Send, EyeOff, ShieldAlert, ShieldCheck, UserX, Ban, Pencil } from "lucide-react";
+import { Heart, MapPin, Lock, Send, EyeOff, ShieldAlert, ShieldCheck, UserX, Ban, Pencil, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../components/ui/alert-dialog";
@@ -79,7 +79,24 @@ export default function ProfileViewPage() {
         setProfile((p) => ({ ...p, i_liked: true }));
       }
     } catch (e) {
-      toast.error("Failed to like");
+      toast.error(e.response?.data?.detail || "Failed to like");
+    } finally {
+      setLiking(false);
+    }
+  };
+  const superLike = async () => {
+    setLiking(true);
+    try {
+      const { data } = await api.post("/likes/super", { target_user_id: id });
+      if (data.matched) {
+        toast.success("Super-Like · Match! ✨");
+        setProfile((p) => ({ ...p, i_liked: true, they_liked: true, match_id: data.match_id, i_super_liked: true }));
+      } else {
+        toast.success("Super-Like gesendet ✨");
+        setProfile((p) => ({ ...p, i_liked: true, i_super_liked: true }));
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Super-Like fehlgeschlagen");
     } finally {
       setLiking(false);
     }
@@ -296,6 +313,18 @@ export default function ProfileViewPage() {
                     ) : (
                       <Button onClick={like} disabled={liking} data-testid="like-button" className="gap-1">
                         <Heart className="h-4 w-4" /> {t("profile.like")}
+                      </Button>
+                    )}
+                    {me?.is_premium && !profile.match_id && !profile.i_liked && (
+                      <Button
+                        onClick={superLike}
+                        disabled={liking}
+                        variant="secondary"
+                        className="gap-1 bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] hover:bg-[hsl(var(--accent))]/25 ring-1 ring-[hsl(var(--accent))]/40"
+                        data-testid="super-like-button"
+                        title="Super-Like hebt dich in der Inbox der Empfänger:in hervor"
+                      >
+                        <Sparkles className="h-4 w-4" /> Super-Like
                       </Button>
                     )}
                     {me?.is_premium && !profile.match_id && (

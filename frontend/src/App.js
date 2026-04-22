@@ -18,6 +18,8 @@ import AdminPage from "./pages/AdminPage";
 import AccountPage from "./pages/AccountPage";
 import EventsPage from "./pages/EventsPage";
 import LegalPage from "./pages/LegalPage";
+import BlogListPage from "./pages/BlogListPage";
+import BlogPostPage from "./pages/BlogPostPage";
 import { BroadcastBanner } from "./components/BroadcastBanner";
 import "./App.css";
 
@@ -56,6 +58,8 @@ function AppRoutes() {
       <Route path="/account" element={<Protected><AccountPage /></Protected>} />
       <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
+      <Route path="/blog" element={<Protected><BlogListPage /></Protected>} />
+      <Route path="/blog/:slug" element={<Protected><BlogPostPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

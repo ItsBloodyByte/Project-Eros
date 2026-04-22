@@ -77,7 +77,7 @@ E2E: Auth → Profile/Photo/AI → Discover mutual-filter → Like/Match → Cha
 
 ---
 
-## Phase 3 (Roadmap add-ons) — complete
+## Phase 3 (Roadmap add-ons)
 ### Delivered
 - E-Mail Verifizierung (In-App Code; `dev_code` für Tests).
 - MFA (TOTP): Setup/Enable/Disable + MFA Login Challenge.
@@ -100,7 +100,7 @@ E2E: Auth → Profile/Photo/AI → Discover mutual-filter → Like/Match → Cha
 
 ---
 
-## Phase 4 — Multi-language, Extended Profiles, Mobile Scaffold — complete
+## Phase 4 — Multi-language, Extended Profiles, Mobile Scaffold
 ### Delivered
 - `react-i18next` (Deutsch primär) + Struktur für weitere Sprachen.
 - Erweiterte Profile: Kinks, Body-Dimensions inkl. Auto-Kategorisierung.
@@ -271,6 +271,137 @@ Phase 5 wurde in mehreren Teilschritten umgesetzt und anschließend getestet.
 
 ---
 
+## Phase 6 — Moderation UX Add-ons, City Display, Team Badge Tooltips, Bulk Actions, Premium/Promos, Blog
+Diese Phase bündelt die nach Phase 5.6 gewünschten Erweiterungen.
+
+### Phase 6.0 — Profil: Stadt anzeigen
+**Ziele (erfüllt):**
+- Stadt soll bei Profilen angezeigt werden (wo sich der Nutzer befindet).
+
+**Umsetzung (Delivered):**
+- Backend: `public_user_from_doc` gibt `city` zurück (aus `location.city`).
+- Frontend:
+  - `ProfileCard`: Stadt + Distanz kombiniert (City priorisiert, MapPin-Icon sinnvoll wiederverwendet).
+  - `ProfileViewPage`: Stadt unter Header/Badges sichtbar.
+
+**Status:** Abgeschlossen.
+
+### Phase 6.1 — Team-Badges mit Tooltip-Erklärung
+**Ziele (erfüllt):**
+- Team Badges (Support, Content Reviewer, usw.) sollen bei Hover erklärt werden.
+
+**Umsetzung (Delivered):**
+- Neue Komponente: `RoleBadge` mit Tooltip und konsistenter Farb-/Icon-Map.
+- Integration:
+  - `AdminPage` Users-Tabelle
+  - `ProfileViewPage`
+  - `ProfileCard` (wenn `admin_flags.role` gesetzt)
+
+**Status:** Abgeschlossen.
+
+### Phase 6.2 — Bulk-User-Actions im Admin-Discover-Grid (Task 2 / P2)
+**Ziele (erfüllt, verifiziert):**
+- Multi-Select im Admin Discover + Bulk-Aktionen
+- Serverseitige Admin Bulk-Endpoints mit Audit Logging
+
+**Umsetzung (Delivered):**
+- Backend:
+  - `POST /api/admin/users/bulk` mit Actions:
+    - `ban`, `unban`, `hide`, `unhide`, `shadow`, `unshadow`, `require_id_verification`, `clear_id_requirement`
+  - Schutzregeln:
+    - Caller selbst + `EROS_SYSTEM_USER_ID` sind geschützt
+    - Superadmins sind vor Mass-„ban/hide/shadow“ geschützt (außer Superadmin führt es aus)
+  - Audit-Logging: `bulk_{action}` inkl. Meta (User IDs, Count, Reason, modified_count)
+- Frontend:
+  - `DiscoverPage`: Admin-Ansicht + Auswahlmodus
+  - Checkbox-Overlay auf ProfileCards + sticky `AdminBulkBar`
+  - Confirm-Dialog pro Aktion
+
+**Status:** Abgeschlossen.
+
+### Phase 6.3 — Promo-System + Premium-Erweiterungen (Phase A)
+**Ziele (erfüllt, verifiziert via curl + Screenshots):**
+- Promoaktionen:
+  - Nächste X Registrierungen erhalten Premium (max_uses + auto_on_register)
+  - Promo Codes: zeitbasiert (starts_at/expires_at), nutzeranzahl-basiert (max_uses), optional 1×/User
+  - Einlösung im Konto-Bereich
+- Premium sinnvoll erweitern:
+  - Visitors („Wer hat mich besucht") (30 Tage Fenster)
+  - Inkognito/Stealth Mode
+  - Erweiterte Filter Premium-gated
+  - Super-Like (1/Tag)
+  - Free Like-Limit (Default 5/Tag), admin-konfigurierbar
+
+**Umsetzung (Delivered):**
+- Backend:
+  - Platform config:
+    - `GET /api/platform-config`
+    - `GET/PUT /api/admin/platform-config`
+    - Settings u. a.: `free_daily_like_limit` (Default 5), `super_like_daily_limit` (Default 1), `visitors_window_days` (Default 30)
+  - Likes:
+    - Free daily limit enforced in `POST /api/likes`
+    - `GET /api/likes/quota`
+    - `POST /api/likes/super` (Premium required + daily limit)
+  - Visitors:
+    - `_record_visit` in `GET /api/users/{user_id}` (nicht bei stealth + nicht für staff/self)
+    - `GET /api/me/visitors` (Premium-gated; Free bekommt Teaser-Count)
+  - Privacy:
+    - `privacy.stealth_mode` im Model
+    - `/api/seen/{id}` respektiert stealth (kein Persist)
+  - Promo Codes:
+    - Admin CRUD: `POST/GET/PATCH/DELETE /api/admin/promo-codes`
+    - Redeem: `POST /api/promo/redeem`
+    - Auto-Promos bei Registrierung: `_maybe_apply_auto_register_promos` im Register-Flow
+  - Discovery:
+    - Premium-only Filter-Keys werden für Free-User serverseitig ignoriert
+  - DB Indexe:
+    - `promo_codes.code` unique, Redemption indexes, visits indexes, platform_config key, etc.
+
+- Frontend:
+  - Admin:
+    - `AdminPromosTab`: Plattform-Konfig + Promo-Editor + Codes-Liste
+  - Konto:
+    - `PremiumExtrasSection`: 4 Feature-Cards (Likes, Super-Like, Visitors, Inkognito)
+    - Promo-Einlösung UI
+    - Visitors Grid (Premium)
+    - Stealth Toggle (Premium)
+  - Profil:
+    - Super-Like Button in `ProfileViewPage` (Premium)
+
+**Status:** Abgeschlossen.
+
+### Phase 6.4 — Blog (Phase B) mit TipTap Rich-Text-Editor
+**Ziele (erfüllt, verifiziert via Screenshots + API):**
+- Blogseite öffentlich (auth-only wie Rest der App): Liste + Detail
+- Admin-Editor mit Rich-Text (TipTap) + Status (Draft/Published/Archived)
+
+**Umsetzung (Delivered):**
+- Backend:
+  - Public:
+    - `GET /api/blog/posts` (published list, tag filter)
+    - `GET /api/blog/posts/{slug}` (published; staff darf drafts/archived sehen)
+    - `GET /api/blog/tags`
+  - Admin CRUD:
+    - `GET/POST/PATCH/DELETE /api/admin/blog/posts`
+    - Auto-Slug, Unique-Slug, Reading-Time, Tags, Status
+  - DB Indexe: `blog_posts.slug` unique, status/published_at sort
+
+- Frontend:
+  - `RichTextEditor` (TipTap) inkl. Toolbar:
+    - Undo/Redo, H1–H3, Bold/Italic/Strike/Code, Listen, Quote, HR
+    - Align (L/C/R), Link, Image per URL
+  - `AdminBlogTab` im Admin Panel
+  - Öffentliche Seiten:
+    - `BlogListPage` (Tags, Covers)
+    - `BlogPostPage` (Prose Styling)
+  - Navigation:
+    - Header-Link „Blog"
+    - Routing: `/blog`, `/blog/:slug`
+
+**Status:** Abgeschlossen.
+
+---
+
 ## Offene Issues / Risiken
 ### Issue 1: Session persistence UX issue (Recurring)
 - **Status:** behoben/abgemildert durch Loading-Gate + Boot-Token Handling.
@@ -286,7 +417,11 @@ Phase 5 wurde in mehreren Teilschritten umgesetzt und anschließend getestet.
   - Funktionalität (Discovery/Block/Unmatch) ist serverseitig wirksam.
   - UI kann die Blockliste nicht direkt anzeigen.
 - Empfehlung:
-  - `public_user_from_doc`/`me` Serializer um `blocked_user_ids` (für Self) erweitern **oder** dedizierten Endpoint `GET /api/me/blocks` bereitstellen.
+  - `me` Serializer um `blocked_user_ids` (für Self) erweitern **oder** dedizierten Endpoint `GET /api/me/blocks` bereitstellen.
+
+### Issue 4: Promo Auto-Register Kampagnen beeinflussen Free-Limit Tests
+- Wenn `auto_on_register` aktiv ist, wird Free-Like-Limit (korrekt) umgangen, weil neue Nutzer dann Premium werden.
+- **Status:** Expected behavior; beim QA für Free-Limit Testkampagnen temporär deaktivieren.
 
 ---
 
@@ -299,21 +434,34 @@ Phase 5 wurde in mehreren Teilschritten umgesetzt und anschließend getestet.
   - entweder Abfrage gegen die bereits als Chats gespeicherten Broadcast-Matches
   - oder dedizierte Broadcast-Collection mit User-Read-State
 
-### Task 2 (P2): Bulk-User-Actions im Admin-Discover-Grid
-**Ziel:** Schnellaktionen für Moderation in großen Mengen.
-- UI: Multi-Select im Admin Discover + Aktionen (ban/unban, hide/unhide, shadow restrict, retention lock etc.)
-- Backend: Admin Bulk-Endpoints mit Audit Logging
+### Task 3 (P2, Future → jetzt bestätigt als Ziel): Re-sync `/app/mobile` (React Native) — Voll-Parität (Option C)
+**Ziel:** Vollständige Feature- und UX-Parität mit Web.
 
-### Task 3 (P2, Future): Re-sync `/app/mobile` (React Native)
-**Ziel:** Feature-Parität/UX-Parität mit Web-Stand.
-- Routing/Design-System angleichen
-- Broadcast Inbox + Moderation/Privacy-Endpoints übernehmen
+**Leitplanken:**
+- Schrittweise in Iterationen, beginnend mit Core User-Flows, dann Premium/Promos/Blog, danach Admin/Moderation.
+- API bleibt identisch; Mobile implementiert Clients/Views.
+
+**Iterationen (Vorschlag):**
+1. Auth + Onboarding + Discover Grid + ProfileView + Likes/Matches
+2. Chat + Broadcast Inbox + Read-only System Chats
+3. Account/Settings: Premium extras, Promo redeem, Visitors, ID Verification, Travel
+4. Albums + Events
+5. Reports (User-side) + Moderation Entry Points
+6. Optional: Admin Panel auf Mobile (nur wenn wirklich gewünscht; UX auf Mobile anspruchsvoll)
+
+**Status:** Offen / in Planung.
 
 ---
 
 ## Status / Zusammenfassung
 - Phase 1–4: **fertig**.
 - Phase 5.0–5.6: **fertig (Backend + Frontend)** inkl. Broadcast-System und verifizierter Segment-Broadcast-Composer UI.
+- Phase 6.0–6.4: **fertig**:
+  - Stadt-Anzeige in Profilen
+  - Team-Badges mit Tooltip
+  - Admin Discover Bulk-Actions
+  - Promo-System + Premium-Erweiterungen
+  - Blog mit TipTap (Admin-Editor + öffentliche Seiten)
 
 ### Final delivery (aktualisiert)
 - Voll funktionsfähige Web-App mit:
@@ -321,6 +469,7 @@ Phase 5 wurde in mehreren Teilschritten umgesetzt und anschließend getestet.
   - Phase 5: Travel Planner, ID-Verifizierung (kostenfrei), Auto-Mod Shadow-Restrict, Admin AI Config, Admin Payment Config, 5-Foto Limit, visited Eye Marker, elegantes UI-Upgrade.
   - Phase 5.5: moderne Typografie, konsistente Container-Breiten, Double-Row Desktop Layout, Preview Mode, ID-only Verified Badge, vollständige Admin Report-Details, Unmatch/Block, Albums Skeletons, Screenshot-Audit.
   - Phase 5.6: Admin WS Notifications, Report-Kontext/Locks/Retention, Minor Block + IP Flagging, signed Broadcasts als read-only Chats, segmentierte Broadcasts inkl. Live-Preview UI.
+  - Phase 6: City Anzeige, RoleBadge Tooltips, Bulk Actions, Promo/Platform-Config/Visitors/Stealth/Super-Like, Blog mit TipTap.
   - Keine Tracker (Posthog/Emergent) im Frontend.
 
-**Status:** COMPLETED
+**Status:** COMPLETED (Web). Mobile Voll-Parität: OPEN.

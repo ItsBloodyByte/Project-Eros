@@ -109,6 +109,21 @@ async def startup():
         await db.events.create_index("id", unique=True)
         await db.events.create_index("starts_at")
         await db.legal_pages.create_index("key", unique=True)
+        # Phase 6: visitors, promo codes, platform config
+        try:
+            await db.visits.create_index([("viewer_id", 1), ("target_id", 1)], unique=True)
+            await db.visits.create_index([("target_id", 1), ("last_visited_at", -1)])
+            await db.promo_codes.create_index("code", unique=True)
+            await db.promo_codes.create_index("id", unique=True)
+            await db.promo_codes.create_index("auto_on_register")
+            await db.promo_redemptions.create_index([("code_id", 1), ("user_id", 1)])
+            await db.promo_redemptions.create_index([("user_id", 1), ("redeemed_at", -1)])
+            await db.platform_config.create_index("key", unique=True)
+            await db.blog_posts.create_index("id", unique=True)
+            await db.blog_posts.create_index("slug", unique=True)
+            await db.blog_posts.create_index([("status", 1), ("published_at", -1)])
+        except Exception as ex:
+            logger.warning("Phase-6 index setup issue: %s", ex)
         # IP flagging with automatic expiry (minor-attempt protection)
         try:
             await db.ip_flags.create_index("ip")
@@ -364,6 +379,17 @@ async def register(body: RegisterRequest, request: "Request" = None):
     }
     await db.users.insert_one(doc)
     await _audit(user_id, "register", user_id, {"ip": ip, "flagged_ip": flagged})
+    # Auto-apply any active auto_on_register promo campaigns (e.g. "first 100 get 30 days premium")
+    try:
+        applied_promos = await _maybe_apply_auto_register_promos(doc)
+        if applied_promos:
+            await _audit(user_id, "auto_promo_applied", user_id, {"promos": applied_promos})
+            # reload doc to capture new expiries
+            reloaded = await db.users.find_one({"id": user_id})
+            if reloaded:
+                doc = reloaded
+    except Exception:
+        pass
     if flagged:
         try:
             await notify_admins({
@@ -614,6 +640,13 @@ async def discover(
     seen = set(user.get("seen_user_ids", []) or [])
     blocked = set(user.get("blocked_user_ids", []) or [])
 
+    # Premium gating: advanced filters are only applied for premium/staff users.
+    cfg = await _get_platform_config()
+    premium_only_filter_keys = set(cfg.get("premium_only_filter_keys") or [])
+    user_is_premium = _is_user_premium(user)
+    if premium_only_filter_keys and not user_is_premium:
+        prefs = {k: v for k, v in prefs.items() if k not in premium_only_filter_keys}
+
     query: Dict = {
         "id": {"$ne": user["id"]},
         "banned": {"$ne": True},
@@ -728,6 +761,9 @@ async def discover(
 
 @api_router.post("/seen/{user_id}")
 async def mark_seen(user_id: str, user=Depends(_require_user)):
+    # Stealth mode: don't persist "seen" markers so others get no trace
+    if (user.get("privacy") or {}).get("stealth_mode"):
+        return {"ok": True, "stealth": True}
     await db.users.update_one({"id": user["id"]}, {"$addToSet": {"seen_user_ids": user_id}})
     return {"ok": True}
 
@@ -740,6 +776,12 @@ async def view_user(user_id: str, user=Depends(_require_user)):
     if not is_admin and not is_self:
         if doc.get("banned") or doc.get("privacy", {}).get("hidden_mode"):
             raise HTTPException(404, "Not found")
+    # Record visit (unless self, admin-mode viewing, or stealth viewer)
+    if not is_self and not is_admin:
+        try:
+            await _record_visit(user, user_id)
+        except Exception:
+            pass
     pub = public_user_from_doc(
         doc, viewer_location=(user.get("location") or {}).get("coordinates")
     )
@@ -777,6 +819,18 @@ async def create_like(body: LikeRequest, user=Depends(_require_user)):
     target = await db.users.find_one({"id": body.target_user_id})
     if not target or target.get("banned"):
         raise HTTPException(404, "Target not found")
+    # Free-tier daily like limit (premium / staff bypass)
+    if not _is_user_premium(user):
+        cfg = await _get_platform_config()
+        free_limit = int(cfg.get("free_daily_like_limit", 5))
+        already = await db.likes.find_one({"from_user": user["id"], "to_user": body.target_user_id})
+        if not already and free_limit > 0:
+            sent_today = await _count_likes_today(user["id"])
+            if sent_today >= free_limit:
+                raise HTTPException(
+                    429,
+                    f"Tägliches Like-Limit erreicht ({free_limit}/Tag). Mit Premium sind Likes unbegrenzt.",
+                )
     like_doc = {
         "id": str(uuid.uuid4()),
         "from_user": user["id"],
@@ -3541,6 +3595,660 @@ async def admin_update_legal(key: str, body: LegalPageUpdate, user=Depends(_requ
     }
     await db.legal_pages.update_one({"key": key}, {"$set": upd}, upsert=True)
     await _audit(user["id"], "legal_update", key, {"title": body.title, "length": len(body.content_markdown)})
+    return {"ok": True}
+
+
+# ---------- Platform config (admin-tunable runtime settings) ----------
+DEFAULT_PLATFORM_CONFIG = {
+    "free_daily_like_limit": 5,
+    "super_like_daily_limit": 1,
+    "visitors_window_days": 30,
+    "premium_only_filter_keys": [
+        "kinks", "cup_sizes", "penis_categories", "sti_status",
+        "body_types", "min_height_cm", "max_height_cm",
+    ],
+    "premium_feature_keys": [
+        "visitors", "stealth_mode", "advanced_filters",
+        "super_like", "unlimited_likes",
+    ],
+}
+
+
+async def _get_platform_config() -> dict:
+    """Return persisted platform config merged with defaults."""
+    doc = await db.platform_config.find_one({"key": "main"}) or {}
+    merged = {**DEFAULT_PLATFORM_CONFIG, **{k: v for k, v in doc.items() if k not in {"_id", "key"}}}
+    return merged
+
+
+@api_router.get("/platform-config")
+async def public_platform_config(user=Depends(_require_user)):
+    """Config exposed to every authenticated client (no secrets)."""
+    cfg = await _get_platform_config()
+    now_iso = now_utc().isoformat()
+    is_premium = bool(user.get("premium_expires_at") and user["premium_expires_at"] > now_iso) or user.get("role") != "user"
+    return {
+        "free_daily_like_limit": int(cfg.get("free_daily_like_limit", 5)),
+        "super_like_daily_limit": int(cfg.get("super_like_daily_limit", 1)),
+        "visitors_window_days": int(cfg.get("visitors_window_days", 30)),
+        "premium_only_filter_keys": list(cfg.get("premium_only_filter_keys", [])),
+        "premium_feature_keys": list(cfg.get("premium_feature_keys", [])),
+        "is_premium": is_premium,
+    }
+
+
+@api_router.get("/admin/platform-config")
+async def admin_get_platform_config(user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    return await _get_platform_config()
+
+
+@api_router.put("/admin/platform-config")
+async def admin_update_platform_config(payload: dict, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    clean: Dict = {}
+    if "free_daily_like_limit" in payload:
+        v = int(payload["free_daily_like_limit"])
+        if v < 0 or v > 1000:
+            raise HTTPException(400, "free_daily_like_limit must be 0-1000")
+        clean["free_daily_like_limit"] = v
+    if "super_like_daily_limit" in payload:
+        v = int(payload["super_like_daily_limit"])
+        if v < 0 or v > 100:
+            raise HTTPException(400, "super_like_daily_limit must be 0-100")
+        clean["super_like_daily_limit"] = v
+    if "visitors_window_days" in payload:
+        v = int(payload["visitors_window_days"])
+        if v < 1 or v > 365:
+            raise HTTPException(400, "visitors_window_days must be 1-365")
+        clean["visitors_window_days"] = v
+    if "premium_only_filter_keys" in payload and isinstance(payload["premium_only_filter_keys"], list):
+        clean["premium_only_filter_keys"] = [str(x) for x in payload["premium_only_filter_keys"]]
+    if not clean:
+        raise HTTPException(400, "Nothing to update")
+    await db.platform_config.update_one(
+        {"key": "main"}, {"$set": {**clean, "updated_by": user["id"], "updated_at": now_utc().isoformat()}},
+        upsert=True,
+    )
+    await _audit(user["id"], "platform_config_update", None, clean)
+    return await _get_platform_config()
+
+
+# ---------- Premium helpers ----------
+def _is_user_premium(doc: dict) -> bool:
+    if not doc:
+        return False
+    if doc.get("role") and doc["role"] != "user":
+        return True
+    exp = doc.get("premium_expires_at")
+    return bool(exp and exp > now_utc().isoformat())
+
+
+def _today_key_utc() -> str:
+    return now_utc().strftime("%Y-%m-%d")
+
+
+async def _count_likes_today(user_id: str, kind: str = "like") -> int:
+    """Counts how many likes/super-likes the user has sent today (UTC)."""
+    start = now_utc().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    q: Dict = {"from_user": user_id, "created_at": {"$gte": start}}
+    if kind == "super":
+        q["super"] = True
+    return await db.likes.count_documents(q)
+
+
+# ---------- Visitors (Premium feature) ----------
+async def _record_visit(viewer: dict, target_id: str):
+    """Log a visit unless viewer is in stealth mode or viewing self, banned, system."""
+    if not viewer or not target_id or viewer.get("id") == target_id:
+        return
+    if viewer.get("id") == EROS_SYSTEM_USER_ID or target_id == EROS_SYSTEM_USER_ID:
+        return
+    if (viewer.get("privacy") or {}).get("stealth_mode"):
+        return
+    try:
+        await db.visits.update_one(
+            {"viewer_id": viewer["id"], "target_id": target_id},
+            {
+                "$set": {
+                    "viewer_id": viewer["id"],
+                    "target_id": target_id,
+                    "last_visited_at": now_utc().isoformat(),
+                },
+                "$inc": {"count": 1},
+                "$setOnInsert": {"first_visited_at": now_utc().isoformat()},
+            },
+            upsert=True,
+        )
+    except Exception:
+        pass
+
+
+@api_router.get("/me/visitors")
+async def my_visitors(user=Depends(_require_user), limit: int = Query(40, ge=1, le=200)):
+    """Visitors of my profile in the last N days. Premium-gated (non-premium sees a teaser count only)."""
+    cfg = await _get_platform_config()
+    window_days = int(cfg.get("visitors_window_days", 30))
+    cutoff = (now_utc() - timedelta(days=window_days)).isoformat()
+    is_premium = _is_user_premium(user)
+    q = {"target_id": user["id"], "last_visited_at": {"$gte": cutoff}}
+    total = await db.visits.count_documents(q)
+    if not is_premium:
+        return {"total": total, "window_days": window_days, "visitors": [], "premium_required": True}
+    cursor = db.visits.find(q).sort("last_visited_at", -1).limit(limit)
+    docs = await cursor.to_list(length=limit)
+    visitor_ids = [d.get("viewer_id") for d in docs if d.get("viewer_id")]
+    users = {}
+    if visitor_ids:
+        async for u in db.users.find({"id": {"$in": visitor_ids}}):
+            users[u["id"]] = u
+    out = []
+    viewer_coords = (user.get("location") or {}).get("coordinates")
+    for d in docs:
+        vid = d.get("viewer_id")
+        vu = users.get(vid)
+        if not vu or vu.get("banned"):
+            continue
+        pub = public_user_from_doc(vu, viewer_location=viewer_coords)
+        pub["visited_at"] = d.get("last_visited_at")
+        pub["visit_count"] = int(d.get("count", 1))
+        out.append(pub)
+    return {"total": total, "window_days": window_days, "visitors": out, "premium_required": False}
+
+
+# ---------- Super-Like (Premium, rate-limited) ----------
+@api_router.post("/likes/super")
+async def super_like(payload: dict, user=Depends(_require_user)):
+    target_user_id = (payload or {}).get("target_user_id")
+    if not target_user_id:
+        raise HTTPException(400, "target_user_id required")
+    if target_user_id == user["id"]:
+        raise HTTPException(400, "Cannot super-like yourself")
+    if not _is_user_premium(user):
+        raise HTTPException(402, "Super-Like ist ein Premium-Feature")
+    target = await db.users.find_one({"id": target_user_id})
+    if not target or target.get("banned"):
+        raise HTTPException(404, "Target not found")
+    cfg = await _get_platform_config()
+    daily_limit = int(cfg.get("super_like_daily_limit", 1))
+    sent_today = await _count_likes_today(user["id"], kind="super")
+    if sent_today >= daily_limit:
+        raise HTTPException(429, f"Super-Like-Tageslimit erreicht ({daily_limit}/Tag)")
+    # Insert or upgrade an existing like to a super-like
+    now_iso = now_utc().isoformat()
+    existing = await db.likes.find_one({"from_user": user["id"], "to_user": target_user_id})
+    if existing:
+        await db.likes.update_one({"_id": existing["_id"]}, {"$set": {"super": True, "super_at": now_iso}})
+    else:
+        await db.likes.insert_one({
+            "id": str(uuid.uuid4()),
+            "from_user": user["id"],
+            "to_user": target_user_id,
+            "created_at": now_iso,
+            "super": True,
+            "super_at": now_iso,
+        })
+    # Reuse matching logic
+    mutual = await db.likes.find_one({"from_user": target_user_id, "to_user": user["id"]})
+    match_id = None
+    if mutual:
+        existing_m = await db.matches.find_one({
+            "$or": [
+                {"user_a": user["id"], "user_b": target_user_id},
+                {"user_a": target_user_id, "user_b": user["id"]},
+            ]
+        })
+        if existing_m:
+            match_id = existing_m["id"]
+        else:
+            match_id = str(uuid.uuid4())
+            await db.matches.insert_one({
+                "id": match_id,
+                "user_a": user["id"],
+                "user_b": target_user_id,
+                "created_at": now_iso,
+                "last_message_at": None,
+                "super": True,
+            })
+            await _audit(user["id"], "match_created", match_id, {"super": True})
+    await _audit(user["id"], "super_like", target_user_id)
+    return {"liked": True, "super": True, "matched": bool(match_id), "match_id": match_id}
+
+
+@api_router.get("/likes/quota")
+async def likes_quota(user=Depends(_require_user)):
+    """Returns the caller's remaining like budget for today."""
+    cfg = await _get_platform_config()
+    is_premium = _is_user_premium(user)
+    today = await _count_likes_today(user["id"])
+    super_today = await _count_likes_today(user["id"], kind="super")
+    free_limit = int(cfg.get("free_daily_like_limit", 5))
+    super_limit = int(cfg.get("super_like_daily_limit", 1))
+    return {
+        "is_premium": is_premium,
+        "likes_today": today,
+        "daily_like_limit": None if is_premium else free_limit,
+        "likes_remaining": None if is_premium else max(0, free_limit - today),
+        "super_likes_today": super_today,
+        "super_likes_remaining": (max(0, super_limit - super_today) if is_premium else 0),
+    }
+
+
+# ---------- Promo Codes ----------
+ALLOWED_PROMO_KINDS = {"premium_days", "boost_minutes"}
+
+
+def _promo_public(doc: dict) -> dict:
+    return {
+        "id": doc.get("id"),
+        "code": doc.get("code"),
+        "kind": doc.get("kind"),
+        "value": int(doc.get("value", 0)),
+        "max_uses": doc.get("max_uses"),
+        "used_count": int(doc.get("used_count", 0)),
+        "starts_at": doc.get("starts_at"),
+        "expires_at": doc.get("expires_at"),
+        "one_per_user": bool(doc.get("one_per_user", True)),
+        "new_users_only": bool(doc.get("new_users_only", False)),
+        "auto_on_register": bool(doc.get("auto_on_register", False)),
+        "active": bool(doc.get("active", True)),
+        "description": doc.get("description"),
+        "created_at": doc.get("created_at"),
+        "created_by": doc.get("created_by"),
+    }
+
+
+async def _apply_promo_to_user(promo: dict, user_doc: dict) -> dict:
+    """Grants the promo's entitlement to the user and returns the updated user doc."""
+    kind = promo.get("kind")
+    value = int(promo.get("value", 0))
+    update_set: Dict = {}
+    now = now_utc()
+    if kind == "premium_days" and value > 0:
+        current_exp = user_doc.get("premium_expires_at")
+        try:
+            base = datetime.fromisoformat(current_exp) if current_exp and current_exp > now.isoformat() else now
+        except Exception:
+            base = now
+        new_exp = base + timedelta(days=value)
+        update_set["premium_expires_at"] = new_exp.isoformat()
+    elif kind == "boost_minutes" and value > 0:
+        current = user_doc.get("boost_expires_at")
+        try:
+            base = datetime.fromisoformat(current) if current and current > now.isoformat() else now
+        except Exception:
+            base = now
+        new_exp = base + timedelta(minutes=value)
+        update_set["boost_expires_at"] = new_exp.isoformat()
+    if update_set:
+        await db.users.update_one({"id": user_doc["id"]}, {"$set": update_set})
+    return {**user_doc, **update_set}
+
+
+@api_router.post("/admin/promo-codes")
+async def admin_create_promo(payload: dict, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    payload = payload or {}
+    code = (payload.get("code") or "").strip().upper()
+    if not code or len(code) < 3 or len(code) > 40 or not all(c.isalnum() or c in "-_" for c in code):
+        raise HTTPException(400, "Ungültiger Code (3-40 Zeichen, A-Z/0-9/-_)")
+    kind = payload.get("kind")
+    if kind not in ALLOWED_PROMO_KINDS:
+        raise HTTPException(400, f"kind muss eines sein aus {sorted(ALLOWED_PROMO_KINDS)}")
+    value = int(payload.get("value") or 0)
+    if value <= 0:
+        raise HTTPException(400, "value muss > 0 sein")
+    existing = await db.promo_codes.find_one({"code": code})
+    if existing:
+        raise HTTPException(409, "Code existiert bereits")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "code": code,
+        "kind": kind,
+        "value": value,
+        "max_uses": int(payload["max_uses"]) if payload.get("max_uses") not in (None, "") else None,
+        "used_count": 0,
+        "starts_at": payload.get("starts_at") or None,
+        "expires_at": payload.get("expires_at") or None,
+        "one_per_user": bool(payload.get("one_per_user", True)),
+        "new_users_only": bool(payload.get("new_users_only", False)),
+        "auto_on_register": bool(payload.get("auto_on_register", False)),
+        "active": bool(payload.get("active", True)),
+        "description": (payload.get("description") or "").strip() or None,
+        "created_at": now_utc().isoformat(),
+        "created_by": user["id"],
+    }
+    await db.promo_codes.insert_one(doc)
+    await _audit(user["id"], "promo_code_create", doc["id"], {"code": code, "kind": kind, "value": value})
+    return _promo_public(doc)
+
+
+@api_router.get("/admin/promo-codes")
+async def admin_list_promos(user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin", "support"])
+    cursor = db.promo_codes.find({}).sort("created_at", -1).limit(500)
+    items = await cursor.to_list(length=500)
+    return {"codes": [_promo_public(x) for x in items]}
+
+
+@api_router.patch("/admin/promo-codes/{promo_id}")
+async def admin_update_promo(promo_id: str, payload: dict, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    allowed = {"active", "max_uses", "starts_at", "expires_at", "one_per_user", "new_users_only", "auto_on_register", "description", "value"}
+    clean: Dict = {}
+    for k in allowed:
+        if k in payload:
+            clean[k] = payload[k]
+    if "value" in clean and int(clean["value"]) <= 0:
+        raise HTTPException(400, "value muss > 0 sein")
+    if not clean:
+        raise HTTPException(400, "Nothing to update")
+    res = await db.promo_codes.update_one({"id": promo_id}, {"$set": clean})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Promo nicht gefunden")
+    await _audit(user["id"], "promo_code_update", promo_id, clean)
+    doc = await db.promo_codes.find_one({"id": promo_id})
+    return _promo_public(doc)
+
+
+@api_router.delete("/admin/promo-codes/{promo_id}")
+async def admin_delete_promo(promo_id: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    res = await db.promo_codes.delete_one({"id": promo_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Promo nicht gefunden")
+    await _audit(user["id"], "promo_code_delete", promo_id)
+    return {"ok": True}
+
+
+async def _validate_promo_for_user(promo: dict, user_doc: dict, *, at_registration: bool = False) -> Optional[str]:
+    """Returns an error string if promo cannot be redeemed by user. None if OK."""
+    if not promo or not promo.get("active"):
+        return "Dieser Code ist nicht (mehr) aktiv."
+    now_iso = now_utc().isoformat()
+    if promo.get("starts_at") and promo["starts_at"] > now_iso:
+        return "Dieser Code ist noch nicht aktiv."
+    if promo.get("expires_at") and promo["expires_at"] < now_iso:
+        return "Dieser Code ist abgelaufen."
+    max_uses = promo.get("max_uses")
+    if max_uses is not None and int(promo.get("used_count", 0)) >= int(max_uses):
+        return "Dieser Code wurde bereits vollständig eingelöst."
+    if promo.get("new_users_only") and not at_registration:
+        # Only allowed if user was created in the last 24h and hasn't redeemed yet
+        try:
+            created = datetime.fromisoformat(user_doc.get("created_at") or now_iso)
+            if (now_utc() - created).total_seconds() > 86400:
+                return "Dieser Code gilt nur für neue Registrierungen."
+        except Exception:
+            pass
+    if promo.get("one_per_user"):
+        already = await db.promo_redemptions.find_one({"code_id": promo["id"], "user_id": user_doc["id"]})
+        if already:
+            return "Du hast diesen Code bereits eingelöst."
+    return None
+
+
+@api_router.post("/promo/redeem")
+async def redeem_promo(payload: dict, user=Depends(_require_user)):
+    code = (payload or {}).get("code", "").strip().upper()
+    if not code:
+        raise HTTPException(400, "Code erforderlich")
+    promo = await db.promo_codes.find_one({"code": code})
+    if not promo:
+        raise HTTPException(404, "Code nicht gefunden")
+    err = await _validate_promo_for_user(promo, user)
+    if err:
+        raise HTTPException(400, err)
+    # Apply entitlement
+    user_after = await _apply_promo_to_user(promo, user)
+    # Record redemption & increment
+    await db.promo_redemptions.insert_one({
+        "id": str(uuid.uuid4()),
+        "code_id": promo["id"],
+        "code": promo["code"],
+        "user_id": user["id"],
+        "kind": promo.get("kind"),
+        "value": int(promo.get("value", 0)),
+        "redeemed_at": now_utc().isoformat(),
+    })
+    await db.promo_codes.update_one({"id": promo["id"]}, {"$inc": {"used_count": 1}})
+    await _audit(user["id"], "promo_redeem", promo["id"], {"code": promo["code"], "kind": promo.get("kind"), "value": promo.get("value")})
+    return {
+        "ok": True,
+        "kind": promo.get("kind"),
+        "value": int(promo.get("value", 0)),
+        "premium_until": user_after.get("premium_expires_at"),
+        "boost_until": user_after.get("boost_expires_at"),
+    }
+
+
+async def _maybe_apply_auto_register_promos(user_doc: dict) -> List[dict]:
+    """Apply every active auto_on_register promo that still has capacity."""
+    applied: List[dict] = []
+    now_iso = now_utc().isoformat()
+    cursor = db.promo_codes.find({"auto_on_register": True, "active": True})
+    async for p in cursor:
+        if p.get("starts_at") and p["starts_at"] > now_iso:
+            continue
+        if p.get("expires_at") and p["expires_at"] < now_iso:
+            continue
+        max_uses = p.get("max_uses")
+        if max_uses is not None and int(p.get("used_count", 0)) >= int(max_uses):
+            continue
+        # Apply & record
+        user_doc = await _apply_promo_to_user(p, user_doc)
+        await db.promo_redemptions.insert_one({
+            "id": str(uuid.uuid4()),
+            "code_id": p["id"],
+            "code": p.get("code"),
+            "user_id": user_doc["id"],
+            "kind": p.get("kind"),
+            "value": int(p.get("value", 0)),
+            "redeemed_at": now_utc().isoformat(),
+            "auto": True,
+        })
+        await db.promo_codes.update_one({"id": p["id"]}, {"$inc": {"used_count": 1}})
+        applied.append({"code": p.get("code"), "kind": p.get("kind"), "value": int(p.get("value", 0))})
+    return applied
+
+
+# ---------- Blog ----------
+import re as _re_blog
+
+BLOG_ALLOWED_STATUSES = {"draft", "published", "archived"}
+
+
+def _slugify(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = _re_blog.sub(r"[^a-z0-9\s-]+", "", s)
+    s = _re_blog.sub(r"\s+", "-", s).strip("-")
+    return s[:80] or "post"
+
+
+def _blog_reading_time(html: str) -> int:
+    if not html:
+        return 1
+    txt = _re_blog.sub(r"<[^>]+>", " ", html)
+    words = len([w for w in txt.split() if w])
+    return max(1, round(words / 220))  # ~220 wpm
+
+
+def _blog_public(doc: dict, author: Optional[dict] = None) -> dict:
+    out = {
+        "id": doc.get("id"),
+        "slug": doc.get("slug"),
+        "title": doc.get("title"),
+        "excerpt": doc.get("excerpt"),
+        "content_html": doc.get("content_html"),
+        "cover_image": doc.get("cover_image"),
+        "tags": doc.get("tags") or [],
+        "status": doc.get("status", "draft"),
+        "author_id": doc.get("author_id"),
+        "author_name": (author or {}).get("display_name") if author else doc.get("author_name"),
+        "created_at": doc.get("created_at"),
+        "updated_at": doc.get("updated_at"),
+        "published_at": doc.get("published_at"),
+        "reading_minutes": int(doc.get("reading_minutes") or _blog_reading_time(doc.get("content_html") or "")),
+    }
+    return out
+
+
+@api_router.get("/blog/posts")
+async def public_list_blog_posts(
+    user=Depends(_require_user),
+    tag: Optional[str] = None,
+    limit: int = Query(20, ge=1, le=50),
+    skip: int = Query(0, ge=0),
+):
+    """Public listing of published blog posts (any authenticated user)."""
+    q: Dict = {"status": "published"}
+    if tag:
+        q["tags"] = tag
+    cursor = db.blog_posts.find(q).sort("published_at", -1).skip(skip).limit(limit)
+    posts = await cursor.to_list(length=limit)
+    author_ids = list({p.get("author_id") for p in posts if p.get("author_id")})
+    authors: Dict[str, dict] = {}
+    if author_ids:
+        async for u in db.users.find({"id": {"$in": author_ids}}, {"id": 1, "display_name": 1, "role": 1}):
+            authors[u["id"]] = u
+    out = [_blog_public(p, authors.get(p.get("author_id"))) for p in posts]
+    # Strip heavy HTML from list view
+    for o in out:
+        o.pop("content_html", None)
+    total = await db.blog_posts.count_documents(q)
+    return {"posts": out, "total": total, "has_more": (skip + len(out)) < total}
+
+
+@api_router.get("/blog/tags")
+async def blog_tags(user=Depends(_require_user)):
+    tags = await db.blog_posts.distinct("tags", {"status": "published"})
+    return {"tags": sorted([t for t in tags if t])}
+
+
+@api_router.get("/blog/posts/{slug}")
+async def public_blog_post(slug: str, user=Depends(_require_user)):
+    doc = await db.blog_posts.find_one({"slug": slug})
+    if not doc:
+        raise HTTPException(404, "Post nicht gefunden")
+    is_staff = user.get("role") in {"admin", "moderator", "superadmin", "content_reviewer", "support"}
+    if doc.get("status") != "published" and not is_staff:
+        raise HTTPException(404, "Post nicht gefunden")
+    author = None
+    if doc.get("author_id"):
+        author = await db.users.find_one({"id": doc["author_id"]}, {"id": 1, "display_name": 1, "role": 1})
+    return _blog_public(doc, author)
+
+
+# ----- Admin / author endpoints -----
+@api_router.get("/admin/blog/posts")
+async def admin_list_blog_posts(
+    user=Depends(_require_user),
+    status_filter: Optional[str] = Query(None, alias="status"),
+):
+    await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
+    q: Dict = {}
+    if status_filter and status_filter in BLOG_ALLOWED_STATUSES:
+        q["status"] = status_filter
+    cursor = db.blog_posts.find(q).sort("updated_at", -1).limit(300)
+    posts = await cursor.to_list(length=300)
+    return {"posts": [_blog_public(p) for p in posts]}
+
+
+@api_router.post("/admin/blog/posts")
+async def admin_create_blog_post(payload: dict, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
+    title = (payload.get("title") or "").strip()
+    if not title or len(title) > 200:
+        raise HTTPException(400, "Titel erforderlich (max. 200 Zeichen)")
+    content_html = payload.get("content_html") or ""
+    if len(content_html) > 200000:
+        raise HTTPException(400, "Inhalt zu groß (max. 200KB)")
+    slug = _slugify(payload.get("slug") or title)
+    # Ensure unique slug
+    base = slug
+    i = 2
+    while await db.blog_posts.find_one({"slug": slug}):
+        slug = f"{base}-{i}"
+        i += 1
+    status = payload.get("status") or "draft"
+    if status not in BLOG_ALLOWED_STATUSES:
+        raise HTTPException(400, "Ungültiger Status")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "slug": slug,
+        "title": title,
+        "excerpt": (payload.get("excerpt") or "").strip()[:500] or None,
+        "content_html": content_html,
+        "cover_image": payload.get("cover_image") or None,
+        "tags": [t.strip().lower() for t in (payload.get("tags") or []) if t and isinstance(t, str)][:10],
+        "status": status,
+        "author_id": user["id"],
+        "author_name": user.get("display_name"),
+        "created_at": now_utc().isoformat(),
+        "updated_at": now_utc().isoformat(),
+        "published_at": now_utc().isoformat() if status == "published" else None,
+        "reading_minutes": _blog_reading_time(content_html),
+    }
+    await db.blog_posts.insert_one(doc)
+    await _audit(user["id"], "blog_post_create", doc["id"], {"title": title, "status": status})
+    return _blog_public(doc, {"display_name": user.get("display_name")})
+
+
+@api_router.patch("/admin/blog/posts/{post_id}")
+async def admin_update_blog_post(post_id: str, payload: dict, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
+    existing = await db.blog_posts.find_one({"id": post_id})
+    if not existing:
+        raise HTTPException(404, "Post nicht gefunden")
+    updates: Dict = {}
+    if "title" in payload:
+        t = (payload["title"] or "").strip()
+        if not t or len(t) > 200:
+            raise HTTPException(400, "Ungültiger Titel")
+        updates["title"] = t
+    if "excerpt" in payload:
+        updates["excerpt"] = (payload["excerpt"] or "").strip()[:500] or None
+    if "content_html" in payload:
+        html = payload["content_html"] or ""
+        if len(html) > 200000:
+            raise HTTPException(400, "Inhalt zu groß")
+        updates["content_html"] = html
+        updates["reading_minutes"] = _blog_reading_time(html)
+    if "cover_image" in payload:
+        updates["cover_image"] = payload["cover_image"] or None
+    if "tags" in payload:
+        updates["tags"] = [t.strip().lower() for t in (payload["tags"] or []) if t and isinstance(t, str)][:10]
+    if "slug" in payload and payload["slug"]:
+        new_slug = _slugify(payload["slug"])
+        if new_slug != existing.get("slug"):
+            # ensure unique
+            base = new_slug
+            i = 2
+            while await db.blog_posts.find_one({"slug": new_slug, "id": {"$ne": post_id}}):
+                new_slug = f"{base}-{i}"
+                i += 1
+            updates["slug"] = new_slug
+    if "status" in payload:
+        st = payload["status"]
+        if st not in BLOG_ALLOWED_STATUSES:
+            raise HTTPException(400, "Ungültiger Status")
+        updates["status"] = st
+        if st == "published" and not existing.get("published_at"):
+            updates["published_at"] = now_utc().isoformat()
+    updates["updated_at"] = now_utc().isoformat()
+    await db.blog_posts.update_one({"id": post_id}, {"$set": updates})
+    await _audit(user["id"], "blog_post_update", post_id, {"fields": list(updates.keys())})
+    doc = await db.blog_posts.find_one({"id": post_id})
+    return _blog_public(doc)
+
+
+@api_router.delete("/admin/blog/posts/{post_id}")
+async def admin_delete_blog_post(post_id: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    res = await db.blog_posts.delete_one({"id": post_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Post nicht gefunden")
+    await _audit(user["id"], "blog_post_delete", post_id)
     return {"ok": True}
 
 

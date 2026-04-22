@@ -87,6 +87,7 @@ class PrivacySettings(BaseModel):
     show_typing: bool = True
     hidden_mode: bool = False
     screenshot_notifications: bool = True
+    stealth_mode: bool = False  # Premium: browse without leaving "seen" traces or visitor log
 
 
 class UserPreferences(BaseModel):

@@ -1,38 +1,38 @@
 [
   {
-    "content": "Explore: Profil-Seiten (Stadt-Anzeige), Team-Badge-Komponente, Admin Discover Grid",
+    "content": "Phase A: Backend – Promo-System + Premium-Erweiterungen",
     "status": "completed"
   },
   {
-    "content": "Backend: `public_user_from_doc` gibt `city` zurück (aus `location.city`)",
+    "content": "Phase A: Frontend – Admin Promos + Account Extras + Super-Like auf Profil",
     "status": "completed"
   },
   {
-    "content": "Frontend: Stadt in ProfileCard (unter Distanz) und in ProfileViewPage anzeigen",
+    "content": "Phase A: Testen – E2E Screenshots",
     "status": "completed"
   },
   {
-    "content": "RoleBadge-Komponente mit Tooltip-Erklärung erstellen (admin/moderator/superadmin/content_reviewer/support)",
+    "content": "Phase B: Blog – Backend Model + CRUD (drafts/publish)",
     "status": "completed"
   },
   {
-    "content": "RoleBadge in AdminPage Users-Tab + ProfileCard (admin_flags.role) + ProfileViewPage verwenden",
+    "content": "Phase B: Blog – TipTap Rich-Text-Editor Komponente",
     "status": "completed"
   },
   {
-    "content": "Backend: `POST /api/admin/users/bulk` Endpoint für Bulk-Actions (ban/unban/hide/unhide/shadow/unshadow) mit Audit-Log",
+    "content": "Phase B: Blog – Admin-Tab zum Verfassen/Bearbeiten",
     "status": "completed"
   },
   {
-    "content": "Frontend: Multi-Select + Bulk-Action-Bar in DiscoverPage Admin-Ansicht",
+    "content": "Phase B: Blog – öffentliche /blog-Liste + /blog/:slug Einzelansicht + Nav-Link",
     "status": "completed"
   },
   {
-    "content": "Testen & Screenshots: Profile mit Stadt, Badge-Tooltips, Bulk-Actions",
+    "content": "Phase B: Blog – Testen (Liste, Detail, Admin, Editor)",
     "status": "completed"
   },
   {
-    "content": "Nach den 3 Tasks: Umfang von Mobile Re-Sync mit Nutzer klären",
+    "content": "Phase C: Mobile Voll-Parität (React Native) – separates großes Paket",
     "status": "in_progress"
   }
 ]

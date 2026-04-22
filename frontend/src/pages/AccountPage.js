@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Mail, ShieldCheck, Zap, Crown, Heart, Lock, Plane, Trash2, IdCard } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AppFooter } from "../components/AppFooter";
+import { PremiumExtrasSection } from "../components/PremiumExtrasSection";
 
 export default function AccountPage() {
   const { user, refresh } = useAuth();
@@ -212,6 +213,8 @@ export default function AccountPage() {
               </div>
             )}
           </section>
+
+          <PremiumExtrasSection />
 
           <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-3 shadow-[var(--shadow-sm)]" data-testid="premium-section">
             <div className="font-display text-lg flex items-center gap-2"><Crown className="h-4 w-4" /> Premium</div>

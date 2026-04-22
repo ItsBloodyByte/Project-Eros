@@ -17,6 +17,8 @@ import { Switch } from "../components/ui/switch";
 import { useAuth } from "../lib/AuthContext";
 import { toast } from "sonner";
 import { RoleBadge } from "../components/RoleBadge";
+import { AdminPromosTab } from "../components/AdminPromosTab";
+import { AdminBlogTab } from "../components/AdminBlogTab";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -654,6 +656,8 @@ export default function AdminPage() {
               {isSuper && <TabsTrigger value="payments" data-testid="admin-tab-payments">Zahlungen</TabsTrigger>}
               {isSuper && <TabsTrigger value="legal" data-testid="admin-tab-legal" onClick={() => loadLegal(legalKey)}>Rechtliches</TabsTrigger>}
               <TabsTrigger value="broadcasts" data-testid="admin-tab-broadcasts" onClick={() => loadBroadcasts()}>Broadcasts</TabsTrigger>
+              {isSuper && <TabsTrigger value="promos" data-testid="admin-tab-promos">Promos & Konfig</TabsTrigger>}
+              <TabsTrigger value="blog" data-testid="admin-tab-blog">Blog</TabsTrigger>
               {isSuper && <TabsTrigger value="team-channels" data-testid="admin-tab-team-channels" onClick={() => loadRoleChannels()}>Team-Kanäle</TabsTrigger>}
               <TabsTrigger value="audit" data-testid="admin-tab-audit">Audit</TabsTrigger>
             </TabsList>
@@ -1182,6 +1186,16 @@ export default function AdminPage() {
                   </TableBody>
                 </Table>
               </div>
+            </TabsContent>
+
+            {isSuper && (
+              <TabsContent value="promos" className="mt-4">
+                <AdminPromosTab />
+              </TabsContent>
+            )}
+
+            <TabsContent value="blog" className="mt-4">
+              <AdminBlogTab />
             </TabsContent>
 
             {isSuper && (

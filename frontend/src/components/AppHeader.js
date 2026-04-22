@@ -1,7 +1,7 @@
 import { Link, NavLink as RRNavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { Button } from "./ui/button";
-import { Compass, MessagesSquare, Images, Settings, Moon, Sun, ShieldCheck, LogOut, CalendarClock, UserCog, Crown, Languages } from "lucide-react";
+import { Compass, MessagesSquare, Images, Settings, Moon, Sun, ShieldCheck, LogOut, CalendarClock, UserCog, Crown, Languages, FileText } from "lucide-react";
 import { useTheme } from "../lib/theme";
 import { useTranslation } from "react-i18next";
 import {
@@ -37,6 +37,7 @@ export function AppHeader() {
           <NavItem to="/matches" label={t("nav.matches")}  icon={<MessagesSquare className="h-4 w-4" />} testid="nav-matches" />
           <NavItem to="/albums"  label={t("nav.albums")}   icon={<Images className="h-4 w-4" />} testid="nav-albums" />
           <NavItem to="/events"  label={t("nav.events")}   icon={<CalendarClock className="h-4 w-4" />} testid="nav-events" />
+          <NavItem to="/blog"    label="Blog"              icon={<FileText className="h-4 w-4" />} testid="nav-blog" />
           <NavItem to="/account" label={t("nav.account")}  icon={<UserCog className="h-4 w-4" />} testid="nav-account" />
           <NavItem to="/settings" label={t("nav.settings")} icon={<Settings className="h-4 w-4" />} testid="nav-settings" />
           {user?.role && user.role !== "user" && (
