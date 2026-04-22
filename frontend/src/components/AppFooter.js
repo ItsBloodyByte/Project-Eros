@@ -1,17 +1,37 @@
 import { Link } from "react-router-dom";
 
-/** Minimal, centered legal-links footer. */
+/** Minimal, centered legal-links footer — subtle and editorial. */
 export function AppFooter() {
+  const year = new Date().getFullYear();
+  const links = [
+    { to: "/legal/terms",        label: "Nutzungsbedingungen", tid: "footer-terms" },
+    { to: "/legal/privacy",      label: "Datenschutz",         tid: "footer-privacy" },
+    { to: "/legal/imprint",      label: "Impressum",           tid: "footer-imprint" },
+    { to: "/legal/community",    label: "Community",           tid: "footer-community" },
+    { to: "/legal/cookies",      label: "Cookies",             tid: "footer-cookies" },
+    { to: "/legal/cancellation", label: "Widerruf",            tid: "footer-cancellation" },
+  ];
   return (
-    <footer className="mt-8 border-t text-xs text-[hsl(var(--muted-foreground))]" data-testid="app-footer">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-        <span className="opacity-70">© {new Date().getFullYear()} Eros</span>
-        <Link to="/legal/terms" className="hover:underline" data-testid="footer-terms">Nutzungsbedingungen</Link>
-        <Link to="/legal/privacy" className="hover:underline" data-testid="footer-privacy">Datenschutz</Link>
-        <Link to="/legal/imprint" className="hover:underline" data-testid="footer-imprint">Impressum</Link>
-        <Link to="/legal/community" className="hover:underline" data-testid="footer-community">Community</Link>
-        <Link to="/legal/cookies" className="hover:underline" data-testid="footer-cookies">Cookies</Link>
-        <Link to="/legal/cancellation" className="hover:underline" data-testid="footer-cancellation">Widerruf</Link>
+    <footer className="mt-auto border-t border-[hsl(var(--border))]/70" data-testid="app-footer">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-7">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="font-display text-lg tracking-tight">Eros</div>
+            <span className="text-xs text-[hsl(var(--muted-foreground))]">© {year}</span>
+          </div>
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-[hsl(var(--muted-foreground))]">
+            {links.map((l) => (
+              <Link
+                key={l.tid}
+                to={l.to}
+                data-testid={l.tid}
+                className="hover:text-[hsl(var(--foreground))] transition-colors duration-[var(--dur-2)]"
+              >
+                {l.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
       </div>
     </footer>
   );

@@ -122,29 +122,29 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="app-wrap dark:app-shell-bg app-shell-bg-light">
+    <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
       <div className="app-content h-screen flex flex-col">
         <AppHeader />
-        <div className="flex-1 flex flex-col max-w-3xl w-full mx-auto px-2 sm:px-4 pb-4">
-          <div className="flex items-center justify-between py-3">
-            <Link to="/matches" className="inline-flex items-center gap-1 text-sm underline text-[hsl(var(--muted-foreground))]" data-testid="back-to-matches">
+        <div className="flex-1 flex flex-col max-w-3xl w-full mx-auto px-3 sm:px-4 pb-4">
+          <div className="flex items-center justify-between py-3 border-b border-[hsl(var(--border))]/60 mb-3">
+            <Link to="/matches" className="inline-flex items-center gap-1.5 text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors" data-testid="back-to-matches">
               <ArrowLeft className="h-4 w-4" /> Matches
             </Link>
             {peer && (
               <div className="flex items-center gap-2">
-                <div className="font-display text-lg">{peer.display_name}</div>
+                <div className="font-display text-lg tracking-tight">{peer.display_name}</div>
                 {peer.is_online && <span className="online-dot" />}
               </div>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" data-testid="chat-menu"><Shield className="h-4 w-4 mr-1" /> Privacy</Button>
+                <Button variant="ghost" size="sm" data-testid="chat-menu" className="gap-1"><Shield className="h-4 w-4" /> <span className="hidden sm:inline">Privatsphäre</span></Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel>Chat privacy</DropdownMenuLabel>
+                <DropdownMenuLabel>Chat-Privatsphäre</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <div className="px-2 py-1.5 flex items-center justify-between text-sm">
-                  <span>Read receipts</span>
+                  <span>Lesebestätigungen</span>
                   <Switch
                     checked={user?.privacy?.read_receipts ?? true}
                     onCheckedChange={toggleReadReceipts}
@@ -157,7 +157,7 @@ export default function ChatPage() {
                     <ReportDialog
                       targetType="user"
                       targetId={peer?.id}
-                      trigger={<button className="w-full text-left text-sm">Report user</button>}
+                      trigger={<button className="w-full text-left text-sm">Nutzer melden</button>}
                     />
                   </div>
                 </DropdownMenuItem>
@@ -165,32 +165,32 @@ export default function ChatPage() {
             </DropdownMenu>
           </div>
 
-          <div ref={listRef} className="flex-1 overflow-y-auto rounded-md border bg-card p-3 space-y-2" data-testid="chat-message-list">
+          <div ref={listRef} className="flex-1 overflow-y-auto px-1 py-3 space-y-2.5" data-testid="chat-message-list">
             {messages.map((m) => <ChatBubble key={m.id} message={m} me={user} />)}
-            {peerTyping && <div className="text-xs text-[hsl(var(--muted-foreground))]">typing…</div>}
-            {messages.length === 0 && <div className="text-sm text-[hsl(var(--muted-foreground))] text-center py-10">Say hi — be warm and specific.</div>}
+            {peerTyping && <div className="text-xs text-[hsl(var(--muted-foreground))] pl-2">tippt …</div>}
+            {messages.length === 0 && <div className="text-sm text-[hsl(var(--muted-foreground))] text-center py-16">Schreib hallo — sei warm und konkret.</div>}
           </div>
 
           <div className="mt-3 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
-            <Label className="flex items-center gap-2">
+            <Label className="flex items-center gap-2 cursor-pointer">
               <Switch checked={selfDestruct} onCheckedChange={setSelfDestruct} data-testid="self-destruct-toggle" />
-              <span className="inline-flex items-center gap-1"><Timer className="h-3 w-3" /> Self-destruct 60s</span>
+              <span className="inline-flex items-center gap-1"><Timer className="h-3 w-3" /> Selbstzerstörung nach 60 s</span>
             </Label>
           </div>
 
-          <div className="mt-2 flex items-end gap-2">
+          <div className="mt-2 flex items-end gap-2 rounded-[var(--radius-lg)] bg-[hsl(var(--card))] p-2 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && sendMedia(e.target.files[0])} data-testid="chat-media-input" />
             <Button variant="ghost" size="icon" onClick={() => fileRef.current?.click()} data-testid="chat-attach-button"><Paperclip className="h-4 w-4" /></Button>
             <Textarea
               value={text}
               rows={1}
-              className="min-h-10"
+              className="min-h-10 border-0 bg-transparent shadow-none focus-visible:ring-0 resize-none"
               onChange={(e) => { setText(e.target.value); setTyping(true); }}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              placeholder="Write a message"
+              placeholder="Nachricht schreiben …"
               data-testid="chat-text-input"
             />
-            <Button onClick={send} data-testid="chat-send-button" className="gap-1"><Send className="h-4 w-4" /> Send</Button>
+            <Button onClick={send} data-testid="chat-send-button" className="gap-1 rounded-full"><Send className="h-4 w-4" /></Button>
           </div>
         </div>
       </div>

@@ -119,13 +119,16 @@ export default function AccountPage() {
   const idStatus = user.id_verification_status || (user.id_verified ? "approved" : null);
 
   return (
-    <div className="app-wrap dark:app-shell-bg app-shell-bg-light">
-      <div className="app-content">
+    <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
+      <div className="app-content flex flex-col min-h-screen">
         <AppHeader />
-        <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-          <h1 className="font-display text-3xl">Konto</h1>
+        <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
+          <header className="pb-2">
+            <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Konto</div>
+            <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">Sicherheit &amp; Services</h1>
+          </header>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-3 shadow-[var(--shadow-sm)]">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-3 shadow-[var(--shadow-sm)]">
             <div className="flex items-center justify-between">
               <div>
                 <div className="font-display text-lg flex items-center gap-2"><Mail className="h-4 w-4" /> E-Mail-Verifizierung</div>
@@ -145,7 +148,7 @@ export default function AccountPage() {
             )}
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-3 shadow-[var(--shadow-sm)]">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-3 shadow-[var(--shadow-sm)]">
             <div className="font-display text-lg flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Zwei-Faktor-Authentifizierung</div>
             <div className="text-sm text-[hsl(var(--muted-foreground))]">Status: {user.mfa_enabled ? <Badge variant="secondary">aktiv</Badge> : <Badge variant="outline">deaktiviert</Badge>}</div>
             {!user.mfa_enabled && !mfa.secret && (
@@ -170,7 +173,7 @@ export default function AccountPage() {
             )}
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-3 shadow-[var(--shadow-sm)]" data-testid="id-verification-section">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-3 shadow-[var(--shadow-sm)]" data-testid="id-verification-section">
             <div className="font-display text-lg flex items-center gap-2"><IdCard className="h-4 w-4" /> ID-Verifizierung <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">(kostenlos)</span></div>
             <div className="text-sm text-[hsl(var(--muted-foreground))]">
               Status:&nbsp;
@@ -210,7 +213,7 @@ export default function AccountPage() {
             )}
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-3 shadow-[var(--shadow-sm)]" data-testid="premium-section">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-3 shadow-[var(--shadow-sm)]" data-testid="premium-section">
             <div className="font-display text-lg flex items-center gap-2"><Crown className="h-4 w-4" /> Premium</div>
             <div className="text-sm text-[hsl(var(--muted-foreground))]">
               {premium?.premium ? <>Aktiv bis <span className="font-mono text-xs">{premium.premium_until?.slice(0,10)}</span></> : "Gratis-Tarif"}
@@ -265,7 +268,7 @@ export default function AccountPage() {
             )}
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-3 shadow-[var(--shadow-sm)]" data-testid="travel-section">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-3 shadow-[var(--shadow-sm)]" data-testid="travel-section">
             <div className="font-display text-lg flex items-center gap-2"><Plane className="h-4 w-4" /> Reisepläne</div>
             <div className="text-sm text-[hsl(var(--muted-foreground))]">Teile, wohin du reist – so kannst du Leute am Zielort treffen.</div>
             <div className="grid grid-cols-2 gap-2">
@@ -293,7 +296,7 @@ export default function AccountPage() {
             )}
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-3 shadow-[var(--shadow-sm)]">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-3 shadow-[var(--shadow-sm)]">
             <div className="font-display text-lg flex items-center gap-2"><Lock className="h-4 w-4" /> Native Mobile App</div>
             <div className="text-sm text-[hsl(var(--muted-foreground))]">Die Web-App ist mobile-first responsiv. Ein eigenständiger React-Native-Build ist im Roadmap vorgesehen.</div>
           </section>

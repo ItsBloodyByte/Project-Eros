@@ -157,13 +157,16 @@ export default function MyProfilePage() {
   const derivedCategory = penisCategoryFor(form.penis_length_cm);
 
   return (
-    <div className="app-wrap dark:app-shell-bg app-shell-bg-light">
-      <div className="app-content">
+    <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
+      <div className="app-content flex flex-col min-h-screen">
         <AppHeader />
-        <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-          <h1 className="font-display text-3xl">{t("profile.edit")}</h1>
+        <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
+          <header className="pb-2">
+            <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Profil bearbeiten</div>
+            <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">{t("profile.edit")}</h1>
+          </header>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-4 shadow-[var(--shadow-sm)] no-capture">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)] no-capture">
             <div className="flex items-center justify-between">
               <div className="font-display text-lg">{t("profile.photos")}</div>
               <div className="text-xs text-[hsl(var(--muted-foreground))]" data-testid="photo-counter">
@@ -236,7 +239,7 @@ export default function MyProfilePage() {
             </div>
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-4 shadow-[var(--shadow-sm)] no-capture">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)] no-capture">
             <div className="font-display text-lg flex items-center gap-2"><Video className="h-4 w-4" /> {t("profile.videos")}</div>
             <div className="text-sm text-[hsl(var(--muted-foreground))]">{t("profile.videos_hint")}</div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -259,7 +262,7 @@ export default function MyProfilePage() {
             </div>
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-4 shadow-[var(--shadow-sm)]">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)]">
             <div className="font-display text-lg">{t("profile.basics")}</div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>{t("profile.display_name")}</Label><Input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} /></div>
@@ -287,7 +290,7 @@ export default function MyProfilePage() {
             </div>
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-4 shadow-[var(--shadow-sm)]">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)]">
             <div className="font-display text-lg">{t("profile.body")}</div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -367,7 +370,7 @@ export default function MyProfilePage() {
             </div>
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-4 shadow-[var(--shadow-sm)]">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)]">
             <div className="font-display text-lg">{t("profile.looking_for")}</div>
             <div>
               <Label className="text-sm">{t("filters.relationship_types")}</Label>
@@ -395,7 +398,7 @@ export default function MyProfilePage() {
             </div>
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-4 shadow-[var(--shadow-sm)]">
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)]">
             <div className="font-display text-lg">{t("profile.preferences")}</div>
             <div>
               <Label className="text-sm">{t("filters.seeking_genders")}</Label>

@@ -9,6 +9,7 @@ import { ConsentCheckboxGroup } from "../components/ConsentCheckboxGroup";
 import { GENDERS } from "../lib/constants";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { AppFooter } from "../components/AppFooter";
 
 export default function RegisterPage() {
   const { t } = useTranslation();
@@ -50,55 +51,67 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen grid place-items-center app-shell-bg py-10">
-      <div className="w-full max-w-lg p-6 rounded-[var(--radius-lg)] border bg-card shadow-[var(--shadow-md)]">
-        <div className="text-center mb-5">
-          <div className="font-display text-3xl">{t("register.title")}</div>
-          <div className="text-sm text-[hsl(var(--muted-foreground))] mt-1">{t("register.subtitle")}</div>
-        </div>
-        <form onSubmit={submit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>{t("register.display_name")} <span className="text-[hsl(var(--accent))]">*</span></Label>
-              <Input data-testid="register-name-input" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} required />
+    <div className="min-h-screen flex flex-col app-shell-bg-light dark:app-shell-bg">
+      <div className="flex-1 grid place-items-center px-4 py-10">
+        <div className="w-full max-w-lg">
+          <div className="text-center mb-8">
+            <Link to="/" className="inline-block font-display text-5xl tracking-tight">Eros</Link>
+            <div className="mt-3 text-sm text-[hsl(var(--muted-foreground))]">{t("register.subtitle")}</div>
+          </div>
+
+          <form onSubmit={submit} className="space-y-5 rounded-[var(--radius-lg)] bg-[hsl(var(--card))] p-6 sm:p-8 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
+            <h1 className="font-display text-2xl tracking-tight">{t("register.title")}</h1>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wide text-[hsl(var(--muted-foreground))]">{t("register.display_name")} <span className="text-[hsl(var(--accent))]">*</span></Label>
+                <Input data-testid="register-name-input" className="h-11 rounded-[var(--radius-sm)]" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} required />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wide text-[hsl(var(--muted-foreground))]">{t("register.age")} <span className="text-[hsl(var(--accent))]">*</span></Label>
+                <Input data-testid="register-age-input" type="number" min={18} max={120} value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} required className="h-11 rounded-[var(--radius-sm)]" />
+                <div className="text-[11px] text-[hsl(var(--muted-foreground))]">{t("register.age_hint")}</div>
+              </div>
             </div>
-            <div>
-              <Label>{t("register.age")} <span className="text-[hsl(var(--accent))]">*</span></Label>
-              <Input data-testid="register-age-input" type="number" min={18} max={120} value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} required />
-              <div className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1">{t("register.age_hint")}</div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wide text-[hsl(var(--muted-foreground))]">{t("register.gender")} <span className="text-[hsl(var(--accent))]">*</span></Label>
+              <Select value={form.gender_identity} onValueChange={(v) => setForm({ ...form, gender_identity: v })}>
+                <SelectTrigger data-testid="register-gender-select" className="h-11 rounded-[var(--radius-sm)]"><SelectValue placeholder={t("profile.select")} /></SelectTrigger>
+                <SelectContent>
+                  {GENDERS.map((g) => <SelectItem key={g} value={g}>{t(`genders.${g}`)}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-          <div>
-            <Label>{t("register.gender")} <span className="text-[hsl(var(--accent))]">*</span></Label>
-            <Select value={form.gender_identity} onValueChange={(v) => setForm({ ...form, gender_identity: v })}>
-              <SelectTrigger data-testid="register-gender-select"><SelectValue placeholder={t("profile.select")} /></SelectTrigger>
-              <SelectContent>
-                {GENDERS.map((g) => <SelectItem key={g} value={g}>{t(`genders.${g}`)}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>{t("register.email")} <span className="text-[hsl(var(--accent))]">*</span></Label>
-            <Input data-testid="register-email-input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-          </div>
-          <div>
-            <Label>{t("register.password")} <span className="text-[hsl(var(--accent))]">*</span></Label>
-            <Input data-testid="register-password-input" type="password" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
-          </div>
-          <div className="pt-2">
-            <Label className="font-display text-base">{t("register.consents")}</Label>
-            <div className="mt-2">
-              <ConsentCheckboxGroup value={consents} onChange={setConsents} />
+
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wide text-[hsl(var(--muted-foreground))]">{t("register.email")} <span className="text-[hsl(var(--accent))]">*</span></Label>
+              <Input data-testid="register-email-input" type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required className="h-11 rounded-[var(--radius-sm)]" />
             </div>
-          </div>
-          <Button disabled={busy || !canContinue} data-testid="register-submit-button" className="w-full">
-            {busy ? t("register.creating") : t("register.create")}
-          </Button>
-        </form>
-        <div className="mt-4 text-sm text-[hsl(var(--muted-foreground))] text-center">
-          {t("register.have_account")} <Link className="underline" to="/login" data-testid="link-login">{t("register.sign_in")}</Link>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wide text-[hsl(var(--muted-foreground))]">{t("register.password")} <span className="text-[hsl(var(--accent))]">*</span></Label>
+              <Input data-testid="register-password-input" type="password" autoComplete="new-password" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required className="h-11 rounded-[var(--radius-sm)]" />
+            </div>
+
+            <div className="pt-1">
+              <Label className="text-xs uppercase tracking-wide text-[hsl(var(--muted-foreground))]">{t("register.consents")}</Label>
+              <div className="mt-2">
+                <ConsentCheckboxGroup value={consents} onChange={setConsents} />
+              </div>
+            </div>
+
+            <Button disabled={busy || !canContinue} data-testid="register-submit-button" className="w-full h-11 rounded-full text-sm font-semibold active:scale-[0.98] transition-transform duration-[var(--dur-1)]">
+              {busy ? t("register.creating") : t("register.create")}
+            </Button>
+
+            <div className="text-center text-sm text-[hsl(var(--muted-foreground))]">
+              {t("register.have_account")} <Link className="underline decoration-[hsl(var(--accent))]/60 underline-offset-4 hover:decoration-[hsl(var(--accent))] text-[hsl(var(--foreground))] font-medium" to="/login" data-testid="link-login">{t("register.sign_in")}</Link>
+            </div>
+          </form>
         </div>
       </div>
+      <AppFooter />
     </div>
   );
 }

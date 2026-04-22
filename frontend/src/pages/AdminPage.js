@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { AppHeader } from "../components/AppHeader";
+import { AppFooter } from "../components/AppFooter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { Button } from "../components/ui/button";
@@ -145,12 +146,15 @@ export default function AdminPage() {
 
   if (!user || user.role === "user") {
     return (
-      <div className="app-wrap dark:app-shell-bg app-shell-bg-light">
-        <div className="app-content"><AppHeader />
-          <div className="max-w-xl mx-auto p-8 text-center">
-            <div className="font-display text-2xl">Nur für Admins</div>
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">Dein Konto hat keine Moderations-Rolle.</div>
+      <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
+        <div className="app-content flex flex-col min-h-screen"><AppHeader />
+          <div className="flex-1 grid place-items-center px-4">
+            <div className="max-w-md text-center rounded-[var(--radius-lg)] bg-[hsl(var(--card))] p-8 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
+              <div className="font-display text-3xl tracking-tight mb-1">Nur für Admins</div>
+              <div className="text-sm text-[hsl(var(--muted-foreground))]">Dein Konto hat keine Moderations-Rolle.</div>
+            </div>
           </div>
+          <AppFooter />
         </div>
       </div>
     );
@@ -159,11 +163,14 @@ export default function AdminPage() {
   const isSuper = user.role === "admin" || user.role === "superadmin";
 
   return (
-    <div className="app-wrap dark:app-shell-bg app-shell-bg-light">
-      <div className="app-content">
+    <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
+      <div className="app-content flex flex-col min-h-screen">
         <AppHeader />
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
-          <h1 className="font-display text-3xl mb-4">Admin · Moderation</h1>
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10">
+          <div className="mb-6">
+            <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Admin</div>
+            <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">Moderation</h1>
+          </div>
           <Tabs defaultValue="reports">
             <TabsList className="flex-wrap h-auto">
               <TabsTrigger value="reports" data-testid="admin-tab-reports">Reports</TabsTrigger>
@@ -177,7 +184,7 @@ export default function AdminPage() {
             </TabsList>
 
             <TabsContent value="reports" className="mt-4">
-              <div className="rounded-md border bg-card overflow-hidden">
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
                 <Table>
                   <TableHeader><TableRow>
                     <TableHead>ID</TableHead><TableHead>Ziel</TableHead><TableHead>Grund</TableHead><TableHead>Status</TableHead><TableHead>Aktionen</TableHead>
@@ -206,7 +213,7 @@ export default function AdminPage() {
             <TabsContent value="users" className="mt-4 space-y-3">
               <Input placeholder="Suche E-Mail / Name" value={search} onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={async (e) => { if (e.key === "Enter") { const { data } = await api.get("/admin/users", { params: { q: search } }); setUsers(data.users); } }} />
-              <div className="rounded-md border bg-card overflow-hidden">
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
                 <Table>
                   <TableHeader><TableRow>
                     <TableHead>Name</TableHead><TableHead>E-Mail</TableHead><TableHead>Alter</TableHead><TableHead>Rolle</TableHead><TableHead>Status</TableHead><TableHead>Aktionen</TableHead>
@@ -254,7 +261,7 @@ export default function AdminPage() {
             </TabsContent>
 
             <TabsContent value="verifications" className="mt-4">
-              <div className="rounded-md border bg-card overflow-hidden">
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
                 <Table>
                   <TableHeader><TableRow>
                     <TableHead>User</TableHead><TableHead>Dokument-Typ</TableHead><TableHead>Selfie</TableHead><TableHead>Dokument</TableHead><TableHead>Eingereicht</TableHead><TableHead>Aktionen</TableHead>
@@ -281,7 +288,7 @@ export default function AdminPage() {
 
             {isSuper && (
               <TabsContent value="ai" className="mt-4">
-                <div className="rounded-md border bg-card p-5 space-y-4 max-w-2xl">
+                <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-5 space-y-4 max-w-2xl">
                   <div className="font-display text-lg">KI-Moderationsanbieter</div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -324,7 +331,7 @@ export default function AdminPage() {
 
             {isSuper && (
               <TabsContent value="payments" className="mt-4">
-                <div className="rounded-md border bg-card p-5 space-y-4">
+                <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-5 space-y-4">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div className="font-display text-lg">Zahlungsanbieter & Preise</div>
                     <div className="flex items-center gap-2">
@@ -453,7 +460,7 @@ export default function AdminPage() {
 
             {isSuper && (
               <TabsContent value="legal" className="mt-4">
-                <div className="rounded-md border bg-card p-5 space-y-4">
+                <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-5 space-y-4">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div className="font-display text-lg">Rechtliche Seiten</div>
                     <Select value={legalKey} onValueChange={(v) => loadLegal(v)}>
@@ -494,7 +501,7 @@ export default function AdminPage() {
             )}
 
             <TabsContent value="audit" className="mt-4">
-              <div className="rounded-md border bg-card overflow-hidden">
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
                 <Table>
                   <TableHeader><TableRow>
                     <TableHead>Zeit</TableHead><TableHead>Akteur</TableHead><TableHead>Aktion</TableHead><TableHead>Ziel</TableHead>
@@ -514,6 +521,7 @@ export default function AdminPage() {
             </TabsContent>
           </Tabs>
         </main>
+        <AppFooter />
       </div>
     </div>
   );

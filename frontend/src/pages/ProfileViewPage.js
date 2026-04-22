@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { AppHeader } from "../components/AppHeader";
+import { AppFooter } from "../components/AppFooter";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
@@ -90,36 +91,58 @@ export default function ProfileViewPage() {
   const isAdminViewer = me?.role && me.role !== "user";
 
   return (
-    <div className="app-wrap dark:app-shell-bg app-shell-bg-light">
-      <div className="app-content">
+    <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
+      <div className="app-content flex flex-col min-h-screen">
         <AppHeader />
-        <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-          <div className="grid lg:grid-cols-[1.2fr_1fr] gap-6">
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10">
+          <div className="grid lg:grid-cols-[1.25fr_1fr] gap-6 lg:gap-10">
             <div className="space-y-3 no-capture">
               {(profile.photos || []).length > 0 ? (
-                <div className="grid grid-cols-2 gap-3">
-                  {profile.photos.map((p) => {
-                    const isNsfw = p.nsfw_score >= 0.75;
+                <div className="space-y-3">
+                  {/* Editorial hero: primary photo full-bleed, 21/9 desktop */}
+                  {(() => {
+                    const primary = profile.photos.find((p) => p.is_primary) || profile.photos[0];
+                    const rest = profile.photos.filter((p) => p.id !== primary.id);
+                    const isNsfw = primary.nsfw_score >= 0.75;
                     return (
-                      <div key={p.id} className="relative overflow-hidden rounded-[var(--radius-md)] border bg-[hsl(var(--muted))] aspect-[3/4]">
-                        <NsfwBlurOverlay active={isNsfw} revealed={!!revealedPhotos[p.id]}
-                          onReveal={() => setRevealedPhotos((r) => ({ ...r, [p.id]: true }))}
-                          className="h-full w-full">
-                          <img src={p.data} alt="" className="h-full w-full object-cover" />
-                        </NsfwBlurOverlay>
-                      </div>
+                      <>
+                        <div className="relative overflow-hidden rounded-[var(--radius-lg)] bg-[hsl(var(--muted))] aspect-[4/5] sm:aspect-[16/10] shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
+                          <NsfwBlurOverlay active={isNsfw} revealed={!!revealedPhotos[primary.id]}
+                            onReveal={() => setRevealedPhotos((r) => ({ ...r, [primary.id]: true }))}
+                            className="h-full w-full">
+                            <img src={primary.data} alt="" className="h-full w-full object-cover" />
+                          </NsfwBlurOverlay>
+                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
+                        </div>
+                        {rest.length > 0 && (
+                          <div className="grid grid-cols-4 gap-2">
+                            {rest.map((p) => {
+                              const nsfw = p.nsfw_score >= 0.75;
+                              return (
+                                <div key={p.id} className="relative overflow-hidden rounded-[var(--radius-md)] bg-[hsl(var(--muted))] aspect-[3/4] ring-1 ring-[hsl(var(--border))]/60">
+                                  <NsfwBlurOverlay active={nsfw} revealed={!!revealedPhotos[p.id]}
+                                    onReveal={() => setRevealedPhotos((r) => ({ ...r, [p.id]: true }))}
+                                    className="h-full w-full">
+                                    <img src={p.data} alt="" className="h-full w-full object-cover" />
+                                  </NsfwBlurOverlay>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
                     );
-                  })}
+                  })()}
                 </div>
               ) : (
-                <div className="rounded-md border p-6 text-center text-sm text-[hsl(var(--muted-foreground))]">
+                <div className="rounded-[var(--radius-md)] border bg-[hsl(var(--card))] p-10 text-center text-sm text-[hsl(var(--muted-foreground))]">
                   {t("profile.no_photo")}
                 </div>
               )}
               {videos.length > 0 && (
                 <div className="grid grid-cols-2 gap-3">
                   {videos.map((v) => (
-                    <div key={v.id} className="aspect-video rounded-md overflow-hidden border bg-black">
+                    <div key={v.id} className="aspect-video rounded-[var(--radius-md)] overflow-hidden border bg-black">
                       <video src={v.data} controls className="h-full w-full object-cover" />
                     </div>
                   ))}
@@ -133,13 +156,13 @@ export default function ProfileViewPage() {
               )}
 
               {profile.admin_view && (profile.hidden_mode || profile.banned) && (
-                <div className="rounded-md border border-[hsl(var(--destructive))]/30 bg-[hsl(var(--destructive))]/5 p-3 text-sm flex items-center gap-2">
+                <div className="rounded-[var(--radius-md)] border border-[hsl(var(--destructive))]/30 bg-[hsl(var(--destructive))]/5 p-3 text-sm flex items-center gap-2">
                   <ShieldAlert className="h-4 w-4 text-[hsl(var(--destructive))]" />
                   {profile.banned ? t("profile.banned_profile") : t("profile.hidden_profile")}
                 </div>
               )}
 
-              <div className="rounded-[var(--radius-md)] border bg-card p-5 shadow-[var(--shadow-sm)]">
+              <div className="rounded-[var(--radius-lg)] border bg-[hsl(var(--card))] p-6 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="font-display text-3xl leading-tight">
@@ -261,6 +284,7 @@ export default function ProfileViewPage() {
             </div>
           </div>
         </main>
+        <AppFooter />
       </div>
     </div>
   );

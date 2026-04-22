@@ -12,7 +12,7 @@ export function ProfileCard({ user, visited = false }) {
     <Link
       to={`/profile/${user.id}`}
       data-testid="profile-card"
-      className="group relative block overflow-hidden rounded-[var(--radius-md)] border bg-card shadow-[var(--shadow-sm)] hover:border-[hsl(var(--accent))]/40 transition-colors"
+      className="group relative block overflow-hidden rounded-[var(--radius-lg)] bg-[hsl(var(--card))] shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60 card-hover"
     >
       <div className="aspect-[3/4] w-full relative bg-[hsl(var(--muted))]">
         {primary ? (
@@ -26,62 +26,70 @@ export function ProfileCard({ user, visited = false }) {
               src={primary.data}
               alt={user.display_name}
               loading="lazy"
-              className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
+              className="h-full w-full object-cover"
             />
           </NsfwBlurOverlay>
         ) : (
-          <div className="h-full w-full grid place-items-center text-sm text-[hsl(var(--muted-foreground))]">
-            No photo
+          <div className="h-full w-full grid place-items-center text-xs text-[hsl(var(--muted-foreground))]">
+            Kein Foto
           </div>
         )}
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/60 to-transparent" />
+        {/* Subtle bottom scrim for text legibility */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
-        <div className="absolute left-2 top-2 flex flex-col gap-1">
+        {/* Top-left badges */}
+        <div className="absolute left-2.5 top-2.5 flex flex-col gap-1">
           {user.id_verified && (
-            <div className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/85 px-2 py-0.5 text-[11px] text-[hsl(var(--accent-foreground))] backdrop-blur" title="ID verifiziert">
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--verified))]/90 px-2 py-0.5 text-[10.5px] font-medium text-white backdrop-blur-sm"
+              title="ID verifiziert"
+              data-testid="profile-card-id-badge"
+            >
               <ShieldCheck className="h-3 w-3" /> ID
-            </div>
+            </span>
           )}
           {user.verified && !user.id_verified && (
-            <div className="inline-flex items-center gap-1 rounded-full bg-black/40 px-2 py-0.5 text-[11px] text-white backdrop-blur">
-              <BadgeCheck className="h-3 w-3" /> verified
-            </div>
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[10.5px] font-medium text-white backdrop-blur-sm">
+              <BadgeCheck className="h-3 w-3" /> verifiziert
+            </span>
           )}
         </div>
 
-        {user.boosted && (
-          <div className="absolute left-2 bottom-14 inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/85 px-2 py-0.5 text-[11px] text-[hsl(var(--accent-foreground))]" data-testid="profile-card-boosted">
-            boosted
-          </div>
-        )}
-
-        <div className="absolute right-2 top-2 flex items-center gap-1.5">
+        {/* Top-right state */}
+        <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5">
           {visited && (
-            <div
-              className="inline-grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white backdrop-blur"
+            <span
+              className="inline-grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm"
               title="Bereits angesehen"
               data-testid="profile-card-visited-eye"
             >
               <Eye className="h-3.5 w-3.5" />
-            </div>
+            </span>
           )}
           {user.is_online && (
-            <div
-              className="online-dot"
-              title="Online now"
-              data-testid="profile-card-online-indicator"
-            />
+            <span className="online-dot" title="Gerade online" data-testid="profile-card-online-indicator" />
           )}
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 p-3 text-white">
-          <div className="font-display text-lg leading-tight">
-            {user.display_name}
-            <span className="ml-1.5 text-white/80 text-sm font-body">{user.age}</span>
+        {/* Boosted ribbon */}
+        {user.boosted && (
+          <div
+            className="absolute left-2.5 bottom-20 inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[hsl(var(--accent-foreground))] shadow-[var(--shadow-sm)]"
+            data-testid="profile-card-boosted"
+          >
+            boosted
           </div>
-          <div className="mt-0.5 flex items-center gap-2 text-[12px] text-white/85">
-            {user.pronouns && <span>{user.pronouns}</span>}
+        )}
+
+        {/* Bottom info overlay */}
+        <div className="absolute inset-x-0 bottom-0 p-3.5 text-white">
+          <div className="font-display text-xl leading-tight tracking-tight">
+            {user.display_name}
+            <span className="ml-1.5 text-white/80 text-[13px] font-sans font-normal">{user.age}</span>
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[11.5px] text-white/85">
+            {user.pronouns && <span className="truncate">{user.pronouns}</span>}
             {typeof user.distance_km === "number" && (
               <span
                 className="inline-flex items-center gap-1"

@@ -2,21 +2,34 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { AppHeader } from "../components/AppHeader";
+import { AppFooter } from "../components/AppFooter";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { Label } from "../components/ui/label";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Download, Trash } from "lucide-react";
+import { Download, Trash, Shield, Moon, Sun, Monitor } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "../lib/theme";
 
 export default function SettingsPage() {
   const { user, refresh, logout } = useAuth();
   const nav = useNavigate();
+  const [theme, setTheme] = useTheme();
   const [privacy, setPrivacy] = useState(user?.privacy || {});
   useEffect(() => { if (user) setPrivacy(user.privacy || {}); }, [user]);
 
-  if (!user) return <div className="app-wrap dark:app-shell-bg app-shell-bg-light"><div className="app-content"><AppHeader /><div className="p-8">Loading...</div></div></div>;
+  if (!user) {
+    return (
+      <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
+        <div className="app-content flex flex-col min-h-screen">
+          <AppHeader />
+          <div className="flex-1 grid place-items-center text-sm text-[hsl(var(--muted-foreground))]">Lädt …</div>
+          <AppFooter />
+        </div>
+      </div>
+    );
+  }
 
   const save = async (patch) => {
     const next = { ...privacy, ...patch };
@@ -24,9 +37,7 @@ export default function SettingsPage() {
     try {
       await api.patch("/me", { privacy: next });
       await refresh();
-    } catch {
-      toast.error("Failed to save");
-    }
+    } catch { toast.error("Speichern fehlgeschlagen"); }
   };
 
   const exportData = async () => {
@@ -36,71 +47,93 @@ export default function SettingsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = "eros_export.json"; a.click();
       URL.revokeObjectURL(url);
-      toast.success("Data exported");
-    } catch {
-      toast.error("Export failed");
-    }
+      toast.success("Daten exportiert");
+    } catch { toast.error("Export fehlgeschlagen"); }
   };
 
   const deleteAccount = async () => {
     try {
       await api.delete("/gdpr/account");
-      toast.success("Account deleted.");
+      toast.success("Konto gelöscht.");
       logout(); nav("/login");
-    } catch {
-      toast.error("Delete failed");
-    }
+    } catch { toast.error("Löschen fehlgeschlagen"); }
+  };
+
+  const clearThemeOverride = () => {
+    try { localStorage.removeItem("eros_theme"); } catch {}
+    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+    setTheme(prefersDark ? "dark" : "light");
+    toast.success("Systempräferenz übernommen");
   };
 
   return (
-    <div className="app-wrap dark:app-shell-bg app-shell-bg-light">
-      <div className="app-content">
+    <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
+      <div className="app-content flex flex-col min-h-screen">
         <AppHeader />
-        <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-          <h1 className="font-display text-3xl">Settings</h1>
+        <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
+          <header className="pb-2">
+            <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Einstellungen</div>
+            <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">Deine Präferenzen</h1>
+          </header>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-3 shadow-[var(--shadow-sm)]">
-            <div className="font-display text-lg">Privacy</div>
-            <Row label="Read receipts" hint="Show when you’ve read their messages">
-              <Switch checked={!!privacy.read_receipts} onCheckedChange={(v) => save({ read_receipts: v })} data-testid="privacy-read-receipts" />
-            </Row>
-            <Row label="Online status" hint="Let others see when you’re online">
-              <Switch checked={!!privacy.show_online_status} onCheckedChange={(v) => save({ show_online_status: v })} data-testid="privacy-online-status" />
-            </Row>
-            <Row label="Typing indicator" hint="Show when you’re typing">
-              <Switch checked={!!privacy.show_typing} onCheckedChange={(v) => save({ show_typing: v })} data-testid="privacy-typing" />
-            </Row>
-            <Row label="Hidden mode" hint="Temporarily hide your profile from discovery">
-              <Switch checked={!!privacy.hidden_mode} onCheckedChange={(v) => save({ hidden_mode: v })} data-testid="privacy-hidden-mode" />
-            </Row>
-            <Row label="Screenshot notifications" hint="Notify others if a screenshot is detected">
-              <Switch checked={!!privacy.screenshot_notifications} onCheckedChange={(v) => save({ screenshot_notifications: v })} data-testid="privacy-screenshot" />
-            </Row>
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] p-6 space-y-4 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-[hsl(var(--accent))]" />
+              <div className="font-display text-lg tracking-tight">Privatsphäre</div>
+            </div>
+            <div className="divide-y divide-[hsl(var(--border))]/60">
+              <Row label="Lesebestätigungen" hint="Andere sehen, wenn du Nachrichten gelesen hast">
+                <Switch checked={!!privacy.read_receipts} onCheckedChange={(v) => save({ read_receipts: v })} data-testid="privacy-read-receipts" />
+              </Row>
+              <Row label="Online-Status" hint="Zeige anderen, wenn du online bist">
+                <Switch checked={!!privacy.show_online_status} onCheckedChange={(v) => save({ show_online_status: v })} data-testid="privacy-online-status" />
+              </Row>
+              <Row label="Tipp-Indikator" hint="Zeigen, wenn du gerade tippst">
+                <Switch checked={!!privacy.show_typing} onCheckedChange={(v) => save({ show_typing: v })} data-testid="privacy-typing" />
+              </Row>
+              <Row label="Versteckter Modus" hint="Verbirgt dein Profil vorübergehend">
+                <Switch checked={!!privacy.hidden_mode} onCheckedChange={(v) => save({ hidden_mode: v })} data-testid="privacy-hidden-mode" />
+              </Row>
+              <Row label="Screenshot-Hinweise" hint="Benachrichtige andere bei erkanntem Screenshot">
+                <Switch checked={!!privacy.screenshot_notifications} onCheckedChange={(v) => save({ screenshot_notifications: v })} data-testid="privacy-screenshot" />
+              </Row>
+            </div>
           </section>
 
-          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-3 shadow-[var(--shadow-sm)]">
-            <div className="font-display text-lg">Your data (GDPR)</div>
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">Download all your data, or permanently delete your account.</div>
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] p-6 space-y-4 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
+            <div className="font-display text-lg tracking-tight">Darstellung</div>
+            <div className="grid grid-cols-3 gap-2">
+              <ThemeButton label="Hell"   icon={<Sun className="h-4 w-4" />}   active={theme === "light"} onClick={() => setTheme("light")} testid="theme-light" />
+              <ThemeButton label="Dunkel" icon={<Moon className="h-4 w-4" />}  active={theme === "dark"}  onClick={() => setTheme("dark")}  testid="theme-dark" />
+              <ThemeButton label="System" icon={<Monitor className="h-4 w-4" />} active={false}           onClick={clearThemeOverride}       testid="theme-system" />
+            </div>
+            <div className="text-xs text-[hsl(var(--muted-foreground))]">Bei „System" folgt Eros automatisch deiner Betriebssystem-Einstellung.</div>
+          </section>
+
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] p-6 space-y-4 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
+            <div className="font-display text-lg tracking-tight">Deine Daten (DSGVO)</div>
+            <div className="text-sm text-[hsl(var(--muted-foreground))]">Lade alle deine Daten herunter oder lösche dein Konto dauerhaft.</div>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={exportData} variant="outline" className="gap-1" data-testid="gdpr-export-button"><Download className="h-4 w-4" /> Export my data</Button>
+              <Button onClick={exportData} variant="outline" className="gap-1.5 rounded-full" data-testid="gdpr-export-button"><Download className="h-4 w-4" /> Daten exportieren</Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="destructive" className="gap-1" data-testid="gdpr-delete-button"><Trash className="h-4 w-4" /> Delete account</Button>
+                  <Button variant="destructive" className="gap-1.5 rounded-full" data-testid="gdpr-delete-button"><Trash className="h-4 w-4" /> Konto löschen</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Delete account permanently?</AlertDialogTitle>
-                    <AlertDialogDescription>This removes your profile, photos, likes, matches, messages and albums. This cannot be undone.</AlertDialogDescription>
+                    <AlertDialogTitle>Konto dauerhaft löschen?</AlertDialogTitle>
+                    <AlertDialogDescription>Dein Profil, Fotos, Likes, Matches, Nachrichten und Alben werden entfernt. Das lässt sich nicht rückgängig machen.</AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={deleteAccount} data-testid="gdpr-delete-confirm">Delete</AlertDialogAction>
+                    <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                    <AlertDialogAction onClick={deleteAccount} data-testid="gdpr-delete-confirm">Löschen</AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
             </div>
           </section>
         </main>
+        <AppFooter />
       </div>
     </div>
   );
@@ -108,12 +141,34 @@ export default function SettingsPage() {
 
 function Row({ label, hint, children }) {
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div>
-        <Label className="text-sm">{label}</Label>
-        <div className="text-xs text-[hsl(var(--muted-foreground))]">{hint}</div>
+        <Label className="text-sm font-medium">{label}</Label>
+        <div className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">{hint}</div>
       </div>
-      <div>{children}</div>
+      <div className="shrink-0">{children}</div>
     </div>
+  );
+}
+
+function ThemeButton({ label, icon, active, onClick, testid }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testid}
+      className={[
+        "inline-flex flex-col items-center justify-center gap-1 rounded-[var(--radius-md)] border px-3 py-3 text-xs font-medium",
+        "transition-colors duration-[var(--dur-2)] ease-[var(--ease-out)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--background))]",
+        "active:scale-[0.98]",
+        active
+          ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] border-transparent shadow-[var(--shadow-sm)]"
+          : "bg-[hsl(var(--card))] text-[hsl(var(--foreground))] border-[hsl(var(--border))] hover:bg-[hsl(var(--secondary))]",
+      ].join(" ")}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   );
 }
