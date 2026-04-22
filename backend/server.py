@@ -1518,6 +1518,38 @@ async def broadcast_segment_options(user=Depends(_require_user)):
     return {"cities": cities, "interests": interests, "genders": genders}
 
 
+@api_router.post("/admin/broadcasts/segments/preview")
+async def broadcast_segment_preview(payload: dict, user=Depends(_require_user)):
+    """Count of users a given audience + segment filter would reach, before sending."""
+    await _require_role(user, ["admin", "superadmin"])
+    payload = payload or {}
+    audience = payload.get("audience") or "all"
+    q: Dict = {"id": {"$ne": EROS_SYSTEM_USER_ID}, "banned": {"$ne": True}, "is_system": {"$ne": True}}
+    if audience == "premium":
+        q["premium_expires_at"] = {"$gt": now_utc().isoformat()}
+    elif audience == "verified":
+        q["id_verified"] = True
+    elif audience == "staff":
+        q["role"] = {"$in": ["admin", "moderator", "superadmin", "content_reviewer", "support"]}
+    elif audience == "segment":
+        if payload.get("cities"):
+            q["location.city"] = {"$in": payload["cities"]}
+        if payload.get("interests"):
+            q["interests"] = {"$in": payload["interests"]}
+        if payload.get("genders"):
+            q["gender_identity"] = {"$in": payload["genders"]}
+        age_q: Dict = {}
+        if payload.get("age_min") not in (None, ""):
+            age_q["$gte"] = int(payload["age_min"])
+        if payload.get("age_max") not in (None, ""):
+            age_q["$lte"] = int(payload["age_max"])
+        if age_q:
+            q["age"] = age_q
+    count = await db.users.count_documents(q)
+    total = await db.users.count_documents({"is_system": {"$ne": True}, "banned": {"$ne": True}})
+    return {"count": count, "total": total}
+
+
 @api_router.post("/admin/broadcasts")
 async def create_broadcast(payload: dict, user=Depends(_require_user)):
     """Create an authentic platform broadcast. Severity: info|warning|urgent. Audience: all|premium|verified|staff."""

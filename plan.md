@@ -238,6 +238,37 @@ Phase 5 wurde in mehreren Teilschritten umgesetzt und anschließend getestet.
 
 **Status:** Abgeschlossen.
 
+### Phase 5.6 — Moderations- & Broadcast-System (Broadcasts, Segmente, Admin Notifications)
+**Ziele (erfüllt, verifiziert via Screenshots + curl):**
+- **Admin Realtime WebSocket Notifications**
+  - Granulare Kanäle + Glocken-Badge im Header
+  - WS Endpoint: `WS /api/admin/ws`
+- **Admin Report Context Erweiterungen**
+  - Vollständiger Chat-Kontext im Report-Dialog
+  - Media Delete-Lock während aktiver Reports
+  - Foto-Retention (Admin kann Fotos 30 Tage sichern/locken)
+- **Minor Registration Block & IP-Flagging**
+  - Under-18 Registrierungen blockiert
+  - 48h IP-Flagging für Wiederholversuche
+- **Broadcast-System: Signed System Messages („Eros“) als read-only Chats**
+  - Broadcasts werden authentisch signiert (HMAC-SHA256)
+  - Auslieferung als read-only Chat in die Inbox (Postfach) der Nutzer:innen
+  - Globales „Authentizitäts“-Banner (Frontend-Komponente: `BroadcastBanner`)
+- **Segmentierte Broadcasts (City/Interests/Gender/Age)**
+  - Backend:
+    - `GET /api/admin/broadcasts/segments/options` (distinct cities/interests/genders)
+    - `POST /api/admin/broadcasts/segments/preview` (count/total)
+    - `POST /api/admin/broadcasts` akzeptiert `audience=segment` + Filter (validiert mindestens 1 Kriterium)
+  - Frontend (AdminPage Broadcast Composer):
+    - Audience Auswahl als prominente Chip/Radio-Gruppe: **Alle**, **Premium**, **ID-verifiziert**, **Staff**, **Segment**
+    - Segment-Panel erscheint nur bei Auswahl **Segment**
+    - **Live-Empfängerzahl** als „≈ X / total Empfänger:innen“ direkt neben „Zielgruppe“
+    - Debounced Preview via `useEffect` (300ms) auf Audience-/Filter-Änderungen
+  - Verifikation:
+    - Screenshot bestätigt: Chip-Gruppe sichtbar, Segment-Panel öffnet, Filter (Berlin + music) ergeben z. B. „≈ 2 / 43“.
+
+**Status:** Abgeschlossen.
+
 ---
 
 ## Offene Issues / Risiken
@@ -259,15 +290,37 @@ Phase 5 wurde in mehreren Teilschritten umgesetzt und anschließend getestet.
 
 ---
 
+## Nächste Schritte (Upcoming Tasks)
+### Task 1 (P1): Broadcast-Historie für Nutzer:innen im Konto-Bereich
+**Ziel:** Nutzer:innen können offizielle System-Broadcasts („Eros“) im Konto-Bereich nachträglich einsehen und filtern.
+- UI: Account → „Mitteilungen“/„Broadcast-Historie“
+- Filter: Severity, Zeitraum, „angeheftet“, evtl. „nur ungelesen“ (sofern Read-State vorhanden)
+- Backend: je nach Datenmodell
+  - entweder Abfrage gegen die bereits als Chats gespeicherten Broadcast-Matches
+  - oder dedizierte Broadcast-Collection mit User-Read-State
+
+### Task 2 (P2): Bulk-User-Actions im Admin-Discover-Grid
+**Ziel:** Schnellaktionen für Moderation in großen Mengen.
+- UI: Multi-Select im Admin Discover + Aktionen (ban/unban, hide/unhide, shadow restrict, retention lock etc.)
+- Backend: Admin Bulk-Endpoints mit Audit Logging
+
+### Task 3 (P2, Future): Re-sync `/app/mobile` (React Native)
+**Ziel:** Feature-Parität/UX-Parität mit Web-Stand.
+- Routing/Design-System angleichen
+- Broadcast Inbox + Moderation/Privacy-Endpoints übernehmen
+
+---
+
 ## Status / Zusammenfassung
 - Phase 1–4: **fertig**.
-- Phase 5.0–5.5: **fertig (Backend + Frontend)**.
+- Phase 5.0–5.6: **fertig (Backend + Frontend)** inkl. Broadcast-System und verifizierter Segment-Broadcast-Composer UI.
 
 ### Final delivery (aktualisiert)
 - Voll funktionsfähige Web-App mit:
   - Mutual Discovery, AI Moderation, Events, Premium/Boost, Chat, i18n, erweiterte Profile, Screenshot Guard.
   - Phase 5: Travel Planner, ID-Verifizierung (kostenfrei), Auto-Mod Shadow-Restrict, Admin AI Config, Admin Payment Config, 5-Foto Limit, visited Eye Marker, elegantes UI-Upgrade.
   - Phase 5.5: moderne Typografie, konsistente Container-Breiten, Double-Row Desktop Layout, Preview Mode, ID-only Verified Badge, vollständige Admin Report-Details, Unmatch/Block, Albums Skeletons, Screenshot-Audit.
+  - Phase 5.6: Admin WS Notifications, Report-Kontext/Locks/Retention, Minor Block + IP Flagging, signed Broadcasts als read-only Chats, segmentierte Broadcasts inkl. Live-Preview UI.
   - Keine Tracker (Posthog/Emergent) im Frontend.
 
 **Status:** COMPLETED

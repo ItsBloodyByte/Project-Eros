@@ -361,6 +361,8 @@ export default function AdminPage() {
   });
   const [bcSegOpts, setBcSegOpts] = useState({ cities: [], interests: [], genders: [] });
   const [bcBusy, setBcBusy] = useState(false);
+  const [bcPreview, setBcPreview] = useState(null);
+  const [bcPreviewTotal, setBcPreviewTotal] = useState(null);
   const loadBroadcasts = async () => {
     try {
       const { data } = await api.get("/admin/broadcasts");
@@ -396,6 +398,37 @@ export default function AdminPage() {
     try { await api.delete(`/admin/broadcasts/${id}`); toast.success("Gelöscht"); await loadBroadcasts(); }
     catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
   };
+
+  // Live audience size preview (debounced) — recalculates when audience / segment filters change
+  useEffect(() => {
+    if (!user || !["admin", "superadmin"].includes(user.role)) return;
+    const handle = setTimeout(async () => {
+      try {
+        const payload = { audience: bcForm.audience };
+        if (bcForm.audience === "segment") {
+          if (bcForm.cities.length) payload.cities = bcForm.cities;
+          if (bcForm.interests.length) payload.interests = bcForm.interests;
+          if (bcForm.genders.length) payload.genders = bcForm.genders;
+          if (bcForm.age_min !== "") payload.age_min = Number(bcForm.age_min);
+          if (bcForm.age_max !== "") payload.age_max = Number(bcForm.age_max);
+        }
+        const { data } = await api.post("/admin/broadcasts/segments/preview", payload);
+        setBcPreview(typeof data?.count === "number" ? data.count : null);
+        setBcPreviewTotal(typeof data?.total === "number" ? data.total : null);
+      } catch {
+        setBcPreview(null);
+      }
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [
+    user?.role,
+    bcForm.audience,
+    bcForm.cities.join("|"),
+    bcForm.interests.join("|"),
+    bcForm.genders.join("|"),
+    bcForm.age_min,
+    bcForm.age_max,
+  ]);
 
   const updateStatus = async (id, status) => {
     await api.post(`/admin/reports/${id}/status`, { status });
@@ -987,22 +1020,43 @@ export default function AdminPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label>Zielgruppe</Label>
-                    <Select value={bcForm.audience} onValueChange={(v) => setBcForm({ ...bcForm, audience: v })}>
-                      <SelectTrigger data-testid="bc-audience"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Alle Nutzer</SelectItem>
-                        <SelectItem value="premium">Nur Premium</SelectItem>
-                        <SelectItem value="verified">Nur ID-verifiziert</SelectItem>
-                        <SelectItem value="staff">Nur Team (Staff)</SelectItem>
-                        <SelectItem value="segment">Segment (Stadt / Interessen …)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
                   <label className="flex items-center gap-2 mt-6">
                     <Switch checked={bcForm.pinned} onCheckedChange={(v) => setBcForm({ ...bcForm, pinned: v })} data-testid="bc-pinned" /> Anheften
                   </label>
+                  <div className="md:col-span-3">
+                    <Label className="flex items-center justify-between">
+                      <span>Zielgruppe</span>
+                      {bcPreview !== null && (
+                        <span className="text-[11px] text-[hsl(var(--muted-foreground))]" data-testid="bc-preview-count">
+                          ≈ <strong className="text-[hsl(var(--foreground))]">{bcPreview}</strong>
+                          {bcPreviewTotal !== null ? ` / ${bcPreviewTotal}` : ""} Empfänger:innen
+                        </span>
+                      )}
+                    </Label>
+                    <div className="flex flex-wrap gap-2 mt-1" role="radiogroup">
+                      {[
+                        { v: "all", label: "Alle Nutzer" },
+                        { v: "premium", label: "Nur Premium" },
+                        { v: "verified", label: "ID-verifiziert" },
+                        { v: "staff", label: "Team (Staff)" },
+                        { v: "segment", label: "Segment" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.v}
+                          type="button"
+                          onClick={() => setBcForm({ ...bcForm, audience: opt.v })}
+                          className={[
+                            "rounded-full px-3 py-1 text-xs border transition-colors",
+                            bcForm.audience === opt.v
+                              ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] border-[hsl(var(--accent))]"
+                              : "border-[hsl(var(--border))] hover:bg-[hsl(var(--secondary))]"
+                          ].join(" ")}
+                          data-testid={`bc-audience-${opt.v}`}
+                          aria-pressed={bcForm.audience === opt.v}
+                        >{opt.label}</button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="md:col-span-3">
                     <Label>Inhalt</Label>
                     <textarea className="w-full min-h-[140px] rounded-md border bg-background p-3 text-sm" maxLength={5000} value={bcForm.body} onChange={(e) => setBcForm({ ...bcForm, body: e.target.value })} data-testid="bc-body" placeholder="Offizielle Mitteilung an deine Zielgruppe …" />
