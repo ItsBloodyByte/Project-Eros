@@ -11,7 +11,7 @@ Konzept sieht NestJS + PostgreSQL + Next.js + React Native vor. Umgebung nutzt F
 | NestJS | FastAPI (Python) |
 | PostgreSQL + PostGIS | MongoDB mit 2dsphere Geo-Index |
 | MinIO | Base64 in MongoDB (MVP), später austauschbar |
-| Next.js + RN | React (Web) — web-first MVP + Expo Scaffold für Mobile |
+| Next.js + RN | React (Web) — web-first MVP + Expo/React-Native für Mobile |
 | Socket.IO (NestJS) | FastAPI WebSocket |
 | NudeNet/DeepFace | Gemini Vision via Emergent LLM Key |
 | Argon2id | bcrypt |
@@ -28,8 +28,8 @@ Konzept sieht NestJS + PostgreSQL + Next.js + React Native vor. Umgebung nutzt F
 9. **GDPR:** Export + Delete, Consent Tracking.
 10. **Partner-Profile (Couples):**
    - **Linked Couple (2 Logins):** Zwei Accounts werden nach gegenseitiger Bestätigung als Paar-Identität angezeigt; jeder behält seine Login-Daten.
-   - **Duo Account (1 Login):** Registrierung als Paar-Profil mit Person A + Person B (persona_b) im selben Konto.
-   - **Chat Identität pro Nachricht:** Wenn A schreibt, erscheint A; wenn B schreibt, erscheint B.
+   - **Duo Account (1 Login):** Registrierung als Paar-Profil mit Person A + Person B (`persona_b`) im selben Konto.
+   - **Chat Identität pro Nachricht:** Wenn A schreibt, erscheint A; wenn B schreibt, erscheint B (shared inbox).
 
 ---
 
@@ -98,7 +98,7 @@ E2E: Auth → Profile/Photo/AI → Discover mutual-filter → Like/Match → Cha
 - Backend- und Frontendtests überwiegend grün; Restpunkt: Session-Persistence UX leicht holprig (Frontend-Rehydration/Flicker) → siehe Issue.
 
 ### Native mobile
-- Expo Scaffold vorhanden (`/app/mobile`), Feature-Parität nicht umgesetzt.
+- Expo Scaffold vorhanden (`/app/mobile`), Feature-Parität nicht umgesetzt (zu diesem Zeitpunkt).
 
 **Status:** Abgeschlossen.
 
@@ -218,13 +218,13 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
   - `RegisterRequest`: `account_type: single|duo` + `persona_b`.
   - Register-Flow speichert `account_type` + sanitizte `persona_b`.
   - Serializer: `public_user_from_doc` gibt `account_type` + `persona_b` (public) zurück.
-  - Endpoint: `PATCH /api/me/persona-b` (für spätere UI-Erweiterung).
+  - Endpoint: `PATCH /api/me/persona-b`.
 - Frontend:
-  - RegisterPage: Toggle **Einzelperson / Paar** + Person-B Subformular (MVP Felder: Name, Birthdate, Gender, Pronomen, Kurz-Bio).
+  - RegisterPage: Toggle **Einzelperson / Paar** + Person-B Subformular (MVP Felder).
   - ProfileCard: zeigt „A & B“ + Paar-Badge + optional Secondary Avatar.
   - ProfileViewPage: zeigt Person A + Persona B als getrennte Panels.
 
-**Status:** Abgeschlossen (Persona-B Editor UI: Backlog).
+**Status:** Abgeschlossen.
 
 ### Phase 7.2 — Linked Couple (Two-Login Paarprofil mit Bestätigung)
 **Ziel (erfüllt):**
@@ -245,7 +245,7 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
   - Discover: Partner-Snapshot wird angehängt + Couple-De-Dupe (nur 1 Eintrag pro couple_id).
   - ProfileView: `/api/users/{id}` liefert optional `partner` Snapshot.
 - Frontend:
-  - AccountPage: neue `CoupleSection` (Einladen/Annehmen/Ablehnen/Zurückziehen/Unlink).
+  - AccountPage: `CoupleSection` (Einladen/Annehmen/Ablehnen/Zurückziehen/Unlink).
   - ProfileCard + ProfileView: Paar-Badge + Darstellung beider Personen.
 
 **Status:** Abgeschlossen.
@@ -267,12 +267,18 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 
 **Status:** Abgeschlossen.
 
-### Phase 7.4 — Offenes Backlog (P2)
-- **MyProfile-Editor Tab für Persona B** (Duo Account):
-  - Fotos/Körper/Lifestyle/Kinks/Interessen für Person B bearbeiten.
-  - UI: zusätzlicher Tab in `/me` (Admin Profile Editor analog in Zukunft optional).
+### Phase 7.4 — Persona-B Editor (Duo Account) (P2)
+**Ziel (erfüllt):**
+- Duo-Accounts können Person B vollständig pflegen (Fotos/Körper/Lifestyle/Kinks/Interessen etc.).
 
-**Status:** Offen.
+**Umsetzung (Delivered):**
+- Frontend:
+  - Neue Komponente `PersonaBEditor` (Fotos: add/remove/primary; Basisangaben; Körper & Lifestyle; Kinks; Save).
+  - `MyProfilePage` zeigt Person-B-Bereich konditional (`user.account_type === 'duo'`) + Jump-Link.
+- Backend:
+  - Nutzung des bereits vorhandenen `PATCH /api/me/persona-b` Endpoints; Foto-Array wird als Teil von `persona_b` persistiert.
+
+**Status:** Abgeschlossen.
 
 ---
 
@@ -295,24 +301,57 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 ### Task 1 (P1): Broadcast-Historie für Nutzer:innen im Konto-Bereich
 **Ziel:** Nutzer:innen können offizielle System-Broadcasts („Eros“) im Konto-Bereich nachträglich einsehen und filtern.
 
-### Task 2 (P2): Persona-B Editor Tab (Duo Account)
-**Ziel:** Duo-Accounts können Person B vollständig pflegen (Fotos/Körper/Kinks etc.).
+**Status:** Offen.
 
-### Task 3 (P2, Future → bestätigt): Re-sync `/app/mobile` (React Native) — Voll-Parität (Option C)
+### Task 2 (P2): Mobile Voll-Parität (Option C) — Re-sync `/app/mobile`
 **Ziel:** Vollständige Feature- und UX-Parität mit Web.
 
 **Leitplanken:**
 - Iterativ, API bleibt identisch, Mobile implementiert Clients/Views.
+- Paare/Couples sind First-Class (Linked Couples + Duo Account) inkl. Chat-Identität pro Nachricht.
 
-**Iterationen (Vorschlag, aktualisiert um Couples):**
-1. Auth + Onboarding (inkl. Paar-Registrierung) + Discover Grid + ProfileView (inkl. Couple UI) + Likes/Matches
-2. Chat + Broadcast Inbox + Couple-aware message identity
-3. Account/Settings: Premium extras, Promo redeem, Visitors, ID Verification, Travel, Couple linking/invites
-4. Albums + Events
-5. Reports (User-side) + Moderation Entry Points
-6. Optional: Admin Panel auf Mobile
+**Iterationen (aktualisiert um aktuellen Stand):**
+1. **Iteration 1 — Core Client + Couples Foundations (DONE)**
+   - Auth: Login + **Register inkl. Duo-Option**
+   - Navigation: Bottom Tabs (Discover/Matches/Account) + Stack (Profile/Chat)
+   - Discover: Grid, NSFW blur, City/Distance, Couple Badge + Partner-Avatar Overlay
+   - Profile: Couple-aware Header + PersonDetails (Körper & Lifestyle + Kinks immer sichtbar)
+   - Matches: Liste mit Couple Anzeige
+   - Chat: Couple-aware Sender-Labels + Sender-Avatare; Header über `couple_meta`
+   - Account: Premium-Quota, Promo Redeem, Couple Invites (invite/accept/decline/revoke/unlink), Logout
 
-**Status:** Offen / in Planung.
+   **Status:** Abgeschlossen.
+
+2. **Iteration 2 — Filters + Media Uploads + Profile Editing**
+   - Filter UI (Quick Filter Bar / Drawer) + Premium-gated advanced filters
+   - Foto-Upload (inkl. Moderation/Blur Handling) + Profilbearbeitung
+   - Persona-B Editing (mobile) für Duo Accounts
+   - Stealth Toggle, Visitors Liste (Premium)
+
+   **Status:** Offen.
+
+3. **Iteration 3 — Broadcast Inbox + Notifications + Settings**
+   - Broadcast-Historie im Konto (P1) + mobile parity
+   - Chat Broadcast Threads parity
+   - Settings (Privacy, Screenshot-Deterrence handling, Language)
+
+   **Status:** Offen.
+
+4. **Iteration 4 — Albums + Events**
+   - Albums (Create, Share, Unlock)
+   - Events (List/Detail/RSVP)
+
+   **Status:** Offen.
+
+5. **Iteration 5 — Reports (User Side) + Moderation Entry Points**
+   - Report flows aus Mobile
+   - Minimal moderation surfaces (optional)
+
+   **Status:** Offen.
+
+6. **Iteration 6 — Optional: Admin Panel auf Mobile**
+
+**Status:** In Umsetzung (Iteration 1 fertig; weitere Iterationen offen).
 
 ---
 
@@ -320,7 +359,7 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 - Phase 1–4: **fertig**.
 - Phase 5.0–5.6: **fertig (Backend + Frontend)** inkl. Broadcast-System.
 - Phase 6.0–6.4: **fertig** (City, RoleBadge Tooltips, Bulk Actions, Premium/Promos, Blog).
-- Phase 7.0–7.3: **fertig** (Partner-Profile in 2 Modi + Chat Identity pro Nachricht + Always-visible Körper/Kinks).
+- Phase 7.0–7.4: **fertig** (Always-visible Körper/Kinks, Couples in 2 Modi, Couple-aware Chat, Persona-B Editor im Web).
 
 ### Final delivery (aktualisiert)
 - Voll funktionsfähige Web-App mit:
@@ -330,8 +369,12 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
   - Blog mit TipTap Editor.
   - **Couples / Partner-Profile**:
     - Linked (2 Konten, 2 Logins) mit Invite/Accept/Unlink.
-    - Duo (1 Konto) mit persona_b.
+    - Duo (1 Konto) mit `persona_b`.
     - Discover/Profile zeigt beide Personen; Chat zeigt Sender pro Nachricht.
-  - Keine Tracker (Posthog/Emergent) im Frontend.
+    - Web: Voller Person-B Editor (Fotos/Körper/Kinks).
+- Mobile App (`/app/mobile`):
+  - **Iteration 1 abgeschlossen**: Auth/Register (inkl. Duo), Discover/Profile (Couple-aware), Matches/Chat (Couple-aware), Account (Promos + Couples).
+  - Weitere Iterationen offen (Filters, Uploads, Blog, Events, Alben, Stealth/Visitors, Video).
+- Keine Tracker (Posthog/Emergent) im Frontend.
 
-**Status:** COMPLETED (Web). Mobile Voll-Parität: OPEN. Duo Persona-B Editor: BACKLOG.
+**Status:** COMPLETED (Web). Mobile Voll-Parität: IN PROGRESS (Iteration 1 DONE).

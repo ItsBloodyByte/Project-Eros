@@ -16,9 +16,10 @@ import {
   COMMON_KINKS, penisCategoryFor, showsCupSize, showsPenisSize,
 } from "../lib/constants";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
-import { ImagePlus, Star, Trash2, Video, Play, GripVertical, ArrowUp, Eye } from "lucide-react";
+import { ImagePlus, Star, Trash2, Video, Play, GripVertical, ArrowUp, Eye, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { PersonaBEditor } from "../components/PersonaBEditor";
 
 function Chip({ on, onClick, children }) {
   return (
@@ -190,6 +191,11 @@ export default function MyProfilePage() {
               <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">{t("profile.edit")}</h1>
             </div>
             <div className="flex items-center gap-2">
+              {user?.account_type === "duo" && (
+                <Button asChild variant="outline" size="sm" className="rounded-full" data-testid="persona-b-jump">
+                  <a href="#persona-b-editor"><UserRound className="h-4 w-4 mr-1" /> Person B bearbeiten</a>
+                </Button>
+              )}
               <Button asChild variant="outline" size="sm" className="rounded-full" data-testid="profile-preview-link">
                 <Link to={`/profile/${user.id}?preview=1`}><Eye className="h-4 w-4 mr-1" /> Vorschau als andere</Link>
               </Button>
@@ -456,6 +462,22 @@ export default function MyProfilePage() {
           <div className="flex justify-end">
             <Button onClick={save} disabled={saving} data-testid="save-profile-button">{saving ? t("profile.saving") : t("profile.save")}</Button>
           </div>
+
+          {user?.account_type === "duo" && (
+            <div id="persona-b-editor" className="pt-4 space-y-4">
+              <div className="flex items-center justify-between border-t border-[hsl(var(--border))] pt-6">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--accent))] mb-1">Paar-Account</div>
+                  <h2 className="font-display text-3xl sm:text-4xl tracking-tight leading-none">Person B bearbeiten</h2>
+                  <div className="text-sm text-[hsl(var(--muted-foreground))] mt-1">
+                    Zweite Person im Paar-Profil — eigene Fotos, Basisangaben, Körper &amp; Life-Style und Kinks.
+                  </div>
+                </div>
+              </div>
+              <PersonaBEditor />
+            </div>
+          )}
+
         </main>
       </div>
     </div>
