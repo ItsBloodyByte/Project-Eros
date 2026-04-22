@@ -1,22 +1,42 @@
 [
   {
-    "content": "Backend: Payments - Mehrere Anbieter-Optionen",
+    "content": "Schriftart modernisieren: Playfair Display entfernen, Figtree global (+ Fredoka als optionaler Display-Akzent)",
     "status": "completed"
   },
   {
-    "content": "Frontend: Admin Payment-Konfig mit Provider-Auswahl + pro-Anbieter-Keys",
+    "content": "Verifiziert-Badge nur noch bei id_verified (ProfileCard + ProfileView)",
     "status": "completed"
   },
   {
-    "content": "Backend: Chat Link-Blocker + Frontend-Fehlermeldung",
+    "content": "Container-Breiten vereinheitlichen: Account, Settings, EditProfile auf max-w-6xl",
     "status": "completed"
   },
   {
-    "content": "Backend + Frontend: Legal Pages (Public + Admin Editor + Footer)",
+    "content": "Double-Row Desktop Layout für Profil bearbeiten (MyProfile) und Profilansicht",
     "status": "completed"
   },
   {
-    "content": "Testing: 96.8% Pass-Rate Backend-Tests",
+    "content": "Admin Panel: Report-Details Dialog mit vollem Kontext",
+    "status": "completed"
+  },
+  {
+    "content": "Profil-Vorschau-Modus: eigener Profil-Preview als andere User",
+    "status": "completed"
+  },
+  {
+    "content": "Unmatch/Block Pills in ProfileView + Backend Endpoints",
+    "status": "completed"
+  },
+  {
+    "content": "Skeleton-States für Alben-Seite",
+    "status": "completed"
+  },
+  {
+    "content": "Screenshot-Detection-Events (Admin Audit + User-Benachrichtigung)",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend Build + visuelle Verifikation per Screenshot",
     "status": "completed"
   }
 ]

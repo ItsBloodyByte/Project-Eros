@@ -30,8 +30,12 @@ export function AuthProvider({ children }) {
     }
   }, [refresh]);
 
-  const login = async (email, password) => {
-    const { data } = await api.post("/auth/login", { email, password });
+  const login = async (arg1, arg2) => {
+    // Support both login({email, password}) and login(email, password)
+    const payload = (arg1 && typeof arg1 === "object" && "email" in arg1)
+      ? arg1
+      : { email: arg1, password: arg2 };
+    const { data } = await api.post("/auth/login", payload);
     setAuthToken(data.access_token);
     await refresh();
     return data.user;

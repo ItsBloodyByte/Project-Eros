@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { BadgeCheck, MapPin, Eye, ShieldCheck } from "lucide-react";
+import { MapPin, Eye, ShieldCheck } from "lucide-react";
 import { NsfwBlurOverlay } from "./NsfwBlurOverlay";
 
 export function ProfileCard({ user, visited = false }) {
@@ -38,7 +38,7 @@ export function ProfileCard({ user, visited = false }) {
         {/* Subtle bottom scrim for text legibility */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
-        {/* Top-left badges */}
+        {/* Top-left badges — only ID-verified users get a visible badge */}
         <div className="absolute left-2.5 top-2.5 flex flex-col gap-1">
           {user.id_verified && (
             <span
@@ -47,11 +47,6 @@ export function ProfileCard({ user, visited = false }) {
               data-testid="profile-card-id-badge"
             >
               <ShieldCheck className="h-3 w-3" /> ID
-            </span>
-          )}
-          {user.verified && !user.id_verified && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[10.5px] font-medium text-white backdrop-blur-sm">
-              <BadgeCheck className="h-3 w-3" /> verifiziert
             </span>
           )}
         </div>

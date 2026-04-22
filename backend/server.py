@@ -436,6 +436,7 @@ async def discover(
     my_gender = user.get("gender_identity")
     my_age = user.get("age", 0)
     seen = set(user.get("seen_user_ids", []) or [])
+    blocked = set(user.get("blocked_user_ids", []) or [])
 
     query: Dict = {
         "id": {"$ne": user["id"]},
@@ -446,6 +447,13 @@ async def discover(
             "$lte": prefs.get("age_max", 99),
         },
     }
+    # Exclude users who blocked me OR whom I blocked
+    exclude_ids = set(blocked)
+    # Users who blocked me
+    async for bdoc in db.users.find({"blocked_user_ids": user["id"]}, {"id": 1}):
+        exclude_ids.add(bdoc["id"])
+    if exclude_ids:
+        query["id"] = {"$ne": user["id"], "$nin": list(exclude_ids)}
 
     # One-way filters from viewer
     if prefs.get("seeking_genders"):
@@ -461,7 +469,12 @@ async def discover(
     if prefs.get("only_verified"):
         query["verified"] = True
     if prefs.get("hide_seen") and seen:
-        query["id"] = {"$ne": user["id"], "$nin": list(seen)}
+        cur = query.get("id", {"$ne": user["id"]})
+        if "$nin" in cur:
+            cur["$nin"] = list(set(cur["$nin"]) | seen)
+        else:
+            cur["$nin"] = list(seen)
+        query["id"] = cur
 
     # Phase 4 extended filters
     if prefs.get("body_types"):
@@ -546,7 +559,8 @@ async def mark_seen(user_id: str, user=Depends(_require_user)):
 async def view_user(user_id: str, user=Depends(_require_user)):
     doc = await _get_user_doc(user_id)
     is_admin = user.get("role") in {"admin", "moderator", "superadmin", "content_reviewer", "support"}
-    if not is_admin:
+    is_self = user_id == user["id"]
+    if not is_admin and not is_self:
         if doc.get("banned") or doc.get("privacy", {}).get("hidden_mode"):
             raise HTTPException(404, "Not found")
     pub = public_user_from_doc(
@@ -629,6 +643,58 @@ async def create_like(body: LikeRequest, user=Depends(_require_user)):
 @api_router.delete("/likes/{target_user_id}")
 async def unlike(target_user_id: str, user=Depends(_require_user)):
     await db.likes.delete_one({"from_user": user["id"], "to_user": target_user_id})
+    return {"ok": True}
+
+
+# ---------- Unmatch & Block ----------
+@api_router.post("/matches/{match_id}/unmatch")
+async def unmatch(match_id: str, user=Depends(_require_user)):
+    m = await db.matches.find_one({"id": match_id})
+    if not m or user["id"] not in (m.get("user_a"), m.get("user_b")):
+        raise HTTPException(404, "Match not found")
+    other_id = m["user_b"] if m["user_a"] == user["id"] else m["user_a"]
+    # Remove mutual likes & match & messages
+    await db.likes.delete_many({
+        "$or": [
+            {"from_user": user["id"], "to_user": other_id},
+            {"from_user": other_id, "to_user": user["id"]},
+        ]
+    })
+    await db.matches.delete_one({"id": match_id})
+    await db.messages.delete_many({"match_id": match_id})
+    await _audit(user["id"], "unmatch", other_id, {"match_id": match_id})
+    return {"ok": True}
+
+
+@api_router.post("/users/{target_user_id}/block")
+async def block_user(target_user_id: str, user=Depends(_require_user)):
+    if target_user_id == user["id"]:
+        raise HTTPException(400, "Cannot block yourself")
+    await db.users.update_one({"id": user["id"]}, {"$addToSet": {"blocked_user_ids": target_user_id}})
+    # Also break any match/likes
+    await db.likes.delete_many({
+        "$or": [
+            {"from_user": user["id"], "to_user": target_user_id},
+            {"from_user": target_user_id, "to_user": user["id"]},
+        ]
+    })
+    match = await db.matches.find_one({
+        "$or": [
+            {"user_a": user["id"], "user_b": target_user_id},
+            {"user_a": target_user_id, "user_b": user["id"]},
+        ]
+    })
+    if match:
+        await db.matches.delete_one({"id": match["id"]})
+        await db.messages.delete_many({"match_id": match["id"]})
+    await _audit(user["id"], "block_user", target_user_id)
+    return {"ok": True}
+
+
+@api_router.delete("/users/{target_user_id}/block")
+async def unblock_user(target_user_id: str, user=Depends(_require_user)):
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"blocked_user_ids": target_user_id}})
+    await _audit(user["id"], "unblock_user", target_user_id)
     return {"ok": True}
 
 
@@ -807,6 +873,11 @@ async def ws_chat(websocket: WebSocket, match_id: str, token: str = Query(...)):
                         "type": "screenshot",
                         "from": user_id,
                     })
+                # Always log screenshot events to the audit trail so moderators can review
+                try:
+                    await _audit(user_id, "screenshot_detected", match_id, {"match_id": match_id})
+                except Exception:
+                    pass
     except WebSocketDisconnect:
         pass
     finally:
@@ -944,6 +1015,84 @@ async def admin_list_reports(user=Depends(_require_user), status: Optional[str] 
     cursor = db.reports.find(q).sort("created_at", -1)
     items = await cursor.to_list(length=500)
     return {"reports": serialize_doc(items)}
+
+
+@api_router.get("/admin/reports/{report_id}")
+async def admin_report_detail(report_id: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin"])
+    rep = await db.reports.find_one({"id": report_id})
+    if not rep:
+        raise HTTPException(404, "Report not found")
+
+    async def _user_summary(uid: Optional[str]):
+        if not uid:
+            return None
+        u = await db.users.find_one({"id": uid}, {"password_hash": 0})
+        if not u:
+            return None
+        return {
+            "id": u.get("id"),
+            "display_name": u.get("display_name"),
+            "email": u.get("email"),
+            "role": u.get("role", "user"),
+            "banned": bool(u.get("banned")),
+            "shadow_restricted": bool(u.get("shadow_restricted")),
+            "id_verified": bool(u.get("id_verified")),
+            "age": u.get("age"),
+        }
+
+    reporter = await _user_summary(rep.get("reporter_id"))
+    reported = None
+    target_context: Dict = {}
+    if rep.get("target_type") == "user":
+        reported = await _user_summary(rep.get("target_id"))
+    elif rep.get("target_type") == "photo":
+        # find owner of the photo
+        owner = await db.users.find_one({"photos.id": rep.get("target_id")}, {"password_hash": 0})
+        if owner:
+            reported = {
+                "id": owner.get("id"),
+                "display_name": owner.get("display_name"),
+                "email": owner.get("email"),
+                "role": owner.get("role", "user"),
+                "banned": bool(owner.get("banned")),
+                "shadow_restricted": bool(owner.get("shadow_restricted")),
+            }
+            photo = next((p for p in (owner.get("photos") or []) if p.get("id") == rep.get("target_id")), None)
+            if photo:
+                target_context["photo"] = {
+                    "id": photo.get("id"),
+                    "data": photo.get("data"),
+                    "nsfw_score": photo.get("nsfw_score"),
+                    "has_face": photo.get("has_face"),
+                }
+    elif rep.get("target_type") == "message":
+        msg = await db.messages.find_one({"id": rep.get("target_id")})
+        if msg:
+            target_context["message"] = {
+                "id": msg.get("id"),
+                "text": msg.get("text"),
+                "created_at": msg.get("created_at"),
+                "sender_id": msg.get("sender_id"),
+                "match_id": msg.get("match_id"),
+            }
+            reported = await _user_summary(msg.get("sender_id"))
+    # Reporter history on target
+    reporter_history_count = 0
+    if rep.get("reporter_id"):
+        reporter_history_count = await db.reports.count_documents({"reporter_id": rep["reporter_id"]})
+    target_report_count = 0
+    if rep.get("target_id"):
+        target_report_count = await db.reports.count_documents({"target_id": rep["target_id"]})
+
+    return {
+        "report": serialize_doc(rep),
+        "reporter": reporter,
+        "reported": reported,
+        "target_context": target_context,
+        "reporter_history_count": reporter_history_count,
+        "target_report_count": target_report_count,
+    }
 
 
 @api_router.post("/admin/reports/{report_id}/status")

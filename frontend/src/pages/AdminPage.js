@@ -9,6 +9,7 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Switch } from "../components/ui/switch";
 import { useAuth } from "../lib/AuthContext";
 import { toast } from "sonner";
@@ -35,6 +36,22 @@ export default function AdminPage() {
     supported_providers: ["stripe"],
     known_providers: ["stripe","paypal","mollie","klarna","paddle","custom"],
   });
+  const [reportDetail, setReportDetail] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+
+  const openReport = async (id) => {
+    setReportLoading(true);
+    setReportDetail({ loading: true, report: { id } });
+    try {
+      const { data } = await api.get(`/admin/reports/${id}`);
+      setReportDetail(data);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Konnte Report nicht laden");
+      setReportDetail(null);
+    } finally {
+      setReportLoading(false);
+    }
+  };
 
   const loadAll = async () => {
     try {
@@ -191,13 +208,14 @@ export default function AdminPage() {
                   </TableRow></TableHeader>
                   <TableBody>
                     {reports.map((r) => (
-                      <TableRow key={r.id}>
-                        <TableCell className="font-mono text-xs">{r.id.slice(0,8)}</TableCell>
-                        <TableCell>{r.target_type} · <span className="font-mono text-xs">{r.target_id.slice(0,8)}</span></TableCell>
-                        <TableCell>{r.reason}</TableCell>
+                      <TableRow key={r.id} className="cursor-pointer hover:bg-[hsl(var(--secondary))]/50" data-testid={`admin-report-row-${r.id}`}>
+                        <TableCell className="font-mono text-xs" onClick={() => openReport(r.id)}>{r.id.slice(0,8)}</TableCell>
+                        <TableCell onClick={() => openReport(r.id)}>{r.target_type} · <span className="font-mono text-xs">{r.target_id.slice(0,8)}</span></TableCell>
+                        <TableCell className="max-w-[320px] truncate" onClick={() => openReport(r.id)}>{r.reason}</TableCell>
                         <TableCell><Badge variant={r.status==="resolved"?"secondary":"outline"}>{r.status}</Badge></TableCell>
                         <TableCell className="space-x-2">
-                          <Button size="sm" variant="outline" onClick={() => updateStatus(r.id, "reviewing")}>Prüfen</Button>
+                          <Button size="sm" variant="outline" onClick={() => openReport(r.id)} data-testid={`admin-report-open-${r.id}`}>Details</Button>
+                          <Button size="sm" variant="ghost" onClick={() => updateStatus(r.id, "reviewing")}>Prüfen</Button>
                           <Button size="sm" onClick={() => updateStatus(r.id, "resolved")} data-testid={`admin-resolve-${r.id}`}>Erledigt</Button>
                           <Button size="sm" variant="ghost" onClick={() => updateStatus(r.id, "rejected")}>Verwerfen</Button>
                           {r.target_type === "user" && <Button size="sm" variant="destructive" onClick={() => ban(r.target_id, r.reason)}>Bannen</Button>}
@@ -534,9 +552,107 @@ export default function AdminPage() {
               </div>
             </TabsContent>
           </Tabs>
+
+          {/* Report Detail Dialog */}
+          <Dialog open={!!reportDetail} onOpenChange={(v) => { if (!v) setReportDetail(null); }}>
+            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="font-display text-2xl">Report-Details</DialogTitle>
+              </DialogHeader>
+              {reportLoading || reportDetail?.loading ? (
+                <div className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">Lädt…</div>
+              ) : reportDetail?.report ? (
+                <div className="space-y-4 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <InfoCell label="Report-ID" value={<span className="font-mono text-xs">{reportDetail.report.id}</span>} />
+                    <InfoCell label="Status" value={<Badge variant={reportDetail.report.status==="resolved"?"secondary":"outline"}>{reportDetail.report.status}</Badge>} />
+                    <InfoCell label="Ziel-Typ" value={reportDetail.report.target_type} />
+                    <InfoCell label="Ziel-ID" value={<span className="font-mono text-xs">{reportDetail.report.target_id}</span>} />
+                    <InfoCell label="Erstellt" value={<span className="font-mono text-xs">{(reportDetail.report.created_at || "").replace("T"," ").slice(0,19)}</span>} />
+                    <InfoCell label="Reporter-Historie" value={`${reportDetail.reporter_history_count ?? 0} Reports`} />
+                    <InfoCell label="Meldungen gegen Ziel" value={`${reportDetail.target_report_count ?? 0}`} />
+                  </div>
+                  <div className="rounded-md border p-3 bg-[hsl(var(--secondary))]/40">
+                    <div className="text-xs uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))] mb-1">Grund</div>
+                    <div className="whitespace-pre-wrap break-words">{reportDetail.report.reason || "—"}</div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <UserMiniCard title="Reporter" u={reportDetail.reporter} />
+                    <UserMiniCard title="Gemeldet" u={reportDetail.reported} />
+                  </div>
+
+                  {reportDetail.target_context?.photo && (
+                    <div className="rounded-md border p-3 space-y-2">
+                      <div className="text-xs uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">Gemeldetes Foto</div>
+                      <img src={reportDetail.target_context.photo.data} alt="gemeldet" className="max-h-64 object-contain rounded" />
+                      <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                        NSFW: {((reportDetail.target_context.photo.nsfw_score || 0) * 100).toFixed(0)}% · Gesicht: {reportDetail.target_context.photo.has_face ? "ja" : "nein"}
+                      </div>
+                    </div>
+                  )}
+                  {reportDetail.target_context?.message && (
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))] mb-1">Gemeldete Nachricht</div>
+                      <div className="whitespace-pre-wrap">{reportDetail.target_context.message.text}</div>
+                      <div className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1 font-mono">
+                        {reportDetail.target_context.message.created_at}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+              <DialogFooter className="flex-wrap gap-2">
+                {reportDetail?.report && (
+                  <>
+                    <Button variant="outline" onClick={() => updateStatus(reportDetail.report.id, "reviewing")} data-testid="report-detail-reviewing">Prüfen</Button>
+                    <Button onClick={async () => { await updateStatus(reportDetail.report.id, "resolved"); setReportDetail(null); }} data-testid="report-detail-resolve">Erledigt</Button>
+                    <Button variant="ghost" onClick={async () => { await updateStatus(reportDetail.report.id, "rejected"); setReportDetail(null); }}>Verwerfen</Button>
+                    {reportDetail.report.target_type === "user" && reportDetail.reported?.id && (
+                      <Button variant="destructive" onClick={async () => { await ban(reportDetail.reported.id, reportDetail.report.reason || "Policy violation"); setReportDetail(null); }} data-testid="report-detail-ban">
+                        User bannen
+                      </Button>
+                    )}
+                  </>
+                )}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </main>
         <AppFooter />
       </div>
+    </div>
+  );
+}
+
+function InfoCell({ label, value }) {
+  return (
+    <div className="rounded-md border p-3">
+      <div className="text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))] mb-1">{label}</div>
+      <div className="text-sm">{value ?? "—"}</div>
+    </div>
+  );
+}
+
+function UserMiniCard({ title, u }) {
+  return (
+    <div className="rounded-md border p-3">
+      <div className="text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))] mb-1">{title}</div>
+      {u ? (
+        <div className="space-y-1">
+          <div className="font-medium">{u.display_name || "—"} <span className="text-xs text-[hsl(var(--muted-foreground))]">({u.age || "?"})</span></div>
+          <div className="text-xs font-mono break-all">{u.email}</div>
+          <div className="flex flex-wrap gap-1 mt-1">
+            <Badge variant="outline">{u.role || "user"}</Badge>
+            {u.banned && <Badge variant="destructive">banned</Badge>}
+            {u.shadow_restricted && <Badge variant="secondary">shadow</Badge>}
+            {u.id_verified && <Badge>ID verifiziert</Badge>}
+          </div>
+          <div className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
+            <a href={`/profile/${u.id}`} target="_blank" rel="noreferrer" className="underline">Profil öffnen ↗</a>
+          </div>
+        </div>
+      ) : <div className="text-sm text-[hsl(var(--muted-foreground))]">Nicht verfügbar</div>}
     </div>
   );
 }

@@ -113,7 +113,7 @@ E2E: Auth → Profile/Photo/AI → Discover mutual-filter → Like/Match → Cha
 ---
 
 ## Phase 5 — “Massive Upgrade” (Admin AI, Travel, ID-Verif, Auto-Mod, Payments, UX/UI Edits)
-Phase 5 wurde in 4 Teilschritten umgesetzt und anschließend getestet.
+Phase 5 wurde in mehreren Teilschritten umgesetzt und anschließend getestet.
 
 ### Phase 5.0 — Backend-Architektur-Update (Payments + Free ID-Verif + Stabilität)
 **Ziele (erfüllt):**
@@ -204,6 +204,40 @@ Phase 5 wurde in 4 Teilschritten umgesetzt und anschließend getestet.
 
 **Status:** Abgeschlossen.
 
+### Phase 5.5 — Polish & UI-Architektur (Typography, Layout, Preview, Moderation Details)
+**Ziele (erfüllt, verifiziert via Screenshots + curl):**
+- **Globale Typografie modernisiert**
+  - Entfernt: `Playfair Display` (und auch alte EB Garamond-Link-Imports)
+  - Neu: Figtree (Body + Display), optionaler Akzent: Fredoka
+  - Tailwind-Fonts aktualisiert (`fontFamily.display` auf sans; zusätzlich `accent`)
+- **Container-Breiten vereinheitlicht**
+  - `Account`, `Settings`, `Edit Profile (/me)` auf `max-w-6xl` wie `Discover`
+- **Desktop Double-Row Layout**
+  - `MyProfilePage (/me)`: Desktop-Grid (`grid-cols-1 lg:grid-cols-2`) für Basis/Körper/Suche/Präferenzen
+  - `ProfileViewPage` nutzt bereits Desktop-Split-Layout; UI konsistent geprüft
+- **Preview Mode (Profil-Vorschau)**
+  - Button in `/me`: „Vorschau als andere“
+  - Routing: `/profile/:id?preview=1`
+  - Vorschau ist read-only: Like/Chat/First Message versteckt; Admin-only Blocks werden im Preview unterdrückt
+- **Verified Badge Logik korrigiert (nur ID)**
+  - „Verified“-Badge entfernt; Badge erscheint ausschließlich bei `id_verified === true`
+  - Betroffene Komponenten: `ProfileCard`, `ProfileViewPage`
+- **Admin: Report-Details vollständig einsehbar**
+  - Neuer Endpoint: `GET /api/admin/reports/{report_id}` liefert Reporter/Target-Zusammenfassung + Kontext
+  - UI: Report-Details Dialog in `AdminPage` mit Grund, IDs, Status, Reporter/Gemeldet und Kontext (Foto/Message wenn vorhanden)
+- **Unmatch/Block Pills**
+  - Neue Endpoints:
+    - `POST /api/matches/{match_id}/unmatch` (löscht Match + Messages + mutual likes)
+    - `POST /api/users/{id}/block` und `DELETE /api/users/{id}/block`
+  - ProfileView UI: Pills „Unmatchen“ (nur wenn Match) und „Blockieren“ (immer), mit Confirm-Dialogen
+  - Discovery filtert blockierte/Blocking-Nutzer (serverseitig)
+- **Albums: Skeleton-States**
+  - Loading Skeleton Grid auf `/albums` ergänzt
+- **Screenshot-Detection Events: Audit Logging**
+  - WebSocket-Event `type: "screenshot"` wird zusätzlich in den Audit-Log geschrieben (`screenshot_detected`)
+
+**Status:** Abgeschlossen.
+
 ---
 
 ## Offene Issues / Risiken
@@ -215,16 +249,25 @@ Phase 5 wurde in 4 Teilschritten umgesetzt und anschließend getestet.
 - Tester meldete seltene Flakes bei `/api/auth/register` und Stripe-Checkout (abhängig von Provider-Konfiguration).
 - Aktueller Stand: funktional; Checkout hängt korrekt an Admin Payment Config und benötigt aktivierten Provider + Key.
 
+### Issue 3: Blockliste nicht im `/api/me` Response sichtbar (niedrige Priorität)
+- Beobachtung aus Sanity-Check: `blocked_user_ids` wurde im User-Dokument gesetzt, aber nicht im `/api/me` Response zurückgegeben.
+- Impact:
+  - Funktionalität (Discovery/Block/Unmatch) ist serverseitig wirksam.
+  - UI kann die Blockliste nicht direkt anzeigen.
+- Empfehlung:
+  - `public_user_from_doc`/`me` Serializer um `blocked_user_ids` (für Self) erweitern **oder** dedizierten Endpoint `GET /api/me/blocks` bereitstellen.
+
 ---
 
 ## Status / Zusammenfassung
 - Phase 1–4: **fertig**.
-- Phase 5: **fertig (Backend + Frontend)**.
+- Phase 5.0–5.5: **fertig (Backend + Frontend)**.
 
 ### Final delivery (aktualisiert)
 - Voll funktionsfähige Web-App mit:
   - Mutual Discovery, AI Moderation, Events, Premium/Boost, Chat, i18n, erweiterte Profile, Screenshot Guard.
   - Phase 5: Travel Planner, ID-Verifizierung (kostenfrei), Auto-Mod Shadow-Restrict, Admin AI Config, Admin Payment Config, 5-Foto Limit, visited Eye Marker, elegantes UI-Upgrade.
+  - Phase 5.5: moderne Typografie, konsistente Container-Breiten, Double-Row Desktop Layout, Preview Mode, ID-only Verified Badge, vollständige Admin Report-Details, Unmatch/Block, Albums Skeletons, Screenshot-Audit.
   - Keine Tracker (Posthog/Emergent) im Frontend.
 
 **Status:** COMPLETED

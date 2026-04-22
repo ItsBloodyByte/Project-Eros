@@ -16,8 +16,9 @@ import {
   COMMON_KINKS, penisCategoryFor, showsCupSize, showsPenisSize,
 } from "../lib/constants";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
-import { ImagePlus, Star, Trash2, Video, Play, GripVertical, ArrowUp } from "lucide-react";
+import { ImagePlus, Star, Trash2, Video, Play, GripVertical, ArrowUp, Eye } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 
 function Chip({ on, onClick, children }) {
   return (
@@ -160,10 +161,17 @@ export default function MyProfilePage() {
     <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
       <div className="app-content flex flex-col min-h-screen">
         <AppHeader />
-        <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
-          <header className="pb-2">
-            <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Profil bearbeiten</div>
-            <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">{t("profile.edit")}</h1>
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
+          <header className="pb-2 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Profil bearbeiten</div>
+              <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">{t("profile.edit")}</h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline" size="sm" className="rounded-full" data-testid="profile-preview-link">
+                <Link to={`/profile/${user.id}?preview=1`}><Eye className="h-4 w-4 mr-1" /> Vorschau als andere</Link>
+              </Button>
+            </div>
           </header>
 
           <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)] no-capture">
@@ -262,6 +270,7 @@ export default function MyProfilePage() {
             </div>
           </section>
 
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" data-testid="profile-edit-doublerow">
           <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)]">
             <div className="font-display text-lg">{t("profile.basics")}</div>
             <div className="grid grid-cols-2 gap-3">
@@ -420,6 +429,7 @@ export default function MyProfilePage() {
                 onValueChange={([v]) => setForm({ ...form, preferences: { ...form.preferences, radius_km: v } })}/>
             </div>
           </section>
+          </div>
 
           <div className="flex justify-end">
             <Button onClick={save} disabled={saving} data-testid="save-profile-button">{saving ? t("profile.saving") : t("profile.save")}</Button>

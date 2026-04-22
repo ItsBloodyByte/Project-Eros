@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
+import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
 import { Plus, Images, Lock, Share2, ImagePlus, KeyRound } from "lucide-react";
 
@@ -101,7 +102,17 @@ export default function AlbumsPage() {
           </div>
 
           {loading ? (
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">Lädt …</div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5" data-testid="albums-skeleton">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden shadow-[var(--shadow-sm)]">
+                  <Skeleton className="aspect-[4/3] w-full rounded-none" />
+                  <div className="p-4 space-y-2">
+                    <Skeleton className="h-5 w-2/3" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : albums.length === 0 ? (
             <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-12 text-center shadow-[var(--shadow-sm)]">
               <Images className="h-7 w-7 mx-auto text-[hsl(var(--muted-foreground))]" />

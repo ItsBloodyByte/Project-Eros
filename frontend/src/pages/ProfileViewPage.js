@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { AppHeader } from "../components/AppHeader";
 import { AppFooter } from "../components/AppFooter";
@@ -8,9 +8,10 @@ import { Badge } from "../components/ui/badge";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
 import { ReportDialog } from "../components/ReportDialog";
 import { MatchBanner } from "../components/MatchBanner";
-import { BadgeCheck, Heart, MapPin, Lock, Send, EyeOff, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Heart, MapPin, Lock, Send, EyeOff, ShieldAlert, ShieldCheck, UserX, Ban, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../components/ui/alert-dialog";
 import { Textarea } from "../components/ui/textarea";
 import { useAuth } from "../lib/AuthContext";
 import { PENIS_RANGES } from "../lib/constants";
@@ -28,6 +29,8 @@ function Row({ label, value }) {
 
 export default function ProfileViewPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const isPreviewParam = searchParams.get("preview") === "1";
   const { t } = useTranslation();
   const { user: me } = useAuth();
   const nav = useNavigate();
@@ -39,10 +42,15 @@ export default function ProfileViewPage() {
   const [firstOpen, setFirstOpen] = useState(false);
   const [firstText, setFirstText] = useState("");
 
+  const isSelf = me && me.id === id;
+  const previewMode = isSelf || isPreviewParam;
+
   useEffect(() => {
     (async () => {
       try {
-        await api.post(`/seen/${id}`);
+        if (!isSelf) {
+          await api.post(`/seen/${id}`);
+        }
         const { data } = await api.get(`/users/${id}`);
         setProfile(data);
         try {
@@ -56,7 +64,7 @@ export default function ProfileViewPage() {
         setLoading(false);
       }
     })();
-  }, [id, nav]);
+  }, [id, nav, isSelf]);
 
   const like = async () => {
     setLiking(true);
@@ -79,6 +87,21 @@ export default function ProfileViewPage() {
     await api.delete(`/likes/${id}`);
     setProfile((p) => ({ ...p, i_liked: false, match_id: null }));
   };
+  const unmatch = async () => {
+    if (!profile?.match_id) return;
+    try {
+      await api.post(`/matches/${profile.match_id}/unmatch`);
+      toast.success("Match aufgelöst");
+      setProfile((p) => ({ ...p, match_id: null, i_liked: false, they_liked: false }));
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
+  };
+  const block = async () => {
+    try {
+      await api.post(`/users/${id}/block`);
+      toast.success("Nutzer blockiert");
+      nav("/");
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
+  };
 
   if (loading || !profile) {
     return (
@@ -88,7 +111,7 @@ export default function ProfileViewPage() {
     );
   }
 
-  const isAdminViewer = me?.role && me.role !== "user";
+  const isAdminViewer = me?.role && me.role !== "user" && !previewMode;
 
   return (
     <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
@@ -155,7 +178,7 @@ export default function ProfileViewPage() {
                 <MatchBanner name={profile.display_name} onOpen={() => nav(`/chat/${profile.match_id}`)} />
               )}
 
-              {profile.admin_view && (profile.hidden_mode || profile.banned) && (
+              {profile.admin_view && !previewMode && (profile.hidden_mode || profile.banned) && (
                 <div className="rounded-[var(--radius-md)] border border-[hsl(var(--destructive))]/30 bg-[hsl(var(--destructive))]/5 p-3 text-sm flex items-center gap-2">
                   <ShieldAlert className="h-4 w-4 text-[hsl(var(--destructive))]" />
                   {profile.banned ? t("profile.banned_profile") : t("profile.hidden_profile")}
@@ -177,10 +200,9 @@ export default function ProfileViewPage() {
                   <div className="flex items-center gap-2">
                     {profile.id_verified && (
                       <Badge className="gap-1 bg-[hsl(var(--accent))]/90 hover:bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]" data-testid="profile-id-verified-badge">
-                        <ShieldCheck className="h-3 w-3" /> ID
+                        <ShieldCheck className="h-3 w-3" /> ID verifiziert
                       </Badge>
                     )}
-                    {profile.verified && !profile.id_verified && <Badge className="gap-1"><BadgeCheck className="h-3 w-3" /> {t("profile.verified")}</Badge>}
                     {isAdminViewer && <Badge variant="outline" className="gap-1"><EyeOff className="h-3 w-3" /> {t("profile.admin_only")}</Badge>}
                   </div>
                 </div>
@@ -232,7 +254,7 @@ export default function ProfileViewPage() {
                   </div>
                 )}
 
-                {profile.admin_view && (
+                {profile.admin_view && !previewMode && (
                   <div className="mt-3 border-t pt-3 text-xs font-mono">
                     <div>email: {profile.email}</div>
                     <div>role: {profile.role_of_target}</div>
@@ -244,37 +266,86 @@ export default function ProfileViewPage() {
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
-                {profile.match_id ? (
-                  <Button onClick={() => nav(`/chat/${profile.match_id}`)} data-testid="open-chat-button">{t("profile.open_chat")}</Button>
-                ) : profile.i_liked ? (
-                  <Button variant="outline" onClick={unlike} data-testid="unlike-button">{t("profile.undo_like")}</Button>
+                {previewMode ? (
+                  <>
+                    <div className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] px-3 py-1 text-xs font-medium" data-testid="preview-mode-banner">
+                      <EyeOff className="h-3.5 w-3.5" /> Vorschau — so sehen andere dein Profil
+                    </div>
+                    <Button asChild variant="outline" className="rounded-full gap-1" data-testid="preview-edit-button">
+                      <Link to="/me"><Pencil className="h-4 w-4" /> Profil bearbeiten</Link>
+                    </Button>
+                  </>
                 ) : (
-                  <Button onClick={like} disabled={liking} data-testid="like-button" className="gap-1">
-                    <Heart className="h-4 w-4" /> {t("profile.like")}
-                  </Button>
+                  <>
+                    {profile.match_id ? (
+                      <Button onClick={() => nav(`/chat/${profile.match_id}`)} data-testid="open-chat-button">{t("profile.open_chat")}</Button>
+                    ) : profile.i_liked ? (
+                      <Button variant="outline" onClick={unlike} data-testid="unlike-button">{t("profile.undo_like")}</Button>
+                    ) : (
+                      <Button onClick={like} disabled={liking} data-testid="like-button" className="gap-1">
+                        <Heart className="h-4 w-4" /> {t("profile.like")}
+                      </Button>
+                    )}
+                    {me?.is_premium && !profile.match_id && (
+                      <Dialog open={firstOpen} onOpenChange={setFirstOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="secondary" className="gap-1" data-testid="message-first-button"><Send className="h-4 w-4" /> {t("profile.message_first")}</Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader><DialogTitle>{t("profile.message_first")}</DialogTitle></DialogHeader>
+                          <Textarea rows={4} value={firstText} onChange={(e) => setFirstText(e.target.value)} maxLength={500} data-testid="message-first-input" />
+                          <DialogFooter>
+                            <Button onClick={async () => {
+                              if (!firstText.trim()) { toast.error(t("events.missing")); return; }
+                              try {
+                                const { data } = await api.post("/messages/first", { target_user_id: profile.id, text: firstText.trim() });
+                                setFirstOpen(false); setFirstText("");
+                                nav(`/chat/${data.match_id}`);
+                              } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+                            }} data-testid="message-first-submit">{t("chat.send")}</Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                    <ReportDialog targetType="user" targetId={profile.id} />
+                    {profile.match_id && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button className="inline-flex items-center gap-1 rounded-full border border-[hsl(var(--border))] px-3 py-1 text-xs text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] transition-colors" data-testid="unmatch-pill">
+                            <UserX className="h-3.5 w-3.5" /> Unmatchen
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Match wirklich auflösen?</AlertDialogTitle>
+                            <AlertDialogDescription>Die Verbindung und alle Nachrichten werden unwiderruflich entfernt.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                            <AlertDialogAction onClick={unmatch} data-testid="unmatch-confirm">Unmatchen</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button className="inline-flex items-center gap-1 rounded-full border border-[hsl(var(--destructive))]/40 text-[hsl(var(--destructive))] px-3 py-1 text-xs hover:bg-[hsl(var(--destructive))]/10 transition-colors" data-testid="block-pill">
+                          <Ban className="h-3.5 w-3.5" /> Blockieren
+                        </button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Nutzer blockieren?</AlertDialogTitle>
+                          <AlertDialogDescription>Du siehst das Profil nicht mehr und umgekehrt. Bestehende Matches und Chats werden entfernt.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                          <AlertDialogAction onClick={block} data-testid="block-confirm">Blockieren</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </>
                 )}
-                {me?.is_premium && !profile.match_id && (
-                  <Dialog open={firstOpen} onOpenChange={setFirstOpen}>
-                    <DialogTrigger asChild>
-                      <Button variant="secondary" className="gap-1" data-testid="message-first-button"><Send className="h-4 w-4" /> {t("profile.message_first")}</Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader><DialogTitle>{t("profile.message_first")}</DialogTitle></DialogHeader>
-                      <Textarea rows={4} value={firstText} onChange={(e) => setFirstText(e.target.value)} maxLength={500} data-testid="message-first-input" />
-                      <DialogFooter>
-                        <Button onClick={async () => {
-                          if (!firstText.trim()) { toast.error(t("events.missing")); return; }
-                          try {
-                            const { data } = await api.post("/messages/first", { target_user_id: profile.id, text: firstText.trim() });
-                            setFirstOpen(false); setFirstText("");
-                            nav(`/chat/${data.match_id}`);
-                          } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
-                        }} data-testid="message-first-submit">{t("chat.send")}</Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                )}
-                <ReportDialog targetType="user" targetId={profile.id} />
               </div>
               {!profile.match_id && profile.i_liked && (
                 <div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">

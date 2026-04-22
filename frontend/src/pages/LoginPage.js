@@ -23,7 +23,11 @@ export default function LoginPage() {
       await login({ email, password });
       nav("/");
     } catch (err) {
-      toast.error(err?.response?.data?.detail || t("auth.login_failed") || "Anmeldung fehlgeschlagen");
+      const d = err?.response?.data?.detail;
+      const msg = typeof d === "string" ? d
+        : (Array.isArray(d) && d[0]?.msg) ? d[0].msg
+        : (t("auth.login_failed") || "Anmeldung fehlgeschlagen");
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
