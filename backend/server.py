@@ -21,7 +21,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict
 
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.encoders import jsonable_encoder
 from starlette.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -109,6 +109,13 @@ async def startup():
         await db.events.create_index("id", unique=True)
         await db.events.create_index("starts_at")
         await db.legal_pages.create_index("key", unique=True)
+        # IP flagging with automatic expiry (minor-attempt protection)
+        try:
+            await db.ip_flags.create_index("ip")
+            # TTL index: remove doc after `expires_at` naturally. Requires expires_at as Date.
+            # Our docs store ISO strings; we clean lazily on read. Still add a plain index.
+        except Exception:
+            pass
         logger.info("Mongo indexes ensured.")
     except Exception as e:
         logger.exception("Index creation failed: %s", e)
@@ -201,20 +208,108 @@ async def client_event(payload: dict):
 
 
 # ---------- Auth ----------
+def _compute_age(birth_date: Optional[str]) -> Optional[int]:
+    if not birth_date:
+        return None
+    try:
+        bd = datetime.strptime(birth_date[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+    today = datetime.now(timezone.utc).date()
+    years = today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day))
+    return max(0, years)
+
+
+def _client_ip(request) -> Optional[str]:
+    try:
+        xff = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+        if xff:
+            return xff.split(",")[0].strip()
+        real = request.headers.get("x-real-ip") or request.headers.get("X-Real-IP")
+        if real:
+            return real.strip()
+        return request.client.host if request and request.client else None
+    except Exception:
+        return None
+
+
+async def _is_ip_flagged_minor(ip: Optional[str]) -> bool:
+    if not ip:
+        return False
+    doc = await db.ip_flags.find_one({"ip": ip, "kind": "minor_attempt"})
+    if not doc:
+        return False
+    exp = doc.get("expires_at")
+    if exp:
+        try:
+            if datetime.fromisoformat(exp) < now_utc():
+                await db.ip_flags.delete_one({"_id": doc["_id"]})
+                return False
+        except Exception:
+            pass
+    return True
+
+
+async def _flag_ip_minor(ip: Optional[str], hours: int = 48) -> None:
+    if not ip:
+        return
+    until = now_utc() + timedelta(hours=hours)
+    await db.ip_flags.update_one(
+        {"ip": ip, "kind": "minor_attempt"},
+        {"$set": {
+            "ip": ip,
+            "kind": "minor_attempt",
+            "created_at": now_utc().isoformat(),
+            "expires_at": until.isoformat(),
+        }},
+        upsert=True,
+    )
+
+
 @api_router.post("/auth/register", response_model=TokenResponse)
-async def register(body: RegisterRequest):
+async def register(body: RegisterRequest, request: "Request" = None):
+    # Age handling: birth_date is preferred; fall back to legacy `age`
+    computed_age = _compute_age(body.birth_date) if body.birth_date else None
+    effective_age = computed_age if computed_age is not None else body.age
+    if effective_age is None:
+        raise HTTPException(400, "Birth date (YYYY-MM-DD) or age is required")
+
+    ip = _client_ip(request) if request is not None else None
+
+    # <18: refuse + flag IP for 48h
+    if effective_age < 18:
+        await _flag_ip_minor(ip, hours=48)
+        await _audit(None, "minor_registration_attempt", None, {
+            "ip": ip, "email": body.email.lower(), "age": effective_age, "birth_date": body.birth_date,
+        })
+        try:
+            await notify_admins({
+                "type": "minor_registration_attempt",
+                "ip": ip,
+                "email": body.email.lower(),
+                "age": effective_age,
+                "birth_date": body.birth_date,
+                "at": now_utc().isoformat(),
+            })
+        except Exception:
+            pass
+        raise HTTPException(403, "Mindestalter 18 Jahre. Das Konto kann nicht erstellt werden.")
+
     existing = await db.users.find_one({"email": body.email.lower()})
     if existing:
         raise HTTPException(409, "Email already registered")
     if not (body.consents.terms and body.consents.privacy and body.consents.sensitive_data):
         raise HTTPException(400, "Required consents must be accepted")
+
+    flagged = await _is_ip_flagged_minor(ip)
     user_id = str(uuid.uuid4())
     doc = {
         "id": user_id,
         "email": body.email.lower(),
         "password_hash": hash_password(body.password),
         "display_name": body.display_name,
-        "age": body.age,
+        "age": effective_age,
+        "birth_date": body.birth_date,
         "gender_identity": body.gender_identity,
         "pronouns": None,
         "orientation": None,
@@ -222,8 +317,8 @@ async def register(body: RegisterRequest):
         "location": None,
         "photos": [],
         "preferences": {
-            "age_min": max(18, body.age - 10),
-            "age_max": body.age + 10,
+            "age_min": max(18, effective_age - 10),
+            "age_max": effective_age + 10,
             "seeking_genders": [],
             "radius_km": 50,
             "relationship_types": [],
@@ -239,7 +334,8 @@ async def register(body: RegisterRequest):
             "read_receipts": True,
             "show_online_status": True,
             "show_typing": True,
-            "hidden_mode": False,
+            # If the IP was previously flagged for a minor attempt, hide profile until ID is verified
+            "hidden_mode": bool(flagged),
             "screenshot_notifications": True,
         },
         "relationship_types": [],
@@ -257,11 +353,25 @@ async def register(body: RegisterRequest):
             "version": 1,
         },
         "seen_user_ids": [],
+        "registration_ip": ip,
+        "requires_id_verification": bool(flagged),
+        "id_verification_status": "required_due_to_ip_flag" if flagged else None,
         "created_at": now_utc().isoformat(),
         "last_active": now_utc().isoformat(),
     }
     await db.users.insert_one(doc)
-    await _audit(user_id, "register", user_id)
+    await _audit(user_id, "register", user_id, {"ip": ip, "flagged_ip": flagged})
+    if flagged:
+        try:
+            await notify_admins({
+                "type": "flagged_registration",
+                "user_id": user_id,
+                "email": body.email.lower(),
+                "ip": ip,
+                "at": now_utc().isoformat(),
+            })
+        except Exception:
+            pass
     token = create_token(user_id)
     return TokenResponse(access_token=token, user=UserPublic(**public_user_from_doc(doc)))
 
@@ -386,11 +496,21 @@ async def delete_photo(photo_id: str, user=Depends(_require_user)):
         "target_id": photo_id,
         "status": {"$in": ["open", "reviewing"]},
     })
-    if active_against_user or active_against_photo:
-        raise HTTPException(
-            423,
-            "Fotos können derzeit nicht gelöscht werden: Es läuft eine aktive Meldung. Bitte kontaktiere den Support.",
-        )
+    # Per-photo retention lock (admin-set, e.g. 30 days even after report resolved)
+    photo_obj = next((p for p in (user.get("photos") or []) if p.get("id") == photo_id), None)
+    retention_lock = False
+    if photo_obj and photo_obj.get("retention_until"):
+        try:
+            retention_lock = datetime.fromisoformat(photo_obj["retention_until"]) > now_utc()
+        except Exception:
+            retention_lock = False
+    if active_against_user or active_against_photo or retention_lock:
+        reason = (
+            "Foto ist durch Moderation bis "
+            + (photo_obj.get("retention_until") if retention_lock else "zum Abschluss einer Meldung")
+            + " gesperrt."
+        ) if retention_lock else "Fotos können derzeit nicht gelöscht werden: Es läuft eine aktive Meldung. Bitte kontaktiere den Support."
+        raise HTTPException(423, reason)
     photos = [p for p in user.get("photos", []) if p["id"] != photo_id]
     # ensure at least one primary if any left
     if photos and not any(p.get("is_primary") for p in photos):
@@ -900,6 +1020,124 @@ async def ws_chat(websocket: WebSocket, match_id: str, token: str = Query(...)):
         ws_manager.disconnect(match_id, user_id, websocket)
 
 
+# ---------- Admin Realtime Notifications ----------
+class AdminWSManager:
+    """Broadcasts moderation events to all connected admin/moderator sockets."""
+    def __init__(self):
+        self.connections: List[WebSocket] = []
+        self._lock = asyncio.Lock()
+
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        async with self._lock:
+            self.connections.append(ws)
+
+    async def disconnect(self, ws: WebSocket):
+        async with self._lock:
+            self.connections = [w for w in self.connections if w is not ws]
+
+    async def broadcast(self, payload: dict):
+        dead: List[WebSocket] = []
+        async with self._lock:
+            conns = list(self.connections)
+        for w in conns:
+            try:
+                await w.send_json(payload)
+            except Exception:
+                dead.append(w)
+        for w in dead:
+            await self.disconnect(w)
+
+
+admin_ws_manager = AdminWSManager()
+
+
+async def notify_admins(payload: dict) -> None:
+    """Persist a moderation event AND push to connected admin sockets."""
+    doc = {
+        "id": str(uuid.uuid4()),
+        "type": payload.get("type", "generic"),
+        "data": payload,
+        "created_at": now_utc().isoformat(),
+        "read_by": [],
+    }
+    try:
+        await db.admin_notifications.insert_one(doc)
+    except Exception:
+        pass
+    msg = {**payload, "notification_id": doc["id"], "persisted_at": doc["created_at"]}
+    try:
+        await admin_ws_manager.broadcast(msg)
+    except Exception:
+        pass
+
+
+@app.websocket("/api/ws/admin")
+async def ws_admin(websocket: WebSocket, token: str = Query(...)):
+    try:
+        payload = decode_token(token)
+    except HTTPException:
+        await websocket.close(code=4401)
+        return
+    user = await db.users.find_one({"id": payload["sub"]}, {"role": 1})
+    if not user or user.get("role") not in {"admin", "moderator", "superadmin", "content_reviewer"}:
+        await websocket.close(code=4403)
+        return
+    await admin_ws_manager.connect(websocket)
+    try:
+        # Send a greeting with recent unread notifications so newly-connected mods catch up
+        recent = await db.admin_notifications.find({}).sort("created_at", -1).limit(20).to_list(length=20)
+        for n in reversed(recent):
+            try:
+                await websocket.send_json({
+                    **n.get("data", {}),
+                    "notification_id": n.get("id"),
+                    "persisted_at": n.get("created_at"),
+                    "_replay": True,
+                })
+            except Exception:
+                break
+        while True:
+            # Keep-alive; clients may send pings or acks
+            raw = await websocket.receive_text()
+            try:
+                evt = json.loads(raw)
+            except Exception:
+                continue
+            if evt.get("type") == "ack":
+                nid = evt.get("notification_id")
+                if nid:
+                    await db.admin_notifications.update_one(
+                        {"id": nid},
+                        {"$addToSet": {"read_by": payload["sub"]}},
+                    )
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await admin_ws_manager.disconnect(websocket)
+
+
+@api_router.get("/admin/notifications")
+async def list_admin_notifications(user=Depends(_require_user), limit: int = 50):
+    await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
+    items = await db.admin_notifications.find({}).sort("created_at", -1).limit(min(limit, 200)).to_list(length=limit)
+    return {"notifications": serialize_doc(items)}
+
+
+@api_router.post("/admin/notifications/{nid}/ack")
+async def ack_admin_notification(nid: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
+    await db.admin_notifications.update_one({"id": nid}, {"$addToSet": {"read_by": user["id"]}})
+    return {"ok": True}
+
+
+@api_router.post("/admin/notifications/ack_all")
+async def ack_all_admin_notifications(user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
+    await db.admin_notifications.update_many({"read_by": {"$ne": user["id"]}}, {"$addToSet": {"read_by": user["id"]}})
+    return {"ok": True}
+
+
 # ---------- Albums ----------
 @api_router.post("/albums", response_model=AlbumPublic)
 async def create_album(body: AlbumCreate, user=Depends(_require_user)):
@@ -1072,6 +1310,8 @@ async def admin_report_detail(report_id: str, user=Depends(_require_user)):
                 "nsfw_score": p.get("nsfw_score"),
                 "has_face": p.get("has_face"),
                 "is_primary": bool(p.get("is_primary")),
+                "retention_until": p.get("retention_until"),
+                "retention_reason": p.get("retention_reason"),
             } for p in (u.get("photos") or [])
         ]
         videos = [
@@ -1313,10 +1553,11 @@ async def admin_update_user(user_id: str, payload: dict, user=Depends(_require_u
         raise HTTPException(404, "User not found")
     clean: Dict = {}
     unset: Dict = {}
+    _nullable_literal_fields = {"gender_identity", "pronouns", "orientation", "smoking", "drinking", "diet", "sti_status", "cup_size", "body_type", "ethnicity", "id_verification_status"}
     for k, v in (payload or {}).items():
         if k not in _ADMIN_EDITABLE_FIELDS:
             continue
-        if v is None:
+        if v is None or (isinstance(v, str) and v == "" and k in _nullable_literal_fields):
             unset[k] = ""
         else:
             clean[k] = v
@@ -1425,6 +1666,73 @@ async def admin_delete_photo(user_id: str, photo_id: str, user=Depends(_require_
     await db.users.update_one({"id": user_id}, {"$pull": {"photos": {"id": photo_id}}})
     await _audit(user["id"], "admin_delete_photo", user_id, {"photo_id": photo_id})
     return {"ok": True}
+
+
+@api_router.post("/admin/users/{user_id}/photos/{photo_id}/retention")
+async def admin_set_photo_retention(user_id: str, photo_id: str, payload: dict, user=Depends(_require_user)):
+    """Moderator: set or clear a per-photo retention lock.
+
+    Body: {"days": 30}  -> lock for 30 days from now
+          {"days": 0}   -> clear lock
+          {"until": "2026-12-31T00:00:00+00:00"} -> lock until explicit timestamp
+    """
+    await _require_role(user, ["admin", "moderator", "superadmin"])
+    target = await db.users.find_one({"id": user_id}, {"photos": 1})
+    if not target:
+        raise HTTPException(404, "User not found")
+    photo = next((p for p in (target.get("photos") or []) if p.get("id") == photo_id), None)
+    if not photo:
+        raise HTTPException(404, "Photo not found")
+
+    until: Optional[str] = None
+    payload = payload or {}
+    if payload.get("until"):
+        try:
+            until = datetime.fromisoformat(str(payload["until"])).isoformat()
+        except Exception:
+            raise HTTPException(400, "Invalid 'until' timestamp")
+    elif "days" in payload:
+        days = int(payload.get("days") or 0)
+        if days > 0:
+            until = (now_utc() + timedelta(days=days)).isoformat()
+    if until is None:
+        # clear
+        await db.users.update_one(
+            {"id": user_id, "photos.id": photo_id},
+            {"$unset": {
+                "photos.$.retention_until": "",
+                "photos.$.retention_reason": "",
+                "photos.$.retention_set_by": "",
+                "photos.$.retention_set_at": "",
+            }},
+        )
+        await _audit(user["id"], "photo_retention_cleared", user_id, {"photo_id": photo_id})
+        return {"ok": True, "retention_until": None}
+
+    reason = str(payload.get("reason") or "").strip()[:200] or "Moderations-Aufbewahrung"
+    await db.users.update_one(
+        {"id": user_id, "photos.id": photo_id},
+        {"$set": {
+            "photos.$.retention_until": until,
+            "photos.$.retention_reason": reason,
+            "photos.$.retention_set_by": user["id"],
+            "photos.$.retention_set_at": now_utc().isoformat(),
+        }},
+    )
+    await _audit(user["id"], "photo_retention_set", user_id, {"photo_id": photo_id, "until": until, "reason": reason})
+    try:
+        await notify_admins({
+            "type": "photo_retention_set",
+            "by": user["id"],
+            "target_user_id": user_id,
+            "photo_id": photo_id,
+            "until": until,
+            "reason": reason,
+            "at": now_utc().isoformat(),
+        })
+    except Exception:
+        pass
+    return {"ok": True, "retention_until": until, "retention_reason": reason}
 
 
 @api_router.get("/admin/matches")
@@ -1957,10 +2265,6 @@ from fastapi import Request  # noqa: E402
 AUTO_MOD_UNIQUE_REPORT_THRESHOLD = 10
 
 
-def _client_ip(req: Request) -> str:
-    return (req.headers.get("x-forwarded-for") or req.client.host or "").split(",")[0].strip()
-
-
 # --- Auto-Mod: count unique reporter IPs, shadow-restrict when threshold crossed ---
 async def _maybe_shadow_restrict(target_user_id: str):
     pipeline = [
@@ -1981,6 +2285,15 @@ async def _maybe_shadow_restrict(target_user_id: str):
             }},
         )
         await _audit("auto-mod", "shadow_restrict", target_user_id, {"unique_reports": unique})
+        try:
+            await notify_admins({
+                "type": "auto_shadow_restrict",
+                "user_id": target_user_id,
+                "unique_reports": unique,
+                "at": now_utc().isoformat(),
+            })
+        except Exception:
+            pass
 
 
 # --- Patch create_report to track ip + auto-mod ---
@@ -2007,6 +2320,26 @@ async def create_report(body: ReportCreate, request: Request, user=Depends(_requ
     }
     await db.reports.insert_one(r)
     await _audit(user["id"], "report_created", r["id"], {"target": body.target_id})
+    # Push realtime admin notification
+    try:
+        target_user_email = None
+        if body.target_type == "user":
+            tu = await db.users.find_one({"id": body.target_id}, {"email": 1, "display_name": 1})
+            target_user_email = (tu or {}).get("email")
+        await notify_admins({
+            "type": "new_report",
+            "report_id": r["id"],
+            "reason": body.reason,
+            "target_type": body.target_type,
+            "target_id": body.target_id,
+            "reporter_id": user["id"],
+            "reporter_name": user.get("display_name"),
+            "target_email": target_user_email,
+            "has_detail": bool(body.detail and len(body.detail.strip()) > 0),
+            "at": now_utc().isoformat(),
+        })
+    except Exception:
+        pass
     if body.target_type == "user":
         await _maybe_shadow_restrict(body.target_id)
     return ReportPublic(**{**r, "created_at": now_utc()})
@@ -2063,6 +2396,17 @@ async def submit_id_verification(body: IdVerificationSubmit, user=Depends(_requi
     }
     await db.id_verifications.insert_one(rec)
     await db.users.update_one({"id": user["id"]}, {"$set": {"id_verification_status": "pending"}})
+    try:
+        await notify_admins({
+            "type": "id_verification_submitted",
+            "user_id": user["id"],
+            "user_name": user.get("display_name"),
+            "email": user.get("email"),
+            "document_type": body.document_type,
+            "at": now_utc().isoformat(),
+        })
+    except Exception:
+        pass
     return {"ok": True, "status": "pending"}
 
 

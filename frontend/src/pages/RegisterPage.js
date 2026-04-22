@@ -15,16 +15,32 @@ export default function RegisterPage() {
   const { t } = useTranslation();
   const nav = useNavigate();
   const { register } = useAuth();
-  const [form, setForm] = useState({ email: "", password: "", display_name: "", age: 25, gender_identity: "" });
+  // Default birth_date = 18 years ago (max selectable)
+  const today = new Date();
+  const maxDob = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate()).toISOString().slice(0, 10);
+  const [form, setForm] = useState({ email: "", password: "", display_name: "", birth_date: "", gender_identity: "" });
   const [consents, setConsents] = useState({ terms: false, privacy: false, sensitive_data: false, nsfw_view: false });
   const [busy, setBusy] = useState(false);
+
+  const computedAge = (() => {
+    if (!form.birth_date) return null;
+    try {
+      const bd = new Date(form.birth_date);
+      const t2 = new Date();
+      let years = t2.getFullYear() - bd.getFullYear();
+      const m = t2.getMonth() - bd.getMonth();
+      if (m < 0 || (m === 0 && t2.getDate() < bd.getDate())) years--;
+      return years;
+    } catch { return null; }
+  })();
+  const ageOk = computedAge !== null && computedAge >= 18;
 
   const canContinue =
     !!form.display_name?.trim() &&
     !!form.email?.trim() &&
     !!form.password &&
     !!form.gender_identity &&
-    Number(form.age) >= 18 &&
+    ageOk &&
     consents.terms &&
     consents.privacy &&
     consents.sensitive_data;
@@ -38,7 +54,7 @@ export default function RegisterPage() {
         email: form.email,
         password: form.password,
         display_name: form.display_name,
-        age: Number(form.age),
+        birth_date: form.birth_date,
         gender_identity: form.gender_identity,
         consents,
       });
@@ -68,9 +84,23 @@ export default function RegisterPage() {
                 <Input data-testid="register-name-input" className="h-11 rounded-[var(--radius-sm)]" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} required />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wide text-[hsl(var(--muted-foreground))]">{t("register.age")} <span className="text-[hsl(var(--accent))]">*</span></Label>
-                <Input data-testid="register-age-input" type="number" min={18} max={120} value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} required className="h-11 rounded-[var(--radius-sm)]" />
-                <div className="text-[11px] text-[hsl(var(--muted-foreground))]">{t("register.age_hint")}</div>
+                <Label className="text-xs uppercase tracking-wide text-[hsl(var(--muted-foreground))]">Geburtsdatum <span className="text-[hsl(var(--accent))]">*</span></Label>
+                <Input
+                  data-testid="register-birthdate-input"
+                  type="date"
+                  max={maxDob}
+                  value={form.birth_date}
+                  onChange={(e) => setForm({ ...form, birth_date: e.target.value })}
+                  required
+                  className="h-11 rounded-[var(--radius-sm)]"
+                />
+                <div className={`text-[11px] ${computedAge !== null && !ageOk ? "text-[hsl(var(--destructive))]" : "text-[hsl(var(--muted-foreground))]"}`}>
+                  {computedAge === null
+                    ? "Du musst mindestens 18 Jahre alt sein."
+                    : ageOk
+                      ? `Alter: ${computedAge} Jahre`
+                      : "Mindestalter: 18 Jahre — bitte ein gültiges Geburtsdatum angeben."}
+                </div>
               </div>
             </div>
 

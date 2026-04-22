@@ -10,6 +10,8 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
+import { Bell, ShieldAlert } from "lucide-react";
 import { Switch } from "../components/ui/switch";
 import { useAuth } from "../lib/AuthContext";
 import { toast } from "sonner";
@@ -182,6 +184,74 @@ export default function AdminPage() {
 
   useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [user?.role]);
 
+  // Realtime admin moderation notifications (WebSocket)
+  const [liveEvents, setLiveEvents] = useState([]);
+  const [bellOpen, setBellOpen] = useState(false);
+  useEffect(() => {
+    if (!user || !["admin", "moderator", "superadmin", "content_reviewer"].includes(user.role)) return;
+    // Load recent persisted notifications first
+    (async () => {
+      try {
+        const { data } = await api.get("/admin/notifications", { params: { limit: 50 } });
+        setLiveEvents((data.notifications || []).map((n) => ({ ...(n.data || {}), notification_id: n.id, persisted_at: n.created_at, _replay: true })));
+      } catch {}
+    })();
+    // Connect WebSocket
+    const token = localStorage.getItem("eros_token");
+    if (!token) return;
+    const wsUrl = (process.env.REACT_APP_BACKEND_URL || "").replace(/^http/, "ws");
+    if (!wsUrl) return;
+    let ws;
+    let closed = false;
+    let reconnectTimer;
+    const connect = () => {
+      try {
+        ws = new WebSocket(`${wsUrl}/api/ws/admin?token=${encodeURIComponent(token)}`);
+        ws.onmessage = (ev) => {
+          try {
+            const msg = JSON.parse(ev.data);
+            setLiveEvents((prev) => {
+              const exists = prev.some((e) => e.notification_id === msg.notification_id);
+              if (exists) return prev;
+              return [{ ...msg }, ...prev].slice(0, 100);
+            });
+            if (!msg._replay) {
+              const title = (() => {
+                switch (msg.type) {
+                  case "new_report": return `Neue Meldung: ${msg.reason || ""}`;
+                  case "minor_registration_attempt": return "Minderjährige Registrierung blockiert";
+                  case "flagged_registration": return "Registrierung von geflaggter IP";
+                  case "id_verification_submitted": return "Neue ID-Verifizierung eingereicht";
+                  case "auto_shadow_restrict": return "Auto-Mod: Shadow-Restrict";
+                  case "photo_retention_set": return "Foto-Aufbewahrung gesetzt";
+                  default: return `Event: ${msg.type}`;
+                }
+              })();
+              toast.info(title, { description: msg.email || msg.user_id || msg.target_id || "" });
+            }
+          } catch {}
+        };
+        ws.onclose = () => {
+          if (!closed) reconnectTimer = setTimeout(connect, 3000);
+        };
+      } catch { reconnectTimer = setTimeout(connect, 3000); }
+    };
+    connect();
+    return () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try { ws?.close(); } catch {}
+    };
+  }, [user?.role, user?.id]);
+
+  const unreadCount = liveEvents.filter((e) => !e._ack).length;
+  const ackAllNotifications = async () => {
+    try {
+      await api.post("/admin/notifications/ack_all");
+      setLiveEvents((prev) => prev.map((e) => ({ ...e, _ack: true })));
+    } catch {}
+  };
+
   const updateStatus = async (id, status) => {
     await api.post(`/admin/reports/${id}/status`, { status });
     await loadAll();
@@ -274,9 +344,67 @@ export default function AdminPage() {
       <div className="app-content flex flex-col min-h-screen">
         <AppHeader />
         <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10">
-          <div className="mb-6">
-            <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Admin</div>
-            <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">Moderation</h1>
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Admin</div>
+              <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">Moderation</h1>
+            </div>
+            {/* Realtime moderation bell */}
+            <DropdownMenu open={bellOpen} onOpenChange={setBellOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="relative inline-flex items-center justify-center h-10 w-10 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card))] hover:bg-[hsl(var(--secondary))] transition-colors"
+                  aria-label="Benachrichtigungen"
+                  data-testid="admin-bell-button"
+                >
+                  <Bell className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <span
+                      className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[hsl(var(--destructive))] text-white text-[10px] font-semibold grid place-items-center ring-2 ring-[hsl(var(--background))]"
+                      data-testid="admin-bell-unread"
+                    >{unreadCount > 99 ? "99+" : unreadCount}</span>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[380px] max-h-[480px] overflow-y-auto">
+                <div className="px-3 py-2 flex items-center justify-between border-b">
+                  <div className="font-medium text-sm">Moderations-Events</div>
+                  <button className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" onClick={ackAllNotifications} data-testid="admin-bell-ack-all">Alle markieren</button>
+                </div>
+                {liveEvents.length === 0 && <div className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">Noch keine Benachrichtigungen.</div>}
+                <ul className="divide-y divide-[hsl(var(--border))]/60">
+                  {liveEvents.slice(0, 50).map((e, i) => (
+                    <li key={e.notification_id || i} className="px-3 py-2 text-xs space-y-0.5 hover:bg-[hsl(var(--secondary))]/50" data-testid={`admin-bell-item-${i}`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-block h-1.5 w-1.5 rounded-full ${e._ack ? "bg-[hsl(var(--muted-foreground))]/40" : "bg-[hsl(var(--destructive))]"}`} />
+                        <span className="font-medium capitalize">{(e.type || "").replace(/_/g, " ")}</span>
+                        <span className="ml-auto font-mono text-[10px] text-[hsl(var(--muted-foreground))]">{(e.at || e.persisted_at || "").slice(11,19)}</span>
+                      </div>
+                      <div className="text-[hsl(var(--muted-foreground))] pl-3.5">
+                        {e.type === "new_report" && <>Grund: <b>{e.reason}</b> · {e.target_type} · {e.target_email || (e.target_id || "").slice(0,8)}</>}
+                        {e.type === "minor_registration_attempt" && <>{e.email} · Alter {e.age} · IP {e.ip}</>}
+                        {e.type === "flagged_registration" && <>{e.email} · IP {e.ip} — ID-Verifizierung erforderlich</>}
+                        {e.type === "id_verification_submitted" && <>{e.user_name} ({e.email}) · {e.document_type}</>}
+                        {e.type === "auto_shadow_restrict" && <>User {e.user_id?.slice(0,8)} · {e.unique_reports} Reports</>}
+                        {e.type === "photo_retention_set" && <>User {e.target_user_id?.slice(0,8)} · bis {(e.until || "").slice(0,10)}</>}
+                      </div>
+                      {e.type === "new_report" && e.report_id && (
+                        <button
+                          className="ml-3.5 underline text-[11px] text-[hsl(var(--accent))]"
+                          onClick={() => { setBellOpen(false); openReport(e.report_id); }}
+                        >Report öffnen</button>
+                      )}
+                      {(e.type === "flagged_registration" || e.type === "minor_registration_attempt" || e.type === "id_verification_submitted") && e.user_id && (
+                        <button
+                          className="ml-3.5 underline text-[11px] text-[hsl(var(--accent))]"
+                          onClick={() => { setBellOpen(false); openEditUser(e.user_id); }}
+                        >Nutzer öffnen</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <Tabs defaultValue="reports">
             <TabsList className="flex-wrap h-auto">
@@ -864,7 +992,7 @@ export default function AdminPage() {
                               <div
                                 key={p.id}
                                 className={[
-                                  "relative aspect-[3/4] rounded-md overflow-hidden border bg-[hsl(var(--muted))]",
+                                  "relative aspect-[3/4] rounded-md overflow-hidden border bg-[hsl(var(--muted))] group",
                                   isTargetPhoto ? "ring-2 ring-[hsl(var(--destructive))]" : ""
                                 ].join(" ")}
                                 data-testid={`report-reported-photo-${p.id}`}
@@ -872,9 +1000,48 @@ export default function AdminPage() {
                                 <img src={p.data} alt="" className={`h-full w-full object-cover ${p.nsfw_score >= 0.75 ? "blur-md" : ""}`} />
                                 {p.is_primary && <div className="absolute left-1 top-1 rounded-full bg-black/60 text-white text-[9px] px-1.5 py-0.5">Haupt</div>}
                                 {isTargetPhoto && <div className="absolute right-1 top-1 rounded-full bg-[hsl(var(--destructive))] text-white text-[9px] px-1.5 py-0.5">gemeldet</div>}
+                                {p.retention_until && (
+                                  <div className="absolute inset-x-1 top-1 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] text-[9px] px-1.5 py-0.5 flex items-center gap-1 justify-center">
+                                    <ShieldAlert className="h-3 w-3" />
+                                    bis {p.retention_until.slice(0,10)}
+                                  </div>
+                                )}
                                 <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] px-1.5 py-0.5 flex items-center justify-between">
                                   <span>NSFW {((p.nsfw_score || 0) * 100).toFixed(0)}%</span>
                                   <span>{p.has_face ? "face" : "no face"}</span>
+                                </div>
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors grid place-items-end pointer-events-none">
+                                  <div className="w-full p-1 flex gap-1 opacity-0 group-hover:opacity-100 pointer-events-auto">
+                                    <button
+                                      className="flex-1 rounded bg-white/95 text-[10px] text-black px-1.5 py-1 font-medium hover:bg-white"
+                                      onClick={async () => {
+                                        const days = prompt("Aufbewahrung wie viele Tage? (0 = entfernen)", p.retention_until ? "0" : "30");
+                                        if (days === null) return;
+                                        const n = Number(days);
+                                        if (Number.isNaN(n) || n < 0 || n > 3650) { toast.error("Ungültige Anzahl Tage"); return; }
+                                        let reason = "";
+                                        if (n > 0) { reason = prompt("Grund der Aufbewahrung?", "Beweismittel — aktive Meldung") || ""; }
+                                        try {
+                                          const { data } = await api.post(`/admin/users/${reportDetail.reported.id}/photos/${p.id}/retention`, { days: n, reason });
+                                          toast.success(n === 0 ? "Aufbewahrung entfernt" : `Aufbewahrung bis ${(data.retention_until || "").slice(0,10)}`);
+                                          // Refresh the dialog data
+                                          await openReport(reportDetail.report.id);
+                                        } catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
+                                      }}
+                                      data-testid={`photo-retention-${p.id}`}
+                                    >{p.retention_until ? "Aufbew. bearbeiten" : "30 Tage aufbew."}</button>
+                                    <button
+                                      className="rounded bg-[hsl(var(--destructive))]/95 text-white text-[10px] px-1.5 py-1 font-medium hover:bg-[hsl(var(--destructive))]"
+                                      onClick={async () => {
+                                        if (!confirm("Foto wirklich löschen?")) return;
+                                        try {
+                                          await api.delete(`/admin/users/${reportDetail.reported.id}/photos/${p.id}`);
+                                          toast.success("Foto gelöscht");
+                                          await openReport(reportDetail.report.id);
+                                        } catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
+                                      }}
+                                    >Löschen</button>
+                                  </div>
                                 </div>
                               </div>
                             );

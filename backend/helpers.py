@@ -146,6 +146,22 @@ def contains_link_like(text: str) -> bool:
     return False
 
 
+def compute_age(birth_date) -> Optional[int]:
+    """Compute current age in years from ISO date string or datetime."""
+    if not birth_date:
+        return None
+    if isinstance(birth_date, datetime):
+        bd = birth_date.date()
+    else:
+        try:
+            bd = datetime.strptime(str(birth_date)[:10], "%Y-%m-%d").date()
+        except Exception:
+            return None
+    today = now_utc().date()
+    years = today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day))
+    return max(0, years)
+
+
 def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
                          privacy: Optional[dict] = None) -> dict:
     photos = doc.get("photos", []) or []
@@ -164,10 +180,14 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
     if not owner_privacy.get("show_online_status", True):
         is_online = False
     penis_len = doc.get("penis_length_cm")
+    # Prefer birth_date-derived age when available; fall back to stored `age`.
+    derived_age = compute_age(doc.get("birth_date"))
+    if derived_age is None:
+        derived_age = doc.get("age", 0)
     return {
         "id": doc["id"],
         "display_name": doc.get("display_name", ""),
-        "age": doc.get("age", 0),
+        "age": derived_age,
         "gender_identity": doc.get("gender_identity"),
         "pronouns": doc.get("pronouns"),
         "orientation": doc.get("orientation"),

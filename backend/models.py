@@ -48,7 +48,9 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     display_name: str = Field(min_length=2, max_length=40)
-    age: int = Field(ge=18, le=120)
+    # Either birth_date (preferred) OR age must be provided. `age` kept for backwards compat.
+    birth_date: Optional[str] = Field(default=None, description="ISO date YYYY-MM-DD")
+    age: Optional[int] = Field(default=None, ge=0, le=120)
     gender_identity: Gender
     consents: "ConsentFlags"
 
