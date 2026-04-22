@@ -70,7 +70,11 @@
   "discover": {
     "title": "Entdecken",
     "subtitle": "Die Plattform für alle, die wissen, was sie wollen.",
-    "hello": "Deine Filter gelten beidseitig. Hallo, {{name}}.",
+    "hello": "Hallo, {{name}}.",
+    "greeting_morning": "Guten Morgen, {{name}}",
+    "greeting_day": "Guten Tag, {{name}}",
+    "greeting_evening": "Guten Abend, {{name}}",
+    "greeting_night": "Gute Nacht, {{name}}",
     "no_results_title": "Hier ist noch niemand",
     "no_results_desc": "Erweitere deine Filter oder den Umkreis. Filter gelten beidseitig – beide Seiten müssen zusammenpassen.",
     "load_more": "Mehr laden"

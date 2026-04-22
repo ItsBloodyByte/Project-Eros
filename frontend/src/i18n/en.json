@@ -69,7 +69,11 @@
   },
   "discover": {
     "title": "Discover",
-    "hello": "Your filters are mutual. Hello, {{name}}.",
+    "hello": "Hello, {{name}}.",
+    "greeting_morning": "Good morning, {{name}}",
+    "greeting_day": "Good day, {{name}}",
+    "greeting_evening": "Good evening, {{name}}",
+    "greeting_night": "Good night, {{name}}",
     "no_results_title": "Nothing here yet",
     "no_results_desc": "Widen your filters or distance radius. Because filters are mutual, both sides must match.",
     "load_more": "Load more"

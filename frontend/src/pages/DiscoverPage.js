@@ -124,8 +124,16 @@ export default function DiscoverPage() {
           <section className="pt-8 sm:pt-12 pb-6">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
               <div className="max-w-2xl">
-                <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">
-                  {t("discover.hello", { name: user?.display_name || "" })}
+                <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2" data-testid="discover-greeting">
+                  {(() => {
+                    const h = new Date().getHours();
+                    const key = h < 5 ? "greeting_night"
+                      : h < 11 ? "greeting_morning"
+                      : h < 18 ? "greeting_day"
+                      : h < 22 ? "greeting_evening"
+                      : "greeting_night";
+                    return t(`discover.${key}`, { name: user?.display_name || "" });
+                  })()}
                 </div>
                 <h1 className="font-display text-4xl sm:text-5xl lg:text-[56px] tracking-tight leading-[1.02]" data-testid="discover-heading">
                   {t("discover.title")}
