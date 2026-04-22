@@ -47,7 +47,7 @@ export function FilterDrawer({ prefs, onChange, onApply }) {
       age_min: 18, age_max: 99, seeking_genders: [], radius_km: 50,
       relationship_types: [], seeking_roles: [], kinks: [],
       only_with_photos: true, only_face_photo: false, only_verified: false,
-      hide_seen: true, online_only: false,
+      hide_seen: false, online_only: false,
       body_types: [], min_height_cm: null, max_height_cm: null,
       smoking: [], drinking: [], diet: [], sti_status: [],
       cup_sizes: [], penis_categories: [], languages: [], ethnicities: [],

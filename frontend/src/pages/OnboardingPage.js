@@ -31,7 +31,7 @@ export default function OnboardingPage() {
     preferences: {
       age_min: 21, age_max: 40, seeking_genders: [], radius_km: 50,
       only_with_photos: true, only_face_photo: false, only_verified: false,
-      hide_seen: true, online_only: false,
+      hide_seen: false, online_only: false,
       relationship_types: [], seeking_roles: [], kinks: [],
     },
   });
@@ -138,16 +138,20 @@ export default function OnboardingPage() {
   );
 
   return (
-    <div className="min-h-screen app-shell-bg py-10 px-4">
+    <div className="min-h-screen app-shell-bg-light dark:app-shell-bg py-10 px-4">
       <div className="mx-auto max-w-xl">
+        <div className="text-center mb-6">
+          <div className="font-display text-4xl tracking-tight">Eros</div>
+          <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mt-2">Einrichtung</div>
+        </div>
         <div className="mb-4">
           <Progress value={pct} />
           <div className="mt-2 text-xs text-[hsl(var(--muted-foreground))]">{t("onboarding.step", { current: step, total })}</div>
         </div>
-        <div className="p-5 rounded-[var(--radius-lg)] border bg-card shadow-[var(--shadow-md)]">
+        <div className="p-6 sm:p-8 rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 shadow-[var(--shadow-md)]">
           {step === 1 && (
             <div className="space-y-4">
-              <div className="font-display text-2xl">{t("onboarding.identity")}</div>
+              <div className="font-display text-2xl tracking-tight">{t("onboarding.identity")}</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>{t("profile.gender_identity")}</Label>
@@ -204,7 +208,7 @@ export default function OnboardingPage() {
 
           {step === 2 && (
             <div className="space-y-4">
-              <div className="font-display text-2xl">{t("onboarding.preferences")}</div>
+              <div className="font-display text-2xl tracking-tight">{t("onboarding.preferences")}</div>
               <div className="text-sm text-[hsl(var(--muted-foreground))]">{t("onboarding.mutual_intro")}</div>
               <div>
                 <Label>{t("filters.seeking_genders")}</Label>
@@ -239,7 +243,7 @@ export default function OnboardingPage() {
 
           {step === 3 && (
             <div className="space-y-4">
-              <div className="font-display text-2xl">{t("onboarding.photos")}</div>
+              <div className="font-display text-2xl tracking-tight">{t("onboarding.photos")}</div>
               <div className="text-sm text-[hsl(var(--muted-foreground))]">{t("onboarding.photo_desc")}</div>
               <div className="grid grid-cols-3 gap-3">
                 {photos.map((p) => {
@@ -272,7 +276,7 @@ export default function OnboardingPage() {
 
           {step === 4 && (
             <div className="space-y-4">
-              <div className="font-display text-2xl">{t("onboarding.ready_title")}</div>
+              <div className="font-display text-2xl tracking-tight">{t("onboarding.ready_title")}</div>
               <div className="text-sm text-[hsl(var(--muted-foreground))]">{t("onboarding.ready_desc")}</div>
               <div className="rounded-md border p-4 flex items-center gap-3">
                 <CheckCircle2 className="h-5 w-5 text-[hsl(var(--accent))]" />

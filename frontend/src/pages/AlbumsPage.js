@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { AppHeader } from "../components/AppHeader";
+import { AppFooter } from "../components/AppFooter";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -73,57 +74,62 @@ export default function AlbumsPage() {
   };
 
   return (
-    <div className="app-wrap dark:app-shell-bg app-shell-bg-light">
-      <div className="app-content">
+    <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
+      <div className="app-content flex flex-col min-h-screen">
         <AppHeader />
-        <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="font-display text-3xl">Albums</h1>
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10">
+          <div className="flex items-end justify-between gap-3 mb-6">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Private Galerien</div>
+              <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">Alben</h1>
+              <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))] max-w-prose">Erstelle private Sammlungen und teile sie gezielt mit ausgewählten Matches.</p>
+            </div>
             <Dialog open={newOpen} onOpenChange={setNewOpen}>
               <DialogTrigger asChild>
-                <Button data-testid="albums-create-button" className="gap-1"><Plus className="h-4 w-4" /> New album</Button>
+                <Button data-testid="albums-create-button" className="gap-1.5 rounded-full"><Plus className="h-4 w-4" /> Neues Album</Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader><DialogTitle>Create album</DialogTitle></DialogHeader>
+                <DialogHeader><DialogTitle>Album erstellen</DialogTitle></DialogHeader>
                 <div className="space-y-3">
-                  <div><Label>Title</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="album-title-input" /></div>
-                  <div><Label>Description</Label><Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-                  <label className="flex items-center gap-2 text-sm"><Switch checked={form.is_nsfw} onCheckedChange={(v) => setForm({ ...form, is_nsfw: v })} /> Contains sensitive (18+) content</label>
+                  <div><Label>Titel</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="album-title-input" /></div>
+                  <div><Label>Beschreibung</Label><Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+                  <label className="flex items-center gap-2 text-sm"><Switch checked={form.is_nsfw} onCheckedChange={(v) => setForm({ ...form, is_nsfw: v })} /> Sensibler (18+) Inhalt</label>
                 </div>
-                <DialogFooter><Button onClick={create} data-testid="album-create-submit">Create</Button></DialogFooter>
+                <DialogFooter><Button onClick={create} data-testid="album-create-submit">Erstellen</Button></DialogFooter>
               </DialogContent>
             </Dialog>
           </div>
 
-          {loading ? <div className="text-sm text-[hsl(var(--muted-foreground))]">Loading...</div> :
-            albums.length === 0 ? (
-              <div className="rounded-md border bg-card p-8 text-center">
-                <Images className="h-6 w-6 mx-auto text-[hsl(var(--muted-foreground))]" />
-                <div className="font-display text-xl mt-2">No albums yet</div>
-                <div className="text-sm text-[hsl(var(--muted-foreground))]">Create a private album to share selectively with matches.</div>
-              </div>
-            ) : (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {albums.map((a) => (
-                  <button key={a.id} onClick={() => setOpenAlbum(a)}
-                    className="text-left rounded-[var(--radius-md)] border bg-card overflow-hidden hover:border-[hsl(var(--accent))]/40 transition-colors"
-                    data-testid={`album-${a.id}`}>
-                    <div className="aspect-[4/3] grid grid-cols-3 gap-0.5 bg-[hsl(var(--muted))]">
-                      {(a.photos || []).slice(0,3).map((p) => (
-                        <img key={p.id} src={p.data} alt="" className={`h-full w-full object-cover ${p.nsfw_score>=0.75?"blur-md":""}`} />
-                      ))}
-                      {(a.photos || []).length === 0 && (
-                        <div className="col-span-3 grid place-items-center text-sm text-[hsl(var(--muted-foreground))]">Empty</div>
-                      )}
-                    </div>
-                    <div className="p-3">
-                      <div className="font-display text-lg">{a.title} {a.is_nsfw && <Lock className="inline h-3 w-3 text-[hsl(var(--nsfw))]" />}</div>
-                      <div className="text-xs text-[hsl(var(--muted-foreground))]">{(a.photos || []).length} photos · shared with {(a.shared_with || []).length}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
+          {loading ? (
+            <div className="text-sm text-[hsl(var(--muted-foreground))]">Lädt …</div>
+          ) : albums.length === 0 ? (
+            <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-12 text-center shadow-[var(--shadow-sm)]">
+              <Images className="h-7 w-7 mx-auto text-[hsl(var(--muted-foreground))]" />
+              <div className="font-display text-2xl tracking-tight mt-3">Noch keine Alben</div>
+              <div className="text-sm text-[hsl(var(--muted-foreground))] mt-1">Erstelle ein privates Album, um es später gezielt zu teilen.</div>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+              {albums.map((a) => (
+                <button key={a.id} onClick={() => setOpenAlbum(a)}
+                  className="text-left rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden card-hover shadow-[var(--shadow-sm)]"
+                  data-testid={`album-${a.id}`}>
+                  <div className="aspect-[4/3] grid grid-cols-3 gap-0.5 bg-[hsl(var(--muted))]">
+                    {(a.photos || []).slice(0, 3).map((p) => (
+                      <img key={p.id} src={p.data} alt="" className={`h-full w-full object-cover ${p.nsfw_score >= 0.75 ? "blur-md" : ""}`} />
+                    ))}
+                    {(a.photos || []).length === 0 && (
+                      <div className="col-span-3 grid place-items-center text-sm text-[hsl(var(--muted-foreground))]">Leer</div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <div className="font-display text-lg tracking-tight flex items-center gap-1.5">{a.title} {a.is_nsfw && <Lock className="h-3 w-3 text-[hsl(var(--nsfw))]" />}</div>
+                    <div className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">{(a.photos || []).length} Fotos · geteilt mit {(a.shared_with || []).length}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
 
           <Dialog open={!!openAlbum} onOpenChange={(v) => !v && setOpenAlbum(null)}>
             <DialogContent className="max-w-2xl">
@@ -147,23 +153,23 @@ export default function AlbumsPage() {
                     </label>
                   </div>
                   <div className="mt-4 border-t pt-3">
-                    <div className="text-sm font-medium flex items-center gap-1"><Share2 className="h-4 w-4" /> Share with a match</div>
+                    <div className="text-sm font-medium flex items-center gap-1.5"><Share2 className="h-4 w-4" /> Mit einem Match teilen</div>
                     <div className="flex gap-2 mt-2">
                       <Select value={shareUser} onValueChange={setShareUser}>
-                        <SelectTrigger className="flex-1" data-testid="album-share-select"><SelectValue placeholder="Pick a match" /></SelectTrigger>
+                        <SelectTrigger className="flex-1" data-testid="album-share-select"><SelectValue placeholder="Match wählen" /></SelectTrigger>
                         <SelectContent>
                           {matches.map((m) => <SelectItem key={m.user.id} value={m.user.id}>{m.user.display_name}</SelectItem>)}
-                          {matches.length === 0 && <div className="p-2 text-xs text-[hsl(var(--muted-foreground))]">No matches yet</div>}
+                          {matches.length === 0 && <div className="p-2 text-xs text-[hsl(var(--muted-foreground))]">Noch keine Matches</div>}
                         </SelectContent>
                       </Select>
-                      <Button onClick={() => shareAlbum(openAlbum.id)} data-testid="album-share-button">Share</Button>
+                      <Button onClick={() => shareAlbum(openAlbum.id)} data-testid="album-share-button">Teilen</Button>
                     </div>
                     {(openAlbum.unlock_requests || []).length > 0 && (
                       <div className="mt-4">
-                        <div className="text-sm font-medium flex items-center gap-1"><KeyRound className="h-4 w-4" /> Unlock requests</div>
+                        <div className="text-sm font-medium flex items-center gap-1.5"><KeyRound className="h-4 w-4" /> Freischalt-Anfragen</div>
                         <div className="space-y-1 mt-1">
                           {openAlbum.unlock_requests.map((r) => (
-                            <div key={r.id} className="text-xs text-[hsl(var(--muted-foreground))] font-mono">{r.from_user} · {r.message || "(no note)"}</div>
+                            <div key={r.id} className="text-xs text-[hsl(var(--muted-foreground))] font-mono">{r.from_user} · {r.message || "(keine Notiz)"}</div>
                           ))}
                         </div>
                       </div>
@@ -174,6 +180,7 @@ export default function AlbumsPage() {
             </DialogContent>
           </Dialog>
         </main>
+        <AppFooter />
       </div>
     </div>
   );

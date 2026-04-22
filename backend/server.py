@@ -113,6 +113,24 @@ async def startup():
     except Exception as e:
         logger.exception("Index creation failed: %s", e)
 
+    # One-time migration: disable hide_seen for all existing users (per UX decision:
+    # already-viewed profiles should remain visible, only marked with an eye icon).
+    try:
+        flag = await db.settings.find_one({"key": "migration_hide_seen_off_v1"})
+        if not flag:
+            res = await db.users.update_many(
+                {"preferences.hide_seen": True},
+                {"$set": {"preferences.hide_seen": False}},
+            )
+            await db.settings.insert_one({
+                "key": "migration_hide_seen_off_v1",
+                "applied_at": now_utc().isoformat(),
+                "modified_count": getattr(res, "modified_count", 0),
+            })
+            logger.info("Migration: disabled hide_seen for %s users", getattr(res, "modified_count", 0))
+    except Exception as e:
+        logger.exception("hide_seen migration failed: %s", e)
+
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -214,7 +232,7 @@ async def register(body: RegisterRequest):
             "only_with_photos": True,
             "only_face_photo": False,
             "only_verified": False,
-            "hide_seen": True,
+            "hide_seen": False,
             "online_only": False,
         },
         "privacy": {

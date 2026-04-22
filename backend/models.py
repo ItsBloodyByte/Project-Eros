@@ -98,7 +98,7 @@ class UserPreferences(BaseModel):
     only_with_photos: bool = True
     only_face_photo: bool = False
     only_verified: bool = False
-    hide_seen: bool = True
+    hide_seen: bool = False
     online_only: bool = False
     # Phase 4 extended
     body_types: List[BodyType] = []

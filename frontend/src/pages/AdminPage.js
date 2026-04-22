@@ -501,22 +501,36 @@ export default function AdminPage() {
             )}
 
             <TabsContent value="audit" className="mt-4">
-              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
-                <Table>
-                  <TableHeader><TableRow>
-                    <TableHead>Zeit</TableHead><TableHead>Akteur</TableHead><TableHead>Aktion</TableHead><TableHead>Ziel</TableHead>
-                  </TableRow></TableHeader>
-                  <TableBody>
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden shadow-[var(--shadow-sm)]">
+                <div className="px-5 py-3 flex items-center justify-between border-b border-[hsl(var(--border))]/60">
+                  <div className="font-display text-lg tracking-tight">Audit-Log</div>
+                  <div className="text-xs text-[hsl(var(--muted-foreground))]">{audit.length} Ereignisse</div>
+                </div>
+                {audit.length === 0 ? (
+                  <div className="p-10 text-center text-sm text-[hsl(var(--muted-foreground))]">Noch keine Ereignisse protokolliert.</div>
+                ) : (
+                  <ul className="divide-y divide-[hsl(var(--border))]/60">
                     {audit.map((ev) => (
-                      <TableRow key={ev.id}>
-                        <TableCell className="font-mono text-xs">{ev.created_at}</TableCell>
-                        <TableCell className="font-mono text-xs">{ev.actor_id?.slice(0,8)}</TableCell>
-                        <TableCell>{ev.action}</TableCell>
-                        <TableCell className="font-mono text-xs">{ev.target || ""}</TableCell>
-                      </TableRow>
+                      <li key={ev.id} className="px-5 py-3 flex items-start gap-4 hover:bg-[hsl(var(--secondary))]/50 transition-colors">
+                        <div className="text-[11px] font-mono text-[hsl(var(--muted-foreground))] w-40 shrink-0">
+                          {(ev.created_at || "").replace("T"," ").slice(0,19)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge variant="outline" className="rounded-full font-mono text-[10.5px]">{(ev.actor_id || "system").slice(0,8)}</Badge>
+                            <span className="font-medium text-sm">{ev.action}</span>
+                            {ev.target && <span className="font-mono text-[11px] text-[hsl(var(--muted-foreground))]">→ {ev.target.slice(0,8)}</span>}
+                          </div>
+                          {ev.meta && Object.keys(ev.meta || {}).length > 0 && (
+                            <div className="text-[11.5px] text-[hsl(var(--muted-foreground))] mt-1 font-mono truncate">
+                              {Object.entries(ev.meta).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join(" · ")}
+                            </div>
+                          )}
+                        </div>
+                      </li>
                     ))}
-                  </TableBody>
-                </Table>
+                  </ul>
+                )}
               </div>
             </TabsContent>
           </Tabs>
