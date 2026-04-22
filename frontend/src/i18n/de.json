@@ -19,7 +19,7 @@
     "navigate": "Navigation",
     "account_group": "Konto",
     "preferences": "Einstellungen",
-    "visitors": "Besucher:innen"
+    "visitors": "Views"
   },
   "auth": {
     "login_title": "Anmelden",

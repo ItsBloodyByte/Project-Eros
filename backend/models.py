@@ -21,6 +21,7 @@ DietType = Literal["omnivore", "vegetarian", "vegan", "pescetarian", "kosher", "
 StiStatus = Literal["negative", "positive_undetectable", "positive", "on_prep", "prefer_not_say"]
 CupSize = Literal["A", "B", "C", "D", "DD", "E", "F", "G", "H", "I"]
 PenisCategory = Literal["S", "M", "L", "XL", "XXL"]
+Mood = Literal["sex_meet", "dating", "chatting", "online"]
 
 
 def categorize_penis_length(cm: Optional[float]) -> Optional[str]:
@@ -118,6 +119,7 @@ class UserPreferences(BaseModel):
     penis_categories: List[PenisCategory] = []
     languages: List[str] = []
     ethnicities: List[str] = []
+    moods: List[Mood] = []
 
 
 class PhotoMeta(BaseModel):
@@ -177,6 +179,11 @@ class ProfileUpdate(BaseModel):
     cup_size: Optional[CupSize] = None
     penis_length_cm: Optional[float] = Field(default=None, ge=1, le=40)
     penis_girth_cm: Optional[float] = Field(default=None, ge=1, le=40)
+    current_mood: Optional[Mood] = None
+
+
+class MoodUpdateRequest(BaseModel):
+    current_mood: Optional[Mood] = None
 
 
 class PhotoUploadRequest(BaseModel):

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { MapPin, Eye, ShieldCheck, Users } from "lucide-react";
 import { NsfwBlurOverlay } from "./NsfwBlurOverlay";
 import { RoleBadge } from "./RoleBadge";
+import { MoodBadge } from "./MoodBadge";
 
 export function ProfileCard({ user, visited = false }) {
   const [revealed, setRevealed] = useState(false);
@@ -124,6 +125,13 @@ export function ProfileCard({ user, visited = false }) {
             data-testid="profile-card-boosted"
           >
             boosted
+          </div>
+        )}
+
+        {/* Mood status badge (bottom-left, above info overlay) */}
+        {user.current_mood && (
+          <div className="absolute left-2.5 bottom-[62px]" data-testid="profile-card-mood">
+            <MoodBadge mood={user.current_mood} size="sm" />
           </div>
         )}
 

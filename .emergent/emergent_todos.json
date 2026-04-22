@@ -1,34 +1,30 @@
 [
   {
-    "content": "Task 1: Persona-B Editor Tab in /me (COMPLETED)",
+    "content": "Backend: Mood-Enum + /me/mood PATCH-Endpoint + public_user exposure + discover-Filter",
     "status": "completed"
   },
   {
-    "content": "Task 2 Mobile Iteration 1: Auth (Login+Register mit Duo-Option) + Session",
+    "content": "Frontend: i18n Rename Besucher:innen → Views (de/en) + VisitorsPage-Labels",
     "status": "completed"
   },
   {
-    "content": "Task 2 Mobile Iteration 1: Discover + Paar-Badge + Partner-Overlay + City/Distance",
+    "content": "Frontend: Desktop-Header zeigt Views als Haupt-Nav-Eintrag",
     "status": "completed"
   },
   {
-    "content": "Task 2 Mobile Iteration 1: Profile-Detail mit Paar-Ansicht + Körper/Kinks immer sichtbar",
+    "content": "Frontend: MoodBadge-Komponente + MoodSelector für MyProfilePage",
     "status": "completed"
   },
   {
-    "content": "Task 2 Mobile Iteration 1: Matches + Chat mit Couple-Aware Rendering",
+    "content": "Frontend: Mood-Badge in Discover-Grid, ProfileView und Chat-Header",
     "status": "completed"
   },
   {
-    "content": "Task 2 Mobile Iteration 1: Account (Promo + Couple-Invites + Premium + Logout)",
+    "content": "Frontend: Mood-Filter in Discover-Filter-Dialog",
     "status": "completed"
   },
   {
-    "content": "Task 2 Mobile Iteration 1: Tab-Navigation + Theme-System",
+    "content": "Tests & Screenshots",
     "status": "completed"
-  },
-  {
-    "content": "Mobile nächste Iterationen (Filters, Fotos-Upload, Blog, Events, Alben, Stealth, Super-Like UI, Video)",
-    "status": "pending"
   }
 ]

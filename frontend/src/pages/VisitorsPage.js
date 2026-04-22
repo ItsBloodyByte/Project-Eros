@@ -78,7 +78,7 @@ function BlurredVisitorCard({ v, idx }) {
   return (
     <div
       className="group relative block rounded-2xl overflow-hidden bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))] select-none"
-      aria-label="Verborgene Besucher:in — Premium erforderlich"
+      aria-label="Verborgener View — Premium erforderlich"
       data-testid={`visitor-blurred-${idx}`}
     >
       <div className="aspect-[3/4] w-full bg-gradient-to-br from-[hsl(var(--secondary))] to-[hsl(var(--muted))] relative overflow-hidden">
@@ -161,15 +161,15 @@ export default function VisitorsPage() {
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
             <div>
               <div className="uppercase tracking-widest text-[11px] text-[hsl(var(--muted-foreground))] mb-1">
-                Besucher:innen
+                Views
               </div>
               <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-[1.05]" data-testid="visitors-title">
-                Wer hat dich besucht?
+                Wer hat dich angesehen?
               </h1>
               <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))] max-w-xl">
                 {isPremium
-                  ? "Alle Profile, die dein Profil besucht haben."
-                  : `Du siehst die letzten ${freeVisible} Besucher:innen. Weitere Besuche der ${data?.window_hours_free ?? 24} h werden verschleiert – schalte Premium frei, um alle zu sehen.`}
+                  ? "Alle Profile, die dein Profil angesehen haben."
+                  : `Du siehst die letzten ${freeVisible} Views. Weitere Views der ${data?.window_hours_free ?? 24} h werden verschleiert – schalte Premium frei, um alle zu sehen.`}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -184,7 +184,7 @@ export default function VisitorsPage() {
                   className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/30 px-3 py-1 text-xs"
                   data-testid="visitors-total-label"
                 >
-                  <Eye className="h-3.5 w-3.5" /> {total} {total === 1 ? "Besuch" : "Besuche"}
+                  <Eye className="h-3.5 w-3.5" /> {total} {total === 1 ? "View" : "Views"}
                 </span>
               )}
             </div>
@@ -216,9 +216,9 @@ export default function VisitorsPage() {
               data-testid="visitors-empty"
             >
               <UserRound className="h-10 w-10 mx-auto text-[hsl(var(--muted-foreground))]" />
-              <div className="mt-3 font-medium">Noch keine Besuche</div>
+              <div className="mt-3 font-medium">Noch keine Views</div>
               <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
-                Sobald jemand dein Profil anschaut, erscheint er oder sie hier.
+                Sobald jemand dein Profil ansieht, erscheint er oder sie hier.
               </p>
               <div className="mt-4">
                 <Link to="/">
@@ -251,10 +251,10 @@ export default function VisitorsPage() {
                       <Sparkles className="h-5 w-5 text-[hsl(var(--accent))] mt-0.5" />
                       <div>
                         <div className="font-semibold">
-                          {blurred.length} weitere {blurred.length === 1 ? "Besucher:in" : "Besucher:innen"} verschleiert
+                          {blurred.length} {blurred.length === 1 ? "weiterer View" : "weitere Views"} verschleiert
                         </div>
                         <p className="text-sm text-[hsl(var(--muted-foreground))] mt-0.5">
-                          Mit Premium siehst du jede Person, die dein Profil besucht – und das für bis zu {data?.window_days ?? 30} Tage rückwirkend.
+                          Mit Premium siehst du jede Person, die dein Profil angesehen hat – und das für bis zu {data?.window_days ?? 30} Tage rückwirkend.
                         </p>
                       </div>
                     </div>

@@ -83,13 +83,13 @@ export function AppHeader() {
                     badge={matchesBadge}
                     onClose={() => setSheetOpen(false)}
                   />
+                  <MobileSheetItem to="/visitors" icon={<Eye className="h-4 w-4" />} label={t("nav.visitors", "Views")} testid="sheet-nav-visitors" onClose={() => setSheetOpen(false)} />
                   <MobileSheetItem to="/albums" icon={<Images className="h-4 w-4" />} label={t("nav.albums")} testid="sheet-nav-albums" onClose={() => setSheetOpen(false)} />
                   <MobileSheetItem to="/events" icon={<CalendarClock className="h-4 w-4" />} label={t("nav.events")} testid="sheet-nav-events" onClose={() => setSheetOpen(false)} />
                   <MobileSheetItem to="/blog" icon={<FileText className="h-4 w-4" />} label="Blog" testid="sheet-nav-blog" onClose={() => setSheetOpen(false)} />
                 </MobileNavGroup>
                 <MobileNavGroup label={t("nav.account_group", "Konto")}>
                   <MobileSheetItem to="/account" icon={<UserCog className="h-4 w-4" />} label={t("nav.account")} testid="sheet-nav-account" onClose={() => setSheetOpen(false)} />
-                  <MobileSheetItem to="/visitors" icon={<Eye className="h-4 w-4" />} label={t("nav.visitors", "Besucher:innen")} testid="sheet-nav-visitors" onClose={() => setSheetOpen(false)} />
                   <MobileSheetItem to="/settings" icon={<Settings className="h-4 w-4" />} label={t("nav.settings")} testid="sheet-nav-settings" onClose={() => setSheetOpen(false)} />
                   {isStaff && (
                     <MobileSheetItem to="/admin" icon={<ShieldCheck className="h-4 w-4" />} label={t("nav.admin")} testid="sheet-nav-admin" onClose={() => setSheetOpen(false)} />
@@ -159,6 +159,7 @@ export function AppHeader() {
             testid="nav-matches"
             badge={matchesBadge}
           />
+          <NavItem to="/visitors" label={t("nav.visitors", "Views")} icon={<Eye className="h-4 w-4" />} testid="nav-visitors" />
           <NavItem to="/albums"  label={t("nav.albums")}  icon={<Images className="h-4 w-4" />} testid="nav-albums" />
           <NavItem to="/events"  label={t("nav.events")}  icon={<CalendarClock className="h-4 w-4" />} testid="nav-events" />
           <NavItem to="/blog"    label="Blog"             icon={<FileText className="h-4 w-4" />} testid="nav-blog" />
@@ -208,9 +209,6 @@ export function AppHeader() {
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate("/account")} data-testid="menu-account">
                 <UserCog className="h-4 w-4 mr-2" />{t("nav.account")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/visitors")} data-testid="menu-visitors">
-                <Eye className="h-4 w-4 mr-2" />{t("nav.visitors", "Besucher:innen")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate("/settings")} data-testid="menu-settings">
                 <Settings className="h-4 w-4 mr-2" />{t("nav.settings")}

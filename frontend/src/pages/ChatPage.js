@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { ReportDialog } from "../components/ReportDialog";
+import { MoodBadge } from "../components/MoodBadge";
 
 export default function ChatPage() {
   const { matchId } = useParams();
@@ -186,6 +187,9 @@ export default function ChatPage() {
                       <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/40 px-2 py-0.5 text-[10.5px] font-medium" data-testid="chat-couple-badge">
                         Paar
                       </span>
+                    )}
+                    {peer.current_mood && (
+                      <MoodBadge mood={peer.current_mood} size="xs" testid="chat-peer-mood" />
                     )}
                     {peer.is_system && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] px-2 py-0.5 text-[10.5px] font-medium" data-testid="chat-official-badge" title="Offizielles Eros-Profil">

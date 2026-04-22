@@ -15,6 +15,7 @@ import {
   BODY_TYPES, SMOKING_VALUES, DRINKING_VALUES, DIET_VALUES, STI_VALUES,
   CUP_SIZES, PENIS_CATEGORIES, PENIS_RANGES, COMMON_LANGUAGES, COMMON_ETHNICITIES,
 } from "../lib/constants";
+import { MOOD_LIST } from "../lib/moods";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useTranslation } from "react-i18next";
 
@@ -50,7 +51,7 @@ export function FilterDrawer({ prefs, onChange, onApply }) {
       hide_seen: false, online_only: false,
       body_types: [], min_height_cm: null, max_height_cm: null,
       smoking: [], drinking: [], diet: [], sti_status: [],
-      cup_sizes: [], penis_categories: [], languages: [], ethnicities: [],
+      cup_sizes: [], penis_categories: [], languages: [], ethnicities: [], moods: [],
     };
     setLocal(fresh);
     onChange(fresh);
@@ -69,6 +70,7 @@ export function FilterDrawer({ prefs, onChange, onApply }) {
     (local.penis_categories?.length || 0) +
     (local.languages?.length || 0) +
     (local.ethnicities?.length || 0) +
+    (local.moods?.length || 0) +
     (local.only_face_photo ? 1 : 0) +
     (local.only_verified ? 1 : 0) +
     (local.online_only ? 1 : 0) +
@@ -136,6 +138,28 @@ export function FilterDrawer({ prefs, onChange, onApply }) {
                       </Chip>
                     ))}
                   </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="mood">
+                <AccordionTrigger className="font-display text-base" data-testid="filter-mood-trigger">Status</AccordionTrigger>
+                <AccordionContent>
+                  <Label className="text-sm">Was suchst du gerade?</Label>
+                  <div className="mt-2 flex flex-wrap gap-2" data-testid="filter-mood-chips">
+                    {MOOD_LIST.map((m) => (
+                      <Chip
+                        key={m.key}
+                        on={local.moods?.includes(m.key)}
+                        onClick={() => toggleArr("moods", m.key)}
+                        testid={`filter-mood-${m.key}`}
+                      >
+                        {m.label}
+                      </Chip>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">
+                    Nur Profile mit dem gewählten Status erscheinen in Entdecken.
+                  </p>
                 </AccordionContent>
               </AccordionItem>
 

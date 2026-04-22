@@ -20,6 +20,7 @@ import { ImagePlus, Star, Trash2, Video, Play, GripVertical, ArrowUp, Eye, UserR
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { PersonaBEditor } from "../components/PersonaBEditor";
+import { MoodSelector } from "../components/MoodSelector";
 
 function Chip({ on, onClick, children }) {
   return (
@@ -201,6 +202,8 @@ export default function MyProfilePage() {
               </Button>
             </div>
           </header>
+
+          <MoodSelector />
 
           <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)] no-capture">
             <div className="flex items-center justify-between">

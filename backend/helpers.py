@@ -222,6 +222,7 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
         "couple_id": doc.get("couple_id"),
         "partner_user_id": doc.get("partner_user_id"),
         "persona_b": _persona_b_public(doc.get("persona_b")) if doc.get("account_type") == "duo" else None,
+        "current_mood": doc.get("current_mood"),
     }
 
 

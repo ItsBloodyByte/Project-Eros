@@ -18,6 +18,7 @@ import { PENIS_RANGES } from "../lib/constants";
 import { useTranslation } from "react-i18next";
 import { RoleBadge } from "../components/RoleBadge";
 import { PersonDetails } from "../components/PersonDetails";
+import { MoodBadge } from "../components/MoodBadge";
 
 function Row({ label, value }) {
   if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
@@ -225,6 +226,9 @@ export default function ProfileViewPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
+                    {profile.current_mood && (
+                      <MoodBadge mood={profile.current_mood} size="md" testid="profile-mood-badge" />
+                    )}
                     {(profile.partner || (profile.account_type === "duo" && profile.persona_b)) && (
                       <Badge className="gap-1 bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/40" data-testid="profile-couple-badge">
                         Paar

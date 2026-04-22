@@ -41,6 +41,7 @@ from models import (
     LoginRequest,
     TokenResponse,
     ProfileUpdate,
+    MoodUpdateRequest,
     PhotoUploadRequest,
     LikeRequest,
     LikeResponse,
@@ -463,7 +464,7 @@ async def update_me(body: ProfileUpdate, user=Depends(_require_user)):
         # Phase 4 extended
         "height_cm", "body_type", "ethnicity", "languages", "interests",
         "smoking", "drinking", "diet", "sti_status", "sti_tested_on",
-        "cup_size", "penis_length_cm", "penis_girth_cm",
+        "cup_size", "penis_length_cm", "penis_girth_cm", "current_mood",
     ]:
         val = getattr(body, field)
         if val is None:
@@ -480,6 +481,22 @@ async def update_me(body: ProfileUpdate, user=Depends(_require_user)):
         update["privacy"] = body.privacy.model_dump()
     if update:
         await db.users.update_one({"id": user["id"]}, {"$set": update})
+    fresh = await db.users.find_one({"id": user["id"]})
+    return public_user_from_doc(fresh)
+
+
+@api_router.patch("/me/mood")
+async def update_mood(body: MoodUpdateRequest, user=Depends(_require_user)):
+    """
+    Set or clear the current mood indicator (sex_meet / dating / chatting / online / None).
+    Separate from the bulk /me endpoint so it can be toggled fast from anywhere.
+    """
+    update: Dict = {"current_mood": body.current_mood}
+    if body.current_mood is not None:
+        update["current_mood_updated_at"] = now_utc().isoformat()
+    else:
+        update["current_mood_updated_at"] = None
+    await db.users.update_one({"id": user["id"]}, {"$set": update})
     fresh = await db.users.find_one({"id": user["id"]})
     return public_user_from_doc(fresh)
 
@@ -741,6 +758,8 @@ async def discover(
     if prefs.get("kinks"):
         # Others only appear if they also list at least one of the viewer's kinks.
         query["kinks"] = {"$in": prefs["kinks"]}
+    if prefs.get("moods"):
+        query["current_mood"] = {"$in": prefs["moods"]}
 
     # Bidirectional age filter (gender handled above with union logic)
     if my_age:
