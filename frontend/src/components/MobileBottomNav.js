@@ -1,12 +1,12 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Compass, MessagesSquare, Images } from "lucide-react";
+import { Compass, MessagesSquare, Images, Eye } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../lib/AuthContext";
 import { useUnreadCounts } from "../lib/useUnreadCounts";
 
 /**
  * Persistent bottom navigation strictly for mobile (hidden on md+).
- * Shows Alben, Matches, Entdecken with live unread badges.
+ * Order (left → right): Entdecken, Besucher, Chats, Alben.
  *
  * Hidden on public/auth routes via `hideOn` check.
  */
@@ -27,10 +27,17 @@ export function MobileBottomNav() {
 
   const items = [
     {
-      to: "/albums",
-      label: t("nav.albums"),
-      icon: Images,
-      testid: "bottom-nav-albums",
+      to: "/",
+      label: t("nav.discover"),
+      icon: Compass,
+      testid: "bottom-nav-discover",
+      end: true,
+    },
+    {
+      to: "/visitors",
+      label: t("nav.visitors", "Besucher:innen"),
+      icon: Eye,
+      testid: "bottom-nav-visitors",
     },
     {
       to: "/matches",
@@ -40,11 +47,10 @@ export function MobileBottomNav() {
       badge: matchesBadge,
     },
     {
-      to: "/",
-      label: t("nav.discover"),
-      icon: Compass,
-      testid: "bottom-nav-discover",
-      end: true,
+      to: "/albums",
+      label: t("nav.albums"),
+      icon: Images,
+      testid: "bottom-nav-albums",
     },
   ];
 
@@ -54,7 +60,7 @@ export function MobileBottomNav() {
       data-testid="mobile-bottom-nav"
       aria-label="Mobile bottom navigation"
     >
-      <ul className="grid grid-cols-3">
+      <ul className="grid grid-cols-4">
         {items.map((it) => {
           const Icon = it.icon;
           return (
@@ -83,7 +89,7 @@ export function MobileBottomNav() {
                     </span>
                   )}
                 </span>
-                <span>{it.label}</span>
+                <span className="truncate max-w-full px-1">{it.label}</span>
               </NavLink>
             </li>
           );
