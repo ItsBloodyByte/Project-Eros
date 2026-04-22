@@ -1,0 +1,215 @@
+"""Pydantic models."""
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from typing import List, Optional, Literal
+from datetime import datetime, timezone
+import uuid
+
+
+Gender = Literal[
+    "woman", "man", "nonbinary", "trans_woman", "trans_man", "genderqueer", "agender", "other"
+]
+Orientation = Literal[
+    "straight", "gay", "lesbian", "bisexual", "pansexual", "asexual", "queer", "questioning", "other"
+]
+RelationshipType = Literal["casual", "serious", "friendship", "open", "undecided"]
+SeekingRole = Literal["top", "bottom", "versatile", "any"]
+PhotoCategory = Literal["face", "individual", "nsfw"]
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    display_name: str = Field(min_length=2, max_length=40)
+    age: int = Field(ge=18, le=120)
+    consents: "ConsentFlags"
+
+
+class ConsentFlags(BaseModel):
+    terms: bool
+    privacy: bool
+    sensitive_data: bool  # orientation, kinks, location
+    nsfw_view: bool = False
+
+
+RegisterRequest.model_rebuild()
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: "UserPublic"
+
+
+class Location(BaseModel):
+    type: Literal["Point"] = "Point"
+    coordinates: List[float]  # [lng, lat]
+
+
+class PrivacySettings(BaseModel):
+    read_receipts: bool = True
+    show_online_status: bool = True
+    show_typing: bool = True
+    hidden_mode: bool = False
+    screenshot_notifications: bool = True
+
+
+class UserPreferences(BaseModel):
+    age_min: int = 18
+    age_max: int = 99
+    seeking_genders: List[Gender] = []
+    radius_km: int = 50
+    relationship_types: List[RelationshipType] = []
+    seeking_roles: List[SeekingRole] = []
+    kinks: List[str] = []
+    only_with_photos: bool = True
+    only_face_photo: bool = False
+    only_verified: bool = False
+    hide_seen: bool = True
+    online_only: bool = False
+
+
+class PhotoMeta(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    data: str  # base64 data URL (data:image/png;base64,...)
+    nsfw_score: float = 0.0
+    has_face: bool = False
+    category: PhotoCategory = "individual"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    labels: List[str] = []
+    is_primary: bool = False
+
+
+class UserPublic(BaseModel):
+    id: str
+    display_name: str
+    age: int
+    gender_identity: Optional[Gender] = None
+    pronouns: Optional[str] = None
+    orientation: Optional[Orientation] = None
+    bio: Optional[str] = None
+    photos: List[PhotoMeta] = []
+    verified: bool = False
+    distance_km: Optional[int] = None
+    is_online: bool = False
+    relationship_types: List[RelationshipType] = []
+    seeking_roles: List[SeekingRole] = []
+    kinks: List[str] = []
+    role: str = "user"
+
+
+class ProfileUpdate(BaseModel):
+    display_name: Optional[str] = Field(default=None, min_length=2, max_length=40)
+    age: Optional[int] = Field(default=None, ge=18, le=120)
+    gender_identity: Optional[Gender] = None
+    pronouns: Optional[str] = None
+    orientation: Optional[Orientation] = None
+    bio: Optional[str] = None
+    location: Optional[Location] = None
+    preferences: Optional[UserPreferences] = None
+    privacy: Optional[PrivacySettings] = None
+    relationship_types: Optional[List[RelationshipType]] = None
+    seeking_roles: Optional[List[SeekingRole]] = None
+    kinks: Optional[List[str]] = None
+
+
+class PhotoUploadRequest(BaseModel):
+    data_url: str  # data:image/png;base64,...
+    is_primary: bool = False
+
+
+class LikeRequest(BaseModel):
+    target_user_id: str
+
+
+class LikeResponse(BaseModel):
+    liked: bool
+    matched: bool
+    match_id: Optional[str] = None
+
+
+class MatchItem(BaseModel):
+    id: str
+    user: UserPublic
+    created_at: datetime
+    last_message_at: Optional[datetime] = None
+    unread_count: int = 0
+
+
+class SendMessageRequest(BaseModel):
+    match_id: str
+    text: Optional[str] = None
+    media_data_url: Optional[str] = None
+    self_destruct_seconds: Optional[int] = None  # None = persistent
+
+
+class MessagePublic(BaseModel):
+    id: str
+    match_id: str
+    sender_id: str
+    text: Optional[str] = None
+    media_data_url: Optional[str] = None
+    nsfw_score: Optional[float] = None
+    self_destruct_at: Optional[datetime] = None
+    read_by: List[str] = []
+    created_at: datetime
+
+
+class AlbumCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=60)
+    description: Optional[str] = None
+    is_nsfw: bool = False
+
+
+class AlbumPublic(BaseModel):
+    id: str
+    owner_id: str
+    title: str
+    description: Optional[str] = None
+    is_nsfw: bool = False
+    photos: List[PhotoMeta] = []
+    shared_with: List[str] = []
+    created_at: datetime
+
+
+class AlbumShareRequest(BaseModel):
+    album_id: str
+    user_id: str
+    expires_at: Optional[datetime] = None
+
+
+class AlbumUnlockRequest(BaseModel):
+    album_id: str
+    message: Optional[str] = None
+
+
+class ReportCreate(BaseModel):
+    target_type: Literal["user", "photo", "message", "album"]
+    target_id: str
+    reason: Literal["spam", "harassment", "nudity", "underage", "impersonation", "other"]
+    detail: Optional[str] = None
+
+
+class ReportPublic(BaseModel):
+    id: str
+    reporter_id: str
+    target_type: str
+    target_id: str
+    reason: str
+    detail: Optional[str] = None
+    status: Literal["open", "reviewing", "resolved", "rejected"] = "open"
+    created_at: datetime
+
+
+class AdminBanRequest(BaseModel):
+    user_id: str
+    reason: str
+
+
+class ChatPrefsUpdate(BaseModel):
+    read_receipts: Optional[bool] = None
+    show_typing: Optional[bool] = None
