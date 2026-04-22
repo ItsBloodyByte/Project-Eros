@@ -25,14 +25,14 @@
   },
   {
     "content": "Phase 2: End-to-end testing via testing_agent_v3",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
-    "content": "Phase 2: Fix all testing issues",
-    "status": "pending"
+    "content": "Phase 2: Fix testing issues (JWT auto-attach at boot + 401 interceptor)",
+    "status": "completed"
   },
   {
     "content": "Finish and deliver",
-    "status": "pending"
+    "status": "in_progress"
   }
 ]
