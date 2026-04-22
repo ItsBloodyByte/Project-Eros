@@ -17,7 +17,9 @@ export function MoodBadge({ mood, size = "sm", compact = false, iconOnly = false
 
   const Icon = m.icon;
 
-  // Icon-only variant: small colored disk with just the icon (mobile-friendly)
+  // Icon-only variant: small colored disk with just the icon (mobile-friendly).
+  // Designed to sit visually identical to the `profile-card-visited-eye` badge
+  // in the top-right cluster (h-6 w-6 with ring-1 rather than ring-2).
   if (iconOnly) {
     const iconBox = {
       xs: "h-5 w-5",
@@ -34,11 +36,11 @@ export function MoodBadge({ mood, size = "sm", compact = false, iconOnly = false
       <Tag
         type={onClick ? "button" : undefined}
         className={[
-          "inline-grid place-items-center rounded-full ring-2 ring-white/90 shadow-[var(--shadow-sm)]",
+          "inline-grid place-items-center rounded-full backdrop-blur-sm leading-none",
           m.dotClass, // uses the solid mood color as bg
           "text-white",
           iconBox,
-          onClick ? "cursor-pointer hover:scale-105 transition-transform duration-[var(--dur-1)] focus-visible:outline-none focus-visible:ring-[hsl(var(--accent))]" : "",
+          onClick ? "cursor-pointer hover:scale-105 transition-transform duration-[var(--dur-1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]" : "",
           className,
         ].join(" ")}
         data-testid={testid || `mood-icon-${m.key}`}

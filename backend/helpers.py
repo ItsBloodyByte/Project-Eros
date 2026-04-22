@@ -163,8 +163,21 @@ def compute_age(birth_date) -> Optional[int]:
 
 
 def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
-                         privacy: Optional[dict] = None) -> dict:
+                         privacy: Optional[dict] = None,
+                         list_mode: bool = False) -> dict:
+    """
+    Build the public user payload.
+
+    When `list_mode=True`, only the primary photo (or the first photo) is
+    returned. This keeps list responses like /discover and /matches small –
+    each user document can carry up to 5 base64-encoded photos (~1–2 MB each)
+    which bloats the wire size dramatically. Detail endpoints still call
+    without `list_mode` and receive every photo.
+    """
     photos = doc.get("photos", []) or []
+    if list_mode and photos:
+        primary = next((p for p in photos if p.get("is_primary")), None) or photos[0]
+        photos = [primary]
     loc = doc.get("location") or {}
     distance_km = None
     if viewer_location and loc.get("coordinates"):
@@ -221,12 +234,12 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
         "account_type": doc.get("account_type") or "single",
         "couple_id": doc.get("couple_id"),
         "partner_user_id": doc.get("partner_user_id"),
-        "persona_b": _persona_b_public(doc.get("persona_b")) if doc.get("account_type") == "duo" else None,
+        "persona_b": _persona_b_public(doc.get("persona_b"), list_mode=list_mode) if doc.get("account_type") == "duo" else None,
         "current_mood": doc.get("current_mood"),
     }
 
 
-def _persona_b_public(p: Optional[dict]) -> Optional[dict]:
+def _persona_b_public(p: Optional[dict], list_mode: bool = False) -> Optional[dict]:
     """Strip private fields of persona_b (single-account duo). Returns dict or None."""
     if not isinstance(p, dict):
         return None
@@ -234,6 +247,10 @@ def _persona_b_public(p: Optional[dict]) -> Optional[dict]:
     if derived_age is None:
         derived_age = p.get("age")
     penis_len = p.get("penis_length_cm")
+    photos = p.get("photos") or []
+    if list_mode and photos:
+        primary = next((x for x in photos if x.get("is_primary")), None) or photos[0]
+        photos = [primary]
     return {
         "display_name": p.get("display_name") or "",
         "age": derived_age,
@@ -241,7 +258,7 @@ def _persona_b_public(p: Optional[dict]) -> Optional[dict]:
         "pronouns": p.get("pronouns"),
         "orientation": p.get("orientation"),
         "bio": p.get("bio"),
-        "photos": p.get("photos") or [],
+        "photos": photos,
         "height_cm": p.get("height_cm"),
         "body_type": p.get("body_type"),
         "ethnicity": p.get("ethnicity"),

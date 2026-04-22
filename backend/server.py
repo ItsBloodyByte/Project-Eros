@@ -24,6 +24,7 @@ from typing import List, Optional, Dict
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.encoders import jsonable_encoder
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -35,6 +36,7 @@ from auth import (
     get_current_user_payload,
 )
 from helpers import now_utc, public_user_from_doc, rounded_distance_km, haversine_km, serialize_doc, parse_dt, contains_link_like
+from image_compression import compress_image_data_url
 from moderation import moderate_image
 from models import (
     RegisterRequest,
@@ -509,16 +511,19 @@ async def upload_photo(body: PhotoUploadRequest, user=Depends(_require_user)):
     # Basic size guard: base64 chars. ~1.37x raw. Limit ~8MB raw.
     if len(body.data_url) > 11_000_000:
         raise HTTPException(413, "Image too large (max ~8MB)")
+    # Server-side compression: shrink to sane dimensions + re-encode JPEG.
+    # This drastically reduces Mongo storage + every subsequent wire transfer.
+    compressed_url, _ = compress_image_data_url(body.data_url)
     # Hard cap: max 5 photos per user (1 primary + 4 secondary)
     MAX_PHOTOS = 5
     current = user.get("photos", [])
     if len(current) >= MAX_PHOTOS:
         raise HTTPException(400, f"Maximal {MAX_PHOTOS} Fotos erlaubt")
     photo_id = str(uuid.uuid4())
-    mod = await moderate_image(body.data_url, session_tag=f"photo-{photo_id}")
+    mod = await moderate_image(compressed_url, session_tag=f"photo-{photo_id}")
     photo = {
         "id": photo_id,
-        "data": body.data_url,
+        "data": compressed_url,
         "nsfw_score": mod["nsfw_score"],
         "has_face": mod["has_face"],
         "category": mod["category"],
@@ -645,7 +650,7 @@ async def discover(
         total = await db.users.count_documents(q)
         out = []
         for u in users:
-            pub = public_user_from_doc(u, viewer_location=(user.get("location") or {}).get("coordinates"))
+            pub = public_user_from_doc(u, viewer_location=(user.get("location") or {}).get("coordinates"), list_mode=True)
             pub["admin_flags"] = {
                 "banned": bool(u.get("banned")),
                 "hidden_mode": bool((u.get("privacy") or {}).get("hidden_mode")),
@@ -660,7 +665,7 @@ async def discover(
                 try:
                     pdoc = await db.users.find_one({"id": u["partner_user_id"]})
                     if pdoc:
-                        pub["partner"] = public_user_from_doc(pdoc, viewer_location=(user.get("location") or {}).get("coordinates"))
+                        pub["partner"] = public_user_from_doc(pdoc, viewer_location=(user.get("location") or {}).get("coordinates"), list_mode=True)
                 except Exception:
                     pass
             out.append(pub)
@@ -789,7 +794,7 @@ async def discover(
     results = []
     wanted_penis = set(prefs.get("penis_categories") or [])
     for d in docs:
-        pub = public_user_from_doc(d, viewer_location=viewer_coords)
+        pub = public_user_from_doc(d, viewer_location=viewer_coords, list_mode=True)
         pub["boosted"] = (d.get("boost_expires_at") or "") > now_iso
         pub["is_premium"] = (d.get("premium_expires_at") or "") > now_iso
         # Penis category post-filter (derived)
@@ -804,7 +809,7 @@ async def discover(
             try:
                 pdoc = await db.users.find_one({"id": d["partner_user_id"]})
                 if pdoc and not pdoc.get("banned"):
-                    pub["partner"] = public_user_from_doc(pdoc, viewer_location=viewer_coords)
+                    pub["partner"] = public_user_from_doc(pdoc, viewer_location=viewer_coords, list_mode=True)
             except Exception:
                 pass
         results.append(pub)
@@ -1013,7 +1018,7 @@ async def list_matches(user=Depends(_require_user)):
         other = await db.users.find_one({"id": other_id})
         if not other or other.get("banned"):
             continue
-        pub = public_user_from_doc(other, viewer_location=(user.get("location") or {}).get("coordinates"))
+        pub = public_user_from_doc(other, viewer_location=(user.get("location") or {}).get("coordinates"), list_mode=True)
         pub["is_system"] = bool(other.get("is_system"))
         # unread count
         unread = await db.messages.count_documents(
@@ -3951,7 +3956,7 @@ async def my_visitors(user=Depends(_require_user), limit: int = Query(40, ge=1, 
             vu = users_map.get(vid)
             if not vu or vu.get("banned"):
                 continue
-            pub = public_user_from_doc(vu, viewer_location=viewer_coords)
+            pub = public_user_from_doc(vu, viewer_location=viewer_coords, list_mode=True)
             pub["visited_at"] = d.get("last_visited_at")
             pub["visit_count"] = int(d.get("count", 1))
             pub["blurred"] = False
@@ -3985,7 +3990,7 @@ async def my_visitors(user=Depends(_require_user), limit: int = Query(40, ge=1, 
         vu = users_map.get(vid)
         if not vu or vu.get("banned"):
             continue
-        pub = public_user_from_doc(vu, viewer_location=viewer_coords)
+        pub = public_user_from_doc(vu, viewer_location=viewer_coords, list_mode=True)
         pub["visited_at"] = d.get("last_visited_at")
         pub["visit_count"] = int(d.get("count", 1))
         pub["blurred"] = False
@@ -4785,3 +4790,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Transparent response compression: negotiates gzip with clients that send
+# Accept-Encoding: gzip. Huge wire-size reduction on JSON payloads that embed
+# base64 image data (discover, matches, /me, etc.).
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
