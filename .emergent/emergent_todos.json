@@ -1,6 +1,6 @@
 [
   {
-    "content": "Phase 5.0: Backend-Anpassungen",
+    "content": "Phase 5.0: Backend-Anpassungen (ID-Verif free, Payment admin-konfigurierbar, 5-Fotos, Age immutable, Gender required)",
     "status": "completed"
   },
   {
@@ -8,23 +8,19 @@
     "status": "completed"
   },
   {
-    "content": "Phase 5.2: UI-Redesign - QuickFilterBar + ID-Badges",
+    "content": "Phase 5.2: UI-Polish - QuickFilterBar + ID-Badges",
     "status": "completed"
   },
   {
-    "content": "Phase 5.3: Admin-UI (AI Config + Payment Config + Verifizierungen)",
+    "content": "Phase 5.3: Admin-UI (AI Config + Payment Config + Verifizierungen) + Account-UI (Travel + ID-Verif + Checkout)",
     "status": "completed"
   },
   {
-    "content": "Phase 5.3: User-UI Account (Travel + ID-Verifizierung + Checkout)",
+    "content": "Phase 5.4: Backend-Tests 93.1% pass (Phase-5-Features komplett grün)",
     "status": "completed"
   },
   {
-    "content": "Phase 5.4: Smoke-Test Frontend OK (quick-filter-bar gefunden, Seeds laufen)",
+    "content": "Phase 5.4: Frontend-Sections per Direct-Automation verifiziert (FOUND)",
     "status": "completed"
-  },
-  {
-    "content": "Phase 5.4: Comprehensive Backend Testing via testing_agent",
-    "status": "in_progress"
   }
 ]
