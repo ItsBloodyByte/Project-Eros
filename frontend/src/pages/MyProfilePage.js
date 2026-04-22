@@ -11,7 +11,7 @@ import { Slider } from "../components/ui/slider";
 import { toast } from "sonner";
 import { GENDERS, ORIENTATIONS, RELATIONSHIP_TYPES, SEEKING_ROLES } from "../lib/constants";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
-import { ImagePlus, Star, Trash2 } from "lucide-react";
+import { ImagePlus, Star, Trash2, Video, Play } from "lucide-react";
 
 export default function MyProfilePage() {
   const { user, refresh } = useAuth();
@@ -94,6 +94,26 @@ export default function MyProfilePage() {
     await refresh();
   };
 
+  const uploadVideo = async (file) => {
+    if (file.size > 30 * 1024 * 1024) { toast.error("Max 30MB"); return; }
+    setUploading(true);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      await api.post("/me/videos", { data_url: dataUrl });
+      toast.success("Video uploaded. It will be reviewed by moderation before being public.");
+      await refresh();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const deleteVideo = async (vid) => {
+    await api.delete(`/me/videos/${vid}`);
+    await refresh();
+  };
+
   return (
     <div className="app-wrap dark:app-shell-bg app-shell-bg-light">
       <div className="app-content">
@@ -125,6 +145,29 @@ export default function MyProfilePage() {
                   <span>{uploading ? "Analyzing..." : "Add photo"}</span>
                 </div>
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadPhoto(e.target.files[0])} data-testid="me-photo-input" />
+              </label>
+            </div>
+          </section>
+
+          <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-4 shadow-[var(--shadow-sm)]">
+            <div className="font-display text-lg flex items-center gap-2"><Video className="h-4 w-4" /> Video clips</div>
+            <div className="text-sm text-[hsl(var(--muted-foreground))]">Short clips (max 30MB, mp4 or webm). They are queued for moderation review before being shown to others.</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {(user.videos || []).map((v) => (
+                <div key={v.id} className="relative aspect-video rounded-md overflow-hidden border bg-black">
+                  <video src={v.data} controls className="h-full w-full object-cover" />
+                  <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[11px] px-2 py-1 flex items-center justify-between">
+                    <span>{v.moderation_status}</span>
+                    <button onClick={() => deleteVideo(v.id)} className="underline"><Trash2 className="h-3 w-3" /></button>
+                  </div>
+                </div>
+              ))}
+              <label className="aspect-video grid place-items-center rounded-md border border-dashed hover:bg-[hsl(var(--secondary))] cursor-pointer text-sm text-[hsl(var(--muted-foreground))]">
+                <div className="flex flex-col items-center gap-1">
+                  <Play className="h-5 w-5" />
+                  <span>{uploading ? "Uploading..." : "Add video"}</span>
+                </div>
+                <input type="file" accept="video/mp4,video/webm" className="hidden" onChange={(e) => e.target.files?.[0] && uploadVideo(e.target.files[0])} data-testid="me-video-input" />
               </label>
             </div>
           </section>

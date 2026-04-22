@@ -7,16 +7,22 @@ import { Badge } from "../components/ui/badge";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
 import { ReportDialog } from "../components/ReportDialog";
 import { MatchBanner } from "../components/MatchBanner";
-import { BadgeCheck, Heart, MapPin, Lock } from "lucide-react";
+import { BadgeCheck, Heart, MapPin, Lock, Send } from "lucide-react";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
+import { Textarea } from "../components/ui/textarea";
+import { useAuth } from "../lib/AuthContext";
 
 export default function ProfileViewPage() {
   const { id } = useParams();
+  const { user: me } = useAuth();
   const nav = useNavigate();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [liking, setLiking] = useState(false);
   const [revealedPhotos, setRevealedPhotos] = useState({});
+  const [firstOpen, setFirstOpen] = useState(false);
+  const [firstText, setFirstText] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -152,6 +158,28 @@ export default function ProfileViewPage() {
                   <Button onClick={like} disabled={liking} data-testid="like-button" className="gap-1">
                     <Heart className="h-4 w-4" /> Like
                   </Button>
+                )}
+                {me?.is_premium && !profile.match_id && (
+                  <Dialog open={firstOpen} onOpenChange={setFirstOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="secondary" className="gap-1" data-testid="message-first-button"><Send className="h-4 w-4" /> Message first</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>Send a first message</DialogTitle></DialogHeader>
+                      <div className="text-sm text-[hsl(var(--muted-foreground))]">Premium privilege: skip the mutual-like gate and send one opener.</div>
+                      <Textarea rows={4} value={firstText} onChange={(e) => setFirstText(e.target.value)} placeholder="Keep it warm and specific" maxLength={500} data-testid="message-first-input" />
+                      <DialogFooter>
+                        <Button onClick={async () => {
+                          if (!firstText.trim()) { toast.error("Please write a message"); return; }
+                          try {
+                            const { data } = await api.post("/messages/first", { target_user_id: profile.id, text: firstText.trim() });
+                            setFirstOpen(false); setFirstText("");
+                            nav(`/chat/${data.match_id}`);
+                          } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+                        }} data-testid="message-first-submit">Send</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 )}
                 <ReportDialog targetType="user" targetId={profile.id} />
               </div>

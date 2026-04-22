@@ -56,6 +56,18 @@ from models import (
     AlbumPublic,
     ReportPublic,
     ChatPrefsUpdate,
+    EmailVerifyRequest,
+    MfaSetupResponse,
+    MfaEnableRequest,
+    MfaDisableRequest,
+    LoginMfaRequest,
+    VideoUploadRequest,
+    PremiumUpgradeRequest,
+    BoostActivateRequest,
+    MessageFirstRequest,
+    EventCreate,
+    EventRsvpRequest,
+    AdminSetRoleRequest,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -85,6 +97,8 @@ async def startup():
         await db.albums.create_index("id", unique=True)
         await db.reports.create_index("id", unique=True)
         await db.audit.create_index("created_at")
+        await db.events.create_index("id", unique=True)
+        await db.events.create_index("starts_at")
         logger.info("Mongo indexes ensured.")
     except Exception as e:
         logger.exception("Index creation failed: %s", e)
@@ -228,13 +242,20 @@ async def login(body: LoginRequest):
 @api_router.get("/me")
 async def me(user=Depends(_require_user)):
     pub = public_user_from_doc(user)
+    now_iso = now_utc().isoformat()
     return {
         **pub,
         "email": user["email"],
+        "email_verified": bool(user.get("email_verified")),
+        "mfa_enabled": bool(user.get("mfa_enabled")),
         "preferences": user.get("preferences", {}),
         "privacy": user.get("privacy", {}),
         "location": user.get("location"),
         "consents": user.get("consents", {}),
+        "videos": user.get("videos", []),
+        "is_premium": (user.get("premium_expires_at") or "") > now_iso,
+        "premium_until": user.get("premium_expires_at"),
+        "boost_until": user.get("boost_expires_at"),
     }
 
 
@@ -375,13 +396,20 @@ async def discover(
         }
         geo_applied = True
 
-    cursor = db.users.find(query).skip(skip).limit(limit)
-    docs = await cursor.to_list(length=limit)
+    cursor = db.users.find(query).skip(skip).limit(limit * 2)
+    docs = await cursor.to_list(length=limit * 2)
+
+    now_iso = now_utc().isoformat()
+    # Boost sort: active boosts first, then original order.
+    docs.sort(key=lambda d: 0 if (d.get("boost_expires_at") or "") > now_iso else 1)
+    docs = docs[:limit]
 
     viewer_coords = loc.get("coordinates") if loc else None
     results = []
     for d in docs:
         pub = public_user_from_doc(d, viewer_location=viewer_coords)
+        pub["boosted"] = (d.get("boost_expires_at") or "") > now_iso
+        pub["is_premium"] = (d.get("premium_expires_at") or "") > now_iso
         # Online-only post-filter (privacy-aware)
         if prefs.get("online_only") and not pub["is_online"]:
             continue
@@ -897,6 +925,437 @@ async def gdpr_delete(user=Depends(_require_user)):
     await db.albums.delete_many({"owner_id": uid})
     await _audit(uid, "account_deleted")
     return {"ok": True}
+
+
+# =====================================================================
+# Phase 3: Email verification, MFA, Videos, Premium+Boost, Events, Roles
+# =====================================================================
+import random
+import pyotp  # noqa: E402
+
+
+# --------- Email verification (in-app code) ---------
+@api_router.post("/auth/email/send-code")
+async def send_email_code(user=Depends(_require_user)):
+    code = f"{random.randint(0, 999999):06d}"
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "email_verification": {
+                "code": code,
+                "issued_at": now_utc().isoformat(),
+                "expires_at": (now_utc() + timedelta(minutes=15)).isoformat(),
+            }
+        }},
+    )
+    await _audit(user["id"], "email_verify_code_sent")
+    # In production this would be emailed. For MVP, we return a dev_code so the UI
+    # and automated tests can complete the flow end-to-end.
+    return {"ok": True, "dev_code": code, "expires_in_minutes": 15}
+
+
+@api_router.post("/auth/email/verify")
+async def verify_email(body: EmailVerifyRequest, user=Depends(_require_user)):
+    ev = (user.get("email_verification") or {})
+    if not ev.get("code"):
+        raise HTTPException(400, "No code requested")
+    if ev.get("expires_at") and ev["expires_at"] < now_utc().isoformat():
+        raise HTTPException(400, "Code expired")
+    if body.code != ev["code"]:
+        raise HTTPException(400, "Invalid code")
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"email_verified": True}, "$unset": {"email_verification": ""}},
+    )
+    await _audit(user["id"], "email_verified")
+    return {"ok": True}
+
+
+# --------- MFA (TOTP) ---------
+@api_router.post("/auth/mfa/setup", response_model=MfaSetupResponse)
+async def mfa_setup(user=Depends(_require_user)):
+    secret = pyotp.random_base32()
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"mfa_pending_secret": secret}},
+    )
+    uri = pyotp.totp.TOTP(secret).provisioning_uri(
+        name=user["email"], issuer_name="Eros"
+    )
+    return MfaSetupResponse(secret=secret, otpauth_url=uri)
+
+
+@api_router.post("/auth/mfa/enable")
+async def mfa_enable(body: MfaEnableRequest, user=Depends(_require_user)):
+    secret = user.get("mfa_pending_secret")
+    if not secret:
+        raise HTTPException(400, "MFA not set up")
+    if not pyotp.TOTP(secret).verify(body.code, valid_window=1):
+        raise HTTPException(400, "Invalid code")
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"mfa_enabled": True, "mfa_secret": secret},
+         "$unset": {"mfa_pending_secret": ""}},
+    )
+    await _audit(user["id"], "mfa_enabled")
+    return {"ok": True}
+
+
+@api_router.post("/auth/mfa/disable")
+async def mfa_disable(body: MfaDisableRequest, user=Depends(_require_user)):
+    secret = user.get("mfa_secret")
+    if not secret:
+        raise HTTPException(400, "MFA not enabled")
+    if not pyotp.TOTP(secret).verify(body.code, valid_window=1):
+        raise HTTPException(400, "Invalid code")
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"mfa_enabled": False}, "$unset": {"mfa_secret": ""}},
+    )
+    await _audit(user["id"], "mfa_disabled")
+    return {"ok": True}
+
+
+@api_router.post("/auth/login-mfa", response_model=TokenResponse)
+async def login_mfa(body: LoginMfaRequest):
+    doc = await db.users.find_one({"email": body.email.lower()})
+    if not doc or not verify_password(body.password, doc["password_hash"]):
+        raise HTTPException(401, "Invalid credentials")
+    if doc.get("banned"):
+        raise HTTPException(403, "Account banned")
+    if doc.get("mfa_enabled"):
+        if not body.mfa_code:
+            raise HTTPException(401, "MFA required")
+        if not pyotp.TOTP(doc["mfa_secret"]).verify(body.mfa_code, valid_window=1):
+            raise HTTPException(401, "Invalid MFA code")
+    token = create_token(doc["id"], doc.get("role", "user"))
+    await db.users.update_one({"id": doc["id"]}, {"$set": {"last_active": now_utc().isoformat()}})
+    await _audit(doc["id"], "login_mfa" if doc.get("mfa_enabled") else "login")
+    return TokenResponse(access_token=token, user=UserPublic(**public_user_from_doc(doc)))
+
+
+# --------- Video clips ---------
+@api_router.post("/me/videos")
+async def upload_video(body: VideoUploadRequest, user=Depends(_require_user)):
+    if not body.data_url.startswith("data:video/"):
+        raise HTTPException(400, "Invalid video data URL (expected data:video/...)")
+    # Size guard ~30MB raw
+    if len(body.data_url) > 42_000_000:
+        raise HTTPException(413, "Video too large (max ~30MB)")
+    vid = {
+        "id": str(uuid.uuid4()),
+        "data": body.data_url,
+        "caption": body.caption,
+        "created_at": now_utc().isoformat(),
+        "moderation_status": "pending",  # admin review
+    }
+    await db.users.update_one({"id": user["id"]}, {"$push": {"videos": vid}})
+    return vid
+
+
+@api_router.delete("/me/videos/{video_id}")
+async def delete_video(video_id: str, user=Depends(_require_user)):
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"videos": {"id": video_id}}})
+    return {"ok": True}
+
+
+@api_router.get("/users/{user_id}/videos")
+async def get_user_videos(user_id: str, user=Depends(_require_user)):
+    doc = await db.users.find_one({"id": user_id})
+    if not doc:
+        raise HTTPException(404, "Not found")
+    # only show approved videos to others; own videos always visible
+    vids = doc.get("videos", []) or []
+    if user_id != user["id"]:
+        vids = [v for v in vids if v.get("moderation_status") == "approved"]
+    return {"videos": serialize_doc(vids)}
+
+
+# --------- Premium / Boost / Who-liked-me ---------
+def _is_premium(doc: dict) -> bool:
+    exp = doc.get("premium_expires_at")
+    if not exp:
+        return False
+    try:
+        return exp > now_utc().isoformat()
+    except Exception:
+        return False
+
+
+def _boost_active(doc: dict) -> bool:
+    exp = doc.get("boost_expires_at")
+    if not exp:
+        return False
+    return exp > now_utc().isoformat()
+
+
+@api_router.post("/premium/upgrade")
+async def premium_upgrade(body: PremiumUpgradeRequest, user=Depends(_require_user)):
+    days = max(1, min(365, body.duration_days))
+    new_exp = now_utc() + timedelta(days=days)
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"premium_expires_at": new_exp.isoformat()}},
+    )
+    await _audit(user["id"], "premium_upgrade", meta={"days": days})
+    return {"ok": True, "premium_until": new_exp.isoformat()}
+
+
+@api_router.post("/premium/cancel")
+async def premium_cancel(user=Depends(_require_user)):
+    await db.users.update_one({"id": user["id"]}, {"$unset": {"premium_expires_at": ""}})
+    return {"ok": True}
+
+
+@api_router.get("/premium/status")
+async def premium_status(user=Depends(_require_user)):
+    return {
+        "premium": _is_premium(user),
+        "premium_until": user.get("premium_expires_at"),
+        "boost_active": _boost_active(user),
+        "boost_until": user.get("boost_expires_at"),
+    }
+
+
+@api_router.post("/me/boost")
+async def activate_boost(body: BoostActivateRequest, user=Depends(_require_user)):
+    if not _is_premium(user):
+        raise HTTPException(402, "Premium required to activate boost")
+    minutes = max(5, min(180, body.duration_minutes))
+    new_exp = now_utc() + timedelta(minutes=minutes)
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"boost_expires_at": new_exp.isoformat()}},
+    )
+    await _audit(user["id"], "boost_activated", meta={"minutes": minutes})
+    return {"ok": True, "boost_until": new_exp.isoformat()}
+
+
+@api_router.get("/likes/received")
+async def likes_received(user=Depends(_require_user)):
+    """Premium-only: see who liked you."""
+    if not _is_premium(user):
+        raise HTTPException(402, "Premium required")
+    cursor = db.likes.find({"to_user": user["id"]}).sort("created_at", -1).limit(100)
+    likes = await cursor.to_list(length=100)
+    ids = [ln["from_user"] for ln in likes]
+    users = await db.users.find({"id": {"$in": ids}, "banned": {"$ne": True}}).to_list(100)
+    by_id = {u["id"]: u for u in users}
+    out = []
+    viewer_coords = (user.get("location") or {}).get("coordinates")
+    for ln in likes:
+        u = by_id.get(ln["from_user"])
+        if not u or u.get("privacy", {}).get("hidden_mode"):
+            continue
+        out.append({
+            "liked_at": ln["created_at"],
+            "user": public_user_from_doc(u, viewer_location=viewer_coords),
+        })
+    return {"received": out}
+
+
+@api_router.post("/messages/first")
+async def message_first(body: MessageFirstRequest, user=Depends(_require_user)):
+    """Premium-only: send a first message without requiring a match.
+    Creates or reuses an "intro" match-like channel."""
+    if not _is_premium(user):
+        raise HTTPException(402, "Premium required to message first")
+    target = await db.users.find_one({"id": body.target_user_id})
+    if not target or target.get("banned"):
+        raise HTTPException(404, "User not found")
+    # create a match_id if not existing
+    existing = await db.matches.find_one(
+        {"$or": [
+            {"user_a": user["id"], "user_b": body.target_user_id},
+            {"user_a": body.target_user_id, "user_b": user["id"]},
+        ]}
+    )
+    if existing:
+        match_id = existing["id"]
+    else:
+        match_id = str(uuid.uuid4())
+        await db.matches.insert_one({
+            "id": match_id,
+            "user_a": user["id"],
+            "user_b": body.target_user_id,
+            "created_at": now_utc().isoformat(),
+            "last_message_at": now_utc().isoformat(),
+            "premium_intro": True,
+        })
+        # also record a like from premium user
+        try:
+            await db.likes.insert_one({
+                "id": str(uuid.uuid4()),
+                "from_user": user["id"],
+                "to_user": body.target_user_id,
+                "created_at": now_utc().isoformat(),
+            })
+        except Exception:
+            pass
+    msg = {
+        "id": str(uuid.uuid4()),
+        "match_id": match_id,
+        "sender_id": user["id"],
+        "text": body.text,
+        "media_data_url": None,
+        "nsfw_score": None,
+        "self_destruct_at": None,
+        "read_by": [user["id"]],
+        "created_at": now_utc().isoformat(),
+        "is_premium_intro": True,
+    }
+    await db.messages.insert_one(msg)
+    await db.matches.update_one({"id": match_id}, {"$set": {"last_message_at": msg["created_at"]}})
+    await _audit(user["id"], "message_first", target=body.target_user_id)
+    return {"match_id": match_id, "message": serialize_doc(msg)}
+
+
+# --------- Events ---------
+@api_router.post("/events")
+async def create_event(body: EventCreate, user=Depends(_require_user)):
+    ev = {
+        "id": str(uuid.uuid4()),
+        "owner_id": user["id"],
+        "title": body.title,
+        "description": body.description,
+        "starts_at": body.starts_at.isoformat(),
+        "location_name": body.location_name,
+        "location": (
+            {"type": "Point", "coordinates": body.location.coordinates}
+            if body.location else None
+        ),
+        "is_nsfw": body.is_nsfw,
+        "cover_data_url": body.cover_data_url,
+        "rsvps": [],
+        "created_at": now_utc().isoformat(),
+    }
+    await db.events.insert_one(ev)
+    await _audit(user["id"], "event_created", ev["id"])
+    return serialize_doc(ev)
+
+
+@api_router.get("/events")
+async def list_events(user=Depends(_require_user), upcoming_only: bool = True):
+    q: Dict = {}
+    if upcoming_only:
+        q["starts_at"] = {"$gte": now_utc().isoformat()}
+    cursor = db.events.find(q).sort("starts_at", 1).limit(200)
+    items = await cursor.to_list(length=200)
+    # attach owner display name + counts
+    owner_ids = list({ev["owner_id"] for ev in items})
+    owners = await db.users.find({"id": {"$in": owner_ids}}).to_list(len(owner_ids))
+    owner_map = {u["id"]: u["display_name"] for u in owners}
+    out = []
+    for ev in items:
+        rsvps = ev.get("rsvps", []) or []
+        my = next((r for r in rsvps if r["user_id"] == user["id"]), None)
+        out.append({
+            **serialize_doc(ev),
+            "owner_name": owner_map.get(ev["owner_id"], "—"),
+            "going_count": sum(1 for r in rsvps if r.get("status") == "going"),
+            "interested_count": sum(1 for r in rsvps if r.get("status") == "interested"),
+            "my_rsvp": my.get("status") if my else None,
+        })
+    return {"events": out}
+
+
+@api_router.get("/events/{event_id}")
+async def get_event(event_id: str, user=Depends(_require_user)):
+    ev = await db.events.find_one({"id": event_id})
+    if not ev:
+        raise HTTPException(404, "Event not found")
+    owner = await db.users.find_one({"id": ev["owner_id"]})
+    rsvps = ev.get("rsvps", []) or []
+    # enrich rsvp users with public info
+    rsvp_ids = [r["user_id"] for r in rsvps]
+    users = await db.users.find({"id": {"$in": rsvp_ids}}).to_list(len(rsvp_ids) or 1)
+    by_id = {u["id"]: u for u in users}
+    enriched = []
+    for r in rsvps:
+        u = by_id.get(r["user_id"])
+        if u:
+            enriched.append({"status": r["status"], "user": public_user_from_doc(u)})
+    return {
+        **serialize_doc(ev),
+        "owner_name": owner["display_name"] if owner else "—",
+        "rsvps": enriched,
+        "my_rsvp": next((r["status"] for r in rsvps if r["user_id"] == user["id"]), None),
+    }
+
+
+@api_router.post("/events/{event_id}/rsvp")
+async def rsvp_event(event_id: str, body: EventRsvpRequest, user=Depends(_require_user)):
+    ev = await db.events.find_one({"id": event_id})
+    if not ev:
+        raise HTTPException(404, "Event not found")
+    await db.events.update_one(
+        {"id": event_id},
+        {"$pull": {"rsvps": {"user_id": user["id"]}}},
+    )
+    await db.events.update_one(
+        {"id": event_id},
+        {"$push": {"rsvps": {"user_id": user["id"], "status": body.status,
+                              "at": now_utc().isoformat()}}},
+    )
+    return {"ok": True}
+
+
+@api_router.delete("/events/{event_id}")
+async def delete_event(event_id: str, user=Depends(_require_user)):
+    ev = await db.events.find_one({"id": event_id})
+    if not ev:
+        raise HTTPException(404, "Event not found")
+    if ev["owner_id"] != user["id"] and user.get("role") not in {"admin", "moderator", "superadmin"}:
+        raise HTTPException(403, "Not allowed")
+    await db.events.delete_one({"id": event_id})
+    return {"ok": True}
+
+
+# --------- Admin role management ---------
+@api_router.post("/admin/role")
+async def admin_set_role(body: AdminSetRoleRequest, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    await db.users.update_one({"id": body.user_id}, {"$set": {"role": body.role}})
+    await _audit(user["id"], "role_change", body.user_id, {"role": body.role})
+    return {"ok": True}
+
+
+@api_router.post("/admin/video-review/{user_id}/{video_id}")
+async def admin_review_video(user_id: str, video_id: str, payload: dict, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "content_reviewer", "superadmin"])
+    new_status = payload.get("status")
+    if new_status not in {"approved", "rejected", "pending"}:
+        raise HTTPException(400, "Invalid status")
+    await db.users.update_one(
+        {"id": user_id, "videos.id": video_id},
+        {"$set": {"videos.$.moderation_status": new_status}},
+    )
+    await _audit(user["id"], "video_review", video_id, {"status": new_status})
+    return {"ok": True}
+
+
+@api_router.get("/admin/videos")
+async def admin_list_pending_videos(user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "content_reviewer", "superadmin"])
+    cursor = db.users.find(
+        {"videos.moderation_status": "pending"},
+        {"password_hash": 0},
+    ).limit(100)
+    users = await cursor.to_list(length=100)
+    out = []
+    for u in users:
+        for v in u.get("videos", []) or []:
+            if v.get("moderation_status") == "pending":
+                out.append({
+                    "user_id": u["id"],
+                    "display_name": u["display_name"],
+                    "video": v,
+                })
+    return {"videos": out}
+
+
+# ---------- Discover: boost-aware ordering ----------
+# Patch the existing discover endpoint to prefer boosted profiles.
 
 
 # ---------- Wire ----------

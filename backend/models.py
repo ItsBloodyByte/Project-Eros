@@ -213,3 +213,66 @@ class AdminBanRequest(BaseModel):
 class ChatPrefsUpdate(BaseModel):
     read_receipts: Optional[bool] = None
     show_typing: Optional[bool] = None
+
+
+# ----- Phase 3 additions -----
+
+class EmailVerifyRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=10)
+
+
+class MfaSetupResponse(BaseModel):
+    secret: str
+    otpauth_url: str
+
+
+class MfaEnableRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6)
+
+
+class MfaDisableRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6)
+
+
+class LoginMfaRequest(BaseModel):
+    email: EmailStr
+    password: str
+    mfa_code: Optional[str] = None
+
+
+class VideoUploadRequest(BaseModel):
+    data_url: str  # data:video/mp4;base64,...
+    caption: Optional[str] = None
+
+
+class PremiumUpgradeRequest(BaseModel):
+    # MVP: self-service toggle (no real payment)
+    duration_days: int = 30
+
+
+class BoostActivateRequest(BaseModel):
+    duration_minutes: int = 30
+
+
+class MessageFirstRequest(BaseModel):
+    target_user_id: str
+    text: str = Field(min_length=1, max_length=500)
+
+
+class EventCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=80)
+    description: Optional[str] = None
+    starts_at: datetime
+    location_name: Optional[str] = None
+    location: Optional[Location] = None
+    is_nsfw: bool = False
+    cover_data_url: Optional[str] = None
+
+
+class EventRsvpRequest(BaseModel):
+    status: Literal["going", "interested", "not_going"]
+
+
+class AdminSetRoleRequest(BaseModel):
+    user_id: str
+    role: Literal["user", "support", "content_reviewer", "moderator", "admin", "superadmin"]

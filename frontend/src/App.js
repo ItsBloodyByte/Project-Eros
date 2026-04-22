@@ -13,6 +13,8 @@ import ChatPage from "./pages/ChatPage";
 import AlbumsPage from "./pages/AlbumsPage";
 import SettingsPage from "./pages/SettingsPage";
 import AdminPage from "./pages/AdminPage";
+import AccountPage from "./pages/AccountPage";
+import EventsPage from "./pages/EventsPage";
 import "./App.css";
 
 function Protected({ children }) {
@@ -35,6 +37,8 @@ function AppRoutes() {
       <Route path="/matches" element={<Protected><MatchesPage /></Protected>} />
       <Route path="/chat/:matchId" element={<Protected><ChatPage /></Protected>} />
       <Route path="/albums" element={<Protected><AlbumsPage /></Protected>} />
+      <Route path="/events" element={<Protected><EventsPage /></Protected>} />
+      <Route path="/account" element={<Protected><AccountPage /></Protected>} />
       <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />

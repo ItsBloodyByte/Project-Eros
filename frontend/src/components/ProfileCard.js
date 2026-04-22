@@ -43,6 +43,12 @@ export function ProfileCard({ user }) {
           </div>
         )}
 
+        {user.boosted && (
+          <div className="absolute left-2 bottom-14 inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/85 px-2 py-0.5 text-[11px] text-[hsl(var(--accent-foreground))]" data-testid="profile-card-boosted">
+            boosted
+          </div>
+        )}
+
         {user.is_online && (
           <div
             className="absolute right-2 top-2 online-dot"

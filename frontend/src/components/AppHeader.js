@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { Button } from "./ui/button";
-import { Heart, MessagesSquare, Images, Settings, Moon, Sun, ShieldCheck, LogOut } from "lucide-react";
+import { Heart, MessagesSquare, Images, Settings, Moon, Sun, ShieldCheck, LogOut, CalendarClock, UserCog, Crown } from "lucide-react";
 import { useTheme } from "../lib/theme";
 
 export function AppHeader() {
@@ -22,12 +22,19 @@ export function AppHeader() {
           <NavLink to="/" label="Discover" icon={<Heart className="h-4 w-4" />} testid="nav-discover" />
           <NavLink to="/matches" label="Matches" icon={<MessagesSquare className="h-4 w-4" />} testid="nav-matches" />
           <NavLink to="/albums" label="Albums" icon={<Images className="h-4 w-4" />} testid="nav-albums" />
+          <NavLink to="/events" label="Events" icon={<CalendarClock className="h-4 w-4" />} testid="nav-events" />
+          <NavLink to="/account" label="Account" icon={<UserCog className="h-4 w-4" />} testid="nav-account" />
           <NavLink to="/settings" label="Settings" icon={<Settings className="h-4 w-4" />} testid="nav-settings" />
           {user?.role && user.role !== "user" && (
             <NavLink to="/admin" label="Admin" icon={<ShieldCheck className="h-4 w-4" />} testid="nav-admin" />
           )}
         </nav>
         <div className="flex items-center gap-2">
+          {user?.is_premium && (
+            <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-[hsl(var(--accent))]/30 bg-[hsl(var(--accent))]/10 px-2 py-0.5 text-[11px] text-[hsl(var(--accent))]" data-testid="header-premium-badge">
+              <Crown className="h-3 w-3" /> Premium
+            </span>
+          )}
           <Button
             variant="ghost" size="icon"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}

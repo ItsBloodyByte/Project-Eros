@@ -85,6 +85,24 @@ DEMO = [
         "photo_url": "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=640&q=80",
         "bio": "Composer. Rollerblades. Vintage synths.",
     },
+    {
+        "email": "review@eros.app", "display_name": "Reva (Reviewer)", "age": 31,
+        "role": "content_reviewer", "gender_identity": "woman", "pronouns": "she/her",
+        "orientation": "queer",
+        "seeking_genders": ["woman", "nonbinary"],
+        "age_min": 24, "age_max": 40,
+        "coords": [13.402, 52.518],
+        "photo_url": "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=640&q=80",
+    },
+    {
+        "email": "support@eros.app", "display_name": "Sage (Support)", "age": 33,
+        "role": "support", "gender_identity": "nonbinary", "pronouns": "they/them",
+        "orientation": "queer",
+        "seeking_genders": ["man", "woman", "nonbinary"],
+        "age_min": 25, "age_max": 45,
+        "coords": [13.402, 52.518],
+        "photo_url": "https://images.unsplash.com/photo-1502768040783-423da5fd5fa0?w=640&q=80",
+    },
 ]
 
 
