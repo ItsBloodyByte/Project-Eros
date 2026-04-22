@@ -189,7 +189,14 @@ export default function ChatPage() {
                       </span>
                     )}
                     {peer.current_mood && (
-                      <MoodBadge mood={peer.current_mood} size="xs" testid="chat-peer-mood" />
+                      <>
+                        <span className="md:hidden">
+                          <MoodBadge mood={peer.current_mood} iconOnly size="xs" testid="chat-peer-mood-mobile" />
+                        </span>
+                        <span className="hidden md:inline-flex">
+                          <MoodBadge mood={peer.current_mood} size="xs" testid="chat-peer-mood" />
+                        </span>
+                      </>
                     )}
                     {peer.is_system && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] px-2 py-0.5 text-[10.5px] font-medium" data-testid="chat-official-badge" title="Offizielles Eros-Profil">

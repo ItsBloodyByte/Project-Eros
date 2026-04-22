@@ -128,11 +128,22 @@ export function ProfileCard({ user, visited = false }) {
           </div>
         )}
 
-        {/* Mood status badge (bottom-left, above info overlay) */}
+        {/* Mood status badge — icon-only on mobile, full pill on desktop */}
         {user.current_mood && (
-          <div className="absolute left-2.5 bottom-[62px]" data-testid="profile-card-mood">
-            <MoodBadge mood={user.current_mood} size="sm" />
-          </div>
+          <>
+            <div
+              className="md:hidden absolute left-2.5 bottom-[62px]"
+              data-testid="profile-card-mood-mobile"
+            >
+              <MoodBadge mood={user.current_mood} iconOnly size="sm" />
+            </div>
+            <div
+              className="hidden md:block absolute left-2.5 bottom-[62px]"
+              data-testid="profile-card-mood"
+            >
+              <MoodBadge mood={user.current_mood} size="sm" />
+            </div>
+          </>
         )}
 
         {/* Bottom info overlay */}

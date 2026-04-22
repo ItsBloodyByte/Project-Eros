@@ -7,14 +7,50 @@ import { getMood } from "../lib/moods";
  *  - mood: mood key ("sex_meet" | "dating" | "chatting" | "online") or null
  *  - size: "xs" | "sm" | "md"   (default: "sm")
  *  - compact: when true, render a small dot + short label
+ *  - iconOnly: when true, render just a colored circle with the mood icon
  *  - className: extra classes to merge on the outer element
  *  - onClick: optional click handler (render as a button)
  */
-export function MoodBadge({ mood, size = "sm", compact = false, className = "", onClick = null, testid }) {
+export function MoodBadge({ mood, size = "sm", compact = false, iconOnly = false, className = "", onClick = null, testid }) {
   const m = getMood(mood);
   if (!m) return null;
 
   const Icon = m.icon;
+
+  // Icon-only variant: small colored disk with just the icon (mobile-friendly)
+  if (iconOnly) {
+    const iconBox = {
+      xs: "h-5 w-5",
+      sm: "h-6 w-6",
+      md: "h-7 w-7",
+    }[size] || "h-6 w-6";
+    const iconSize = {
+      xs: "h-3 w-3",
+      sm: "h-3.5 w-3.5",
+      md: "h-4 w-4",
+    }[size] || "h-3.5 w-3.5";
+    const Tag = onClick ? "button" : "span";
+    return (
+      <Tag
+        type={onClick ? "button" : undefined}
+        className={[
+          "inline-grid place-items-center rounded-full ring-2 ring-white/90 shadow-[var(--shadow-sm)]",
+          m.dotClass, // uses the solid mood color as bg
+          "text-white",
+          iconBox,
+          onClick ? "cursor-pointer hover:scale-105 transition-transform duration-[var(--dur-1)] focus-visible:outline-none focus-visible:ring-[hsl(var(--accent))]" : "",
+          className,
+        ].join(" ")}
+        data-testid={testid || `mood-icon-${m.key}`}
+        aria-label={m.label}
+        title={m.label}
+        onClick={onClick}
+      >
+        <Icon className={iconSize} aria-hidden />
+      </Tag>
+    );
+  }
+
   const sizes = {
     xs: "text-[10px] px-1.5 py-0.5 gap-1",
     sm: "text-[11px] px-2 py-0.5 gap-1",
