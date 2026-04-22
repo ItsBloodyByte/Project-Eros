@@ -45,6 +45,23 @@
     "login_failed": "Anmeldung fehlgeschlagen",
     "consents_required": "Bitte erforderliche Einwilligungen akzeptieren"
   },
+  "register": {
+    "title": "Konto erstellen",
+    "subtitle": "Inklusiv für jede Identität.",
+    "display_name": "Anzeigename",
+    "age": "Alter",
+    "age_hint": "Alter kann später nicht mehr geändert werden.",
+    "gender": "Geschlecht",
+    "email": "E-Mail",
+    "password": "Passwort (mind. 8 Zeichen)",
+    "consents": "Einwilligungen",
+    "creating": "Erstelle…",
+    "create": "Konto erstellen",
+    "have_account": "Konto vorhanden?",
+    "sign_in": "Anmelden",
+    "please_complete": "Bitte alle Pflichtfelder ausfüllen",
+    "failed": "Registrierung fehlgeschlagen"
+  },
   "discover": {
     "title": "Entdecken",
     "hello": "Deine Filter gelten beidseitig. Hallo, {{name}}.",
@@ -116,6 +133,8 @@
     "uploading": "Lädt hoch…",
     "primary": "Hauptfoto",
     "set_primary": "als Hauptfoto",
+    "age_immutable": "Alter ist nach Registrierung nicht mehr änderbar.",
+    "photo_reorder_hint": "Fotos per Ziehen & Ablegen neu anordnen. Das erste Foto ist dein Hauptfoto.",
     "delete": "Löschen",
     "no_photo": "Kein Foto",
     "online": "online",

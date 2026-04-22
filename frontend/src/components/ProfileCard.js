@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { BadgeCheck, MapPin } from "lucide-react";
+import { BadgeCheck, MapPin, Eye, ShieldCheck } from "lucide-react";
 import { NsfwBlurOverlay } from "./NsfwBlurOverlay";
 
-export function ProfileCard({ user }) {
+export function ProfileCard({ user, visited = false }) {
   const [revealed, setRevealed] = useState(false);
   const primary = (user.photos || []).find((p) => p.is_primary) || (user.photos || [])[0];
   const isNsfw = primary && primary.nsfw_score >= 0.75;
@@ -37,11 +37,18 @@ export function ProfileCard({ user }) {
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/60 to-transparent" />
 
-        {user.verified && (
-          <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/40 px-2 py-0.5 text-[11px] text-white backdrop-blur">
-            <BadgeCheck className="h-3 w-3" /> verified
-          </div>
-        )}
+        <div className="absolute left-2 top-2 flex flex-col gap-1">
+          {user.id_verified && (
+            <div className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/85 px-2 py-0.5 text-[11px] text-[hsl(var(--accent-foreground))] backdrop-blur" title="ID verifiziert">
+              <ShieldCheck className="h-3 w-3" /> ID
+            </div>
+          )}
+          {user.verified && !user.id_verified && (
+            <div className="inline-flex items-center gap-1 rounded-full bg-black/40 px-2 py-0.5 text-[11px] text-white backdrop-blur">
+              <BadgeCheck className="h-3 w-3" /> verified
+            </div>
+          )}
+        </div>
 
         {user.boosted && (
           <div className="absolute left-2 bottom-14 inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/85 px-2 py-0.5 text-[11px] text-[hsl(var(--accent-foreground))]" data-testid="profile-card-boosted">
@@ -49,13 +56,24 @@ export function ProfileCard({ user }) {
           </div>
         )}
 
-        {user.is_online && (
-          <div
-            className="absolute right-2 top-2 online-dot"
-            title="Online now"
-            data-testid="profile-card-online-indicator"
-          />
-        )}
+        <div className="absolute right-2 top-2 flex items-center gap-1.5">
+          {visited && (
+            <div
+              className="inline-grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white backdrop-blur"
+              title="Bereits angesehen"
+              data-testid="profile-card-visited-eye"
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </div>
+          )}
+          {user.is_online && (
+            <div
+              className="online-dot"
+              title="Online now"
+              data-testid="profile-card-online-indicator"
+            />
+          )}
+        </div>
 
         <div className="absolute inset-x-0 bottom-0 p-3 text-white">
           <div className="font-display text-lg leading-tight">

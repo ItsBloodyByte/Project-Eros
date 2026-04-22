@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { FilterDrawer } from "../components/FilterDrawer";
+import { QuickFilterBar } from "../components/QuickFilterBar";
 import { ProfileCard } from "../components/ProfileCard";
 import { AppHeader } from "../components/AppHeader";
 import { Skeleton } from "../components/ui/skeleton";
@@ -67,6 +68,13 @@ export default function DiscoverPage() {
             </div>
           </div>
 
+          <div className="-mt-2 mb-4">
+            <QuickFilterBar
+              prefs={user?.preferences || {}}
+              onChange={(next) => saveFilters(next)}
+            />
+          </div>
+
           {loading && results.length === 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
               {[...Array(8)].map((_, i) => (
@@ -81,7 +89,13 @@ export default function DiscoverPage() {
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4" data-testid="discover-grid">
-                {results.map((u) => <ProfileCard key={u.id} user={u} />)}
+                {results.map((u) => (
+                  <ProfileCard
+                    key={u.id}
+                    user={u}
+                    visited={(user?.seen_user_ids || []).includes(u.id)}
+                  />
+                ))}
               </div>
               {hasMore && (
                 <div className="mt-6 flex justify-center">

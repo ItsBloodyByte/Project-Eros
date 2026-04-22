@@ -34,7 +34,7 @@ from auth import (
     decode_token,
     get_current_user_payload,
 )
-from helpers import now_utc, public_user_from_doc, rounded_distance_km, haversine_km, serialize_doc
+from helpers import now_utc, public_user_from_doc, rounded_distance_km, haversine_km, serialize_doc, parse_dt
 from moderation import moderate_image
 from models import (
     RegisterRequest,
@@ -72,6 +72,8 @@ from models import (
     IdVerificationSubmit,
     AdminReviewIdRequest,
     CheckoutRequest,
+    PaymentConfigUpdate,
+    PaymentPackage,
     AIConfigUpdate,
     AdminUserUpdate,
 )
@@ -193,7 +195,7 @@ async def register(body: RegisterRequest):
         "password_hash": hash_password(body.password),
         "display_name": body.display_name,
         "age": body.age,
-        "gender_identity": None,
+        "gender_identity": body.gender_identity,
         "pronouns": None,
         "orientation": None,
         "bio": None,
@@ -275,12 +277,18 @@ async def me(user=Depends(_require_user)):
         "is_premium": (user.get("premium_expires_at") or "") > now_iso,
         "premium_until": user.get("premium_expires_at"),
         "boost_until": user.get("boost_expires_at"),
+        "seen_user_ids": user.get("seen_user_ids", []) or [],
+        "id_verified": bool(user.get("id_verified")),
+        "id_verification_status": user.get("id_verification_status"),
+        "role": user.get("role", "user"),
     }
 
 
 @api_router.patch("/me")
 async def update_me(body: ProfileUpdate, user=Depends(_require_user)):
     update: Dict = {}
+    # Age is immutable once set (and is mandatory at registration).
+    immutable_once_set = {"age"}
     for field in [
         "display_name", "age", "gender_identity", "pronouns", "orientation",
         "bio", "relationship_types", "seeking_roles", "kinks",
@@ -290,8 +298,12 @@ async def update_me(body: ProfileUpdate, user=Depends(_require_user)):
         "cup_size", "penis_length_cm", "penis_girth_cm",
     ]:
         val = getattr(body, field)
-        if val is not None:
-            update[field] = val
+        if val is None:
+            continue
+        if field in immutable_once_set and user.get(field) not in (None, "", 0):
+            # silently ignore age changes after it is set
+            continue
+        update[field] = val
     if body.location is not None:
         update["location"] = {"type": "Point", "coordinates": body.location.coordinates}
     if body.preferences is not None:
@@ -312,6 +324,11 @@ async def upload_photo(body: PhotoUploadRequest, user=Depends(_require_user)):
     # Basic size guard: base64 chars. ~1.37x raw. Limit ~8MB raw.
     if len(body.data_url) > 11_000_000:
         raise HTTPException(413, "Image too large (max ~8MB)")
+    # Hard cap: max 5 photos per user (1 primary + 4 secondary)
+    MAX_PHOTOS = 5
+    current = user.get("photos", [])
+    if len(current) >= MAX_PHOTOS:
+        raise HTTPException(400, f"Maximal {MAX_PHOTOS} Fotos erlaubt")
     photo_id = str(uuid.uuid4())
     mod = await moderate_image(body.data_url, session_tag=f"photo-{photo_id}")
     photo = {
@@ -359,6 +376,31 @@ async def make_primary(photo_id: str, user=Depends(_require_user)):
     if not found:
         raise HTTPException(404, "Photo not found")
     await db.users.update_one({"id": user["id"]}, {"$set": {"photos": photos}})
+    return {"ok": True}
+
+
+@api_router.post("/me/photos/reorder")
+async def reorder_photos(body: dict, user=Depends(_require_user)):
+    """Reorder photos by list of photo ids. First id becomes primary."""
+    order: List[str] = body.get("order") or []
+    if not isinstance(order, list) or not order:
+        raise HTTPException(400, "order (list of ids) required")
+    photos = user.get("photos", [])
+    by_id = {p["id"]: p for p in photos}
+    if any(pid not in by_id for pid in order):
+        raise HTTPException(400, "Unknown photo id in order")
+    new_photos = []
+    for idx, pid in enumerate(order):
+        p = dict(by_id[pid])
+        p["is_primary"] = (idx == 0)
+        new_photos.append(p)
+    # append any photos not referenced (safety)
+    for p in photos:
+        if p["id"] not in order:
+            q = dict(p)
+            q["is_primary"] = False
+            new_photos.append(q)
+    await db.users.update_one({"id": user["id"]}, {"$set": {"photos": new_photos}})
     return {"ok": True}
 
 
@@ -868,21 +910,7 @@ async def request_unlock(body: AlbumUnlockRequest, user=Depends(_require_user)):
 
 
 # ---------- Reports & Admin ----------
-@api_router.post("/reports", response_model=ReportPublic)
-async def create_report(body: ReportCreate, user=Depends(_require_user)):
-    r = {
-        "id": str(uuid.uuid4()),
-        "reporter_id": user["id"],
-        "target_type": body.target_type,
-        "target_id": body.target_id,
-        "reason": body.reason,
-        "detail": body.detail,
-        "status": "open",
-        "created_at": now_utc().isoformat(),
-    }
-    await db.reports.insert_one(r)
-    await _audit(user["id"], "report_created", r["id"], {"target": body.target_id})
-    return ReportPublic(**{**r, "created_at": now_utc()})
+# NOTE: The /reports POST handler with request+IP tracking and auto-mod is defined later in Phase 5.
 
 
 @api_router.get("/admin/reports")
@@ -1678,30 +1706,104 @@ async def admin_set_ai_config(body: AIConfigUpdate, user=Depends(_require_user))
     return {"ok": True}
 
 
-# --- Stripe payments ---
+# --- Stripe payments (admin-configurable) ---
 from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest  # noqa: E402
 
-PACKAGES = {
-    "premium_30":      {"amount": 9.99,  "currency": "eur", "desc": "Eros Premium 30 days"},
-    "premium_365":     {"amount": 89.00, "currency": "eur", "desc": "Eros Premium 1 year"},
-    "id_verification": {"amount": 4.99,  "currency": "eur", "desc": "ID verification review"},
-    "boost_single":    {"amount": 1.99,  "currency": "eur", "desc": "Single 30-min boost"},
-}
+PAYMENT_CONFIG_KEY = "payment_config"
+
+DEFAULT_PACKAGES: List[Dict] = [
+    {"id": "premium_30", "amount": 9.99, "currency": "eur", "desc": "Eros Premium 30 Tage",
+     "enabled": True, "kind": "premium", "days": 30},
+    {"id": "premium_365", "amount": 79.99, "currency": "eur", "desc": "Eros Premium 1 Jahr",
+     "enabled": True, "kind": "premium", "days": 365},
+    {"id": "boost_single", "amount": 2.99, "currency": "eur", "desc": "Boost (30 Minuten)",
+     "enabled": True, "kind": "boost", "minutes": 30},
+]
+
+
+async def _get_payment_config() -> Dict:
+    cfg = await db.settings.find_one({"key": PAYMENT_CONFIG_KEY})
+    if not cfg:
+        return {
+            "key": PAYMENT_CONFIG_KEY,
+            "provider": "disabled",
+            "enabled": False,
+            "stripe_api_key": os.environ.get("STRIPE_API_KEY", ""),
+            "packages": DEFAULT_PACKAGES,
+        }
+    cfg.pop("_id", None)
+    if not cfg.get("packages"):
+        cfg["packages"] = DEFAULT_PACKAGES
+    if not cfg.get("stripe_api_key"):
+        cfg["stripe_api_key"] = os.environ.get("STRIPE_API_KEY", "")
+    return cfg
+
+
+def _find_package(cfg: Dict, pkg_id: str) -> Optional[Dict]:
+    for p in (cfg.get("packages") or []):
+        if p.get("id") == pkg_id and p.get("enabled", True):
+            return p
+    return None
 
 
 @api_router.get("/payments/packages")
 async def list_packages(user=Depends(_require_user)):
-    return {"packages": {k: {**v, "id": k} for k, v in PACKAGES.items()}}
+    cfg = await _get_payment_config()
+    pkgs = [p for p in (cfg.get("packages") or []) if p.get("enabled", True)]
+    return {
+        "enabled": bool(cfg.get("enabled")) and cfg.get("provider") != "disabled",
+        "provider": cfg.get("provider", "disabled"),
+        "packages": pkgs,
+    }
+
+
+@api_router.get("/admin/payment-config")
+async def admin_get_payment_config(user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    cfg = await _get_payment_config()
+    # mask api key
+    key = cfg.get("stripe_api_key") or ""
+    cfg["stripe_api_key_masked"] = ("***" + key[-4:]) if key else ""
+    cfg.pop("stripe_api_key", None)
+    return cfg
+
+
+@api_router.post("/admin/payment-config")
+async def admin_set_payment_config(body: PaymentConfigUpdate, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    existing = await _get_payment_config()
+    doc = {
+        "key": PAYMENT_CONFIG_KEY,
+        "provider": body.provider,
+        "enabled": body.enabled,
+        "updated_at": now_utc().isoformat(),
+        "updated_by": user["id"],
+        "packages": [p.model_dump() for p in body.packages] if body.packages is not None
+                    else existing.get("packages", DEFAULT_PACKAGES),
+    }
+    # only update api key if explicitly provided and non-empty
+    if body.stripe_api_key:
+        doc["stripe_api_key"] = body.stripe_api_key
+    else:
+        doc["stripe_api_key"] = existing.get("stripe_api_key", "")
+    await db.settings.update_one({"key": PAYMENT_CONFIG_KEY}, {"$set": doc}, upsert=True)
+    await _audit(user["id"], "payment_config_update",
+                 meta={"provider": body.provider, "enabled": body.enabled,
+                       "packages": len(doc["packages"])})
+    return {"ok": True}
 
 
 @api_router.post("/payments/checkout")
 async def create_checkout(body: CheckoutRequest, request: Request, user=Depends(_require_user)):
-    pkg = PACKAGES.get(body.package_id)
+    cfg = await _get_payment_config()
+    if not cfg.get("enabled") or cfg.get("provider") == "disabled":
+        raise HTTPException(400, "Payments are disabled")
+    pkg = _find_package(cfg, body.package_id)
     if not pkg:
-        raise HTTPException(400, "Unknown package")
-    api_key = os.environ.get("STRIPE_API_KEY", "")
+        raise HTTPException(400, "Unknown or disabled package")
+    api_key = cfg.get("stripe_api_key") or os.environ.get("STRIPE_API_KEY", "")
     if not api_key:
-        raise HTTPException(500, "Stripe not configured")
+        raise HTTPException(500, "Payment provider not configured")
     host_url = str(request.base_url).rstrip("/")
     webhook_url = f"{host_url}/api/webhook/stripe"
     stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
@@ -1710,7 +1812,7 @@ async def create_checkout(body: CheckoutRequest, request: Request, user=Depends(
     cancel_url = f"{origin}/account"
     req = CheckoutSessionRequest(
         amount=float(pkg["amount"]),
-        currency=pkg["currency"],
+        currency=pkg.get("currency", "eur"),
         success_url=success_url,
         cancel_url=cancel_url,
         metadata={"user_id": user["id"], "package_id": body.package_id},
@@ -1722,7 +1824,7 @@ async def create_checkout(body: CheckoutRequest, request: Request, user=Depends(
         "user_id": user["id"],
         "package_id": body.package_id,
         "amount": pkg["amount"],
-        "currency": pkg["currency"],
+        "currency": pkg.get("currency", "eur"),
         "payment_status": "initiated",
         "created_at": now_utc().isoformat(),
     })
@@ -1740,24 +1842,33 @@ async def _apply_successful_payment(session_id: str, metadata: Dict):
     uid = metadata.get("user_id") or txn.get("user_id")
     upd = {"payment_status": "paid", "paid_at": now_utc().isoformat()}
     await db.payment_transactions.update_one({"session_id": session_id}, {"$set": upd})
-    if pkg_id in {"premium_30", "premium_365"} and uid:
-        days = 30 if pkg_id == "premium_30" else 365
+    if not uid or not pkg_id:
+        return
+    cfg = await _get_payment_config()
+    pkg = next((p for p in (cfg.get("packages") or []) if p.get("id") == pkg_id), None)
+    if not pkg:
+        return
+    kind = pkg.get("kind")
+    if kind == "premium":
+        days = int(pkg.get("days") or 30)
         new_exp = now_utc() + timedelta(days=days)
         existing = await db.users.find_one({"id": uid})
         base = parse_dt((existing or {}).get("premium_expires_at")) or now_utc()
         if base > now_utc():
             new_exp = base + timedelta(days=days)
         await db.users.update_one({"id": uid}, {"$set": {"premium_expires_at": new_exp.isoformat()}})
-    elif pkg_id == "id_verification" and uid:
-        await db.users.update_one({"id": uid}, {"$set": {"id_verification_paid": True}})
-    elif pkg_id == "boost_single" and uid:
-        new_exp = now_utc() + timedelta(minutes=30)
+    elif kind == "boost":
+        minutes = int(pkg.get("minutes") or 30)
+        new_exp = now_utc() + timedelta(minutes=minutes)
         await db.users.update_one({"id": uid}, {"$set": {"boost_expires_at": new_exp.isoformat()}})
 
 
 @api_router.get("/payments/status/{session_id}")
 async def payment_status(session_id: str, request: Request, user=Depends(_require_user)):
-    api_key = os.environ.get("STRIPE_API_KEY", "")
+    cfg = await _get_payment_config()
+    api_key = cfg.get("stripe_api_key") or os.environ.get("STRIPE_API_KEY", "")
+    if not api_key:
+        raise HTTPException(500, "Payment provider not configured")
     host_url = str(request.base_url).rstrip("/")
     webhook_url = f"{host_url}/api/webhook/stripe"
     stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
@@ -1772,7 +1883,8 @@ async def payment_status(session_id: str, request: Request, user=Depends(_requir
 
 @app.post("/api/webhook/stripe")
 async def stripe_webhook(request: Request):
-    api_key = os.environ.get("STRIPE_API_KEY", "")
+    cfg = await _get_payment_config()
+    api_key = cfg.get("stripe_api_key") or os.environ.get("STRIPE_API_KEY", "")
     host_url = str(request.base_url).rstrip("/")
     webhook_url = f"{host_url}/api/webhook/stripe"
     body = await request.body()

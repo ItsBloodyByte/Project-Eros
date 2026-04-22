@@ -45,6 +45,23 @@
     "login_failed": "Login failed",
     "consents_required": "Please accept required consents"
   },
+  "register": {
+    "title": "Create your account",
+    "subtitle": "Inclusive for every identity.",
+    "display_name": "Display name",
+    "age": "Age",
+    "age_hint": "Age cannot be changed later.",
+    "gender": "Gender",
+    "email": "Email",
+    "password": "Password (min 8 chars)",
+    "consents": "Consents",
+    "creating": "Creating…",
+    "create": "Create account",
+    "have_account": "Already have an account?",
+    "sign_in": "Sign in",
+    "please_complete": "Please complete all required fields",
+    "failed": "Registration failed"
+  },
   "discover": {
     "title": "Discover",
     "hello": "Your filters are mutual. Hello, {{name}}.",
@@ -116,6 +133,8 @@
     "uploading": "Uploading…",
     "primary": "primary",
     "set_primary": "set primary",
+    "age_immutable": "Age cannot be changed after registration.",
+    "photo_reorder_hint": "Drag & drop to reorder photos. The first photo is your primary.",
     "delete": "Delete",
     "no_photo": "No photo",
     "online": "online",

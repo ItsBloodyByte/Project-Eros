@@ -13,10 +13,10 @@ import {
   GENDERS, ORIENTATIONS, RELATIONSHIP_TYPES, SEEKING_ROLES,
   BODY_TYPES, SMOKING_VALUES, DRINKING_VALUES, DIET_VALUES, STI_VALUES,
   CUP_SIZES, PENIS_CATEGORIES, PENIS_RANGES, COMMON_LANGUAGES, COMMON_ETHNICITIES,
-  COMMON_KINKS, penisCategoryFor,
+  COMMON_KINKS, penisCategoryFor, showsCupSize, showsPenisSize,
 } from "../lib/constants";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
-import { ImagePlus, Star, Trash2, Video, Play } from "lucide-react";
+import { ImagePlus, Star, Trash2, Video, Play, GripVertical, ArrowUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 function Chip({ on, onClick, children }) {
@@ -80,7 +80,7 @@ export default function MyProfilePage() {
     try {
       const payload = {
         display_name: form.display_name,
-        age: Number(form.age),
+        // age is immutable - do not send
         gender_identity: form.gender_identity || undefined,
         pronouns: form.pronouns || undefined,
         orientation: form.orientation || undefined,
@@ -131,6 +131,14 @@ export default function MyProfilePage() {
 
   const deletePhoto = async (pid) => { await api.delete(`/me/photos/${pid}`); await refresh(); };
   const makePrimary = async (pid) => { await api.post(`/me/photos/${pid}/primary`); await refresh(); };
+  const reorderPhotos = async (order) => {
+    try {
+      await api.post("/me/photos/reorder", { order });
+      await refresh();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Reorder failed");
+    }
+  };
 
   const uploadVideo = async (file) => {
     if (file.size > 30 * 1024 * 1024) { toast.error("Max 30MB"); return; }
@@ -156,30 +164,75 @@ export default function MyProfilePage() {
           <h1 className="font-display text-3xl">{t("profile.edit")}</h1>
 
           <section className="rounded-[var(--radius-md)] border bg-card p-5 space-y-4 shadow-[var(--shadow-sm)] no-capture">
-            <div className="font-display text-lg">{t("profile.photos")}</div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-              {(user.photos || []).map((p) => (
-                <div key={p.id} className="relative aspect-[3/4] overflow-hidden rounded-md border bg-[hsl(var(--muted))]">
+            <div className="flex items-center justify-between">
+              <div className="font-display text-lg">{t("profile.photos")}</div>
+              <div className="text-xs text-[hsl(var(--muted-foreground))]" data-testid="photo-counter">
+                {(user.photos || []).length} / 5
+              </div>
+            </div>
+            <div className="text-xs text-[hsl(var(--muted-foreground))] hidden sm:block">
+              {t("profile.photo_reorder_hint")}
+            </div>
+            <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+              {(user.photos || []).map((p, idx) => (
+                <div
+                  key={p.id}
+                  draggable
+                  onDragStart={(e) => { e.dataTransfer.setData("text/photo-id", p.id); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const srcId = e.dataTransfer.getData("text/photo-id");
+                    if (!srcId || srcId === p.id) return;
+                    const ids = (user.photos || []).map(x => x.id);
+                    const without = ids.filter(x => x !== srcId);
+                    const targetIdx = without.indexOf(p.id);
+                    const newOrder = [...without.slice(0, targetIdx), srcId, ...without.slice(targetIdx)];
+                    reorderPhotos(newOrder);
+                  }}
+                  className="relative aspect-[3/4] overflow-hidden rounded-md border bg-[hsl(var(--muted))] group"
+                  data-testid={`photo-tile-${idx}`}
+                >
                   <NsfwBlurOverlay active={p.nsfw_score >= 0.75} revealed={true} onReveal={() => {}} className="h-full w-full">
                     <img src={p.data} alt="" className="h-full w-full object-cover" />
                   </NsfwBlurOverlay>
                   {p.is_primary && <div className="absolute left-1 top-1 rounded-full bg-black/55 text-white text-[10px] px-2 py-0.5 inline-flex items-center gap-1"><Star className="h-3 w-3" /> {t("profile.primary")}</div>}
-                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/45 text-white text-[11px] px-2 py-1">
+                  {/* desktop drag handle hint */}
+                  <div className="pointer-events-none absolute right-1 top-1 hidden sm:inline-grid place-items-center h-6 w-6 rounded-full bg-black/45 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                    <GripVertical className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/55 text-white text-[11px] px-2 py-1">
                     <span>{p.has_face ? "face" : "no face"} · NSFW {(p.nsfw_score*100).toFixed(0)}%</span>
-                    <div className="flex gap-2">
-                      {!p.is_primary && <button onClick={() => makePrimary(p.id)} className="underline">{t("profile.set_primary")}</button>}
-                      <button onClick={() => deletePhoto(p.id)} className="underline"><Trash2 className="h-3 w-3" /></button>
+                    <div className="flex items-center gap-2">
+                      {!p.is_primary && (
+                        <>
+                          {/* mobile-only button */}
+                          <button
+                            onClick={() => makePrimary(p.id)}
+                            className="sm:hidden inline-flex items-center gap-1 underline"
+                            data-testid={`photo-set-primary-${idx}`}
+                            title={t("profile.set_primary")}
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                          </button>
+                          {/* desktop underline */}
+                          <button onClick={() => makePrimary(p.id)} className="hidden sm:inline underline">{t("profile.set_primary")}</button>
+                        </>
+                      )}
+                      <button onClick={() => deletePhoto(p.id)} className="underline" data-testid={`photo-delete-${idx}`}><Trash2 className="h-3 w-3" /></button>
                     </div>
                   </div>
                 </div>
               ))}
-              <label className="aspect-[3/4] grid place-items-center rounded-md border border-dashed hover:bg-[hsl(var(--secondary))] cursor-pointer text-sm text-[hsl(var(--muted-foreground))]">
-                <div className="flex flex-col items-center gap-1">
-                  <ImagePlus className="h-5 w-5" />
-                  <span>{uploading ? t("profile.analyzing") : t("profile.add_photo")}</span>
-                </div>
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadPhoto(e.target.files[0])} data-testid="me-photo-input" />
-              </label>
+              {(user.photos || []).length < 5 && (
+                <label className="aspect-[3/4] grid place-items-center rounded-md border border-dashed hover:bg-[hsl(var(--secondary))] cursor-pointer text-sm text-[hsl(var(--muted-foreground))]">
+                  <div className="flex flex-col items-center gap-1">
+                    <ImagePlus className="h-5 w-5" />
+                    <span>{uploading ? t("profile.analyzing") : t("profile.add_photo")}</span>
+                  </div>
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadPhoto(e.target.files[0])} data-testid="me-photo-input" />
+                </label>
+              )}
             </div>
           </section>
 
@@ -210,7 +263,11 @@ export default function MyProfilePage() {
             <div className="font-display text-lg">{t("profile.basics")}</div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>{t("profile.display_name")}</Label><Input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} /></div>
-              <div><Label>{t("profile.age")}</Label><Input type="number" min={18} max={120} value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} /></div>
+              <div>
+                <Label>{t("profile.age")}</Label>
+                <Input type="number" min={18} max={120} value={form.age} disabled readOnly data-testid="age-input-readonly" />
+                <div className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1">{t("profile.age_immutable")}</div>
+              </div>
               <div>
                 <Label>{t("profile.gender_identity")}</Label>
                 <Select value={form.gender_identity} onValueChange={(v) => setForm({ ...form, gender_identity: v })}>
@@ -244,7 +301,7 @@ export default function MyProfilePage() {
                   <SelectContent>{BODY_TYPES.map((b) => <SelectItem key={b} value={b}>{t(`body_types.${b}`)}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div>
+              <div className={showsCupSize(form.gender_identity) ? "" : "hidden"}>
                 <Label>{t("profile.cup_size")}</Label>
                 <Select value={form.cup_size} onValueChange={(v) => setForm({ ...form, cup_size: v })}>
                   <SelectTrigger><SelectValue placeholder={t("profile.select")} /></SelectTrigger>
@@ -258,12 +315,12 @@ export default function MyProfilePage() {
                   <SelectContent>{COMMON_ETHNICITIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div>
+              <div className={showsPenisSize(form.gender_identity) ? "" : "hidden"}>
                 <Label>{t("profile.penis_length")}</Label>
                 <Input type="number" min="1" max="40" step="0.1" value={form.penis_length_cm} onChange={(e) => setForm({ ...form, penis_length_cm: e.target.value })} data-testid="penis-length-input" />
                 {derivedCategory && <div className="text-xs text-[hsl(var(--muted-foreground))] mt-1">{t("profile.penis_category")}: <span className="font-medium">{derivedCategory}</span> ({PENIS_RANGES[derivedCategory]})</div>}
               </div>
-              <div>
+              <div className={showsPenisSize(form.gender_identity) ? "" : "hidden"}>
                 <Label>{t("profile.penis_girth")}</Label>
                 <Input type="number" min="1" max="40" step="0.1" value={form.penis_girth_cm} onChange={(e) => setForm({ ...form, penis_girth_cm: e.target.value })} />
               </div>

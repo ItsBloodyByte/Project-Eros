@@ -53,3 +53,15 @@ export function penisCategoryFor(lengthCm) {
   if (v <= 21) return "XL";
   return "XXL";
 }
+
+/** Which body-specific fields make sense for a gender identity.
+ * Strict male genders hide cup size; strict female genders hide penis size.
+ * Non-binary/other identities may show both (user-choice). */
+export function showsCupSize(gender) {
+  if (!gender) return false;
+  return ["woman", "trans_woman", "nonbinary", "genderqueer", "agender", "other"].includes(gender);
+}
+export function showsPenisSize(gender) {
+  if (!gender) return false;
+  return ["man", "trans_man", "nonbinary", "genderqueer", "agender", "other"].includes(gender);
+}

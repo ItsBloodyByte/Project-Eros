@@ -49,6 +49,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     display_name: str = Field(min_length=2, max_length=40)
     age: int = Field(ge=18, le=120)
+    gender_identity: Gender
     consents: "ConsentFlags"
 
 
@@ -134,6 +135,7 @@ class UserPublic(BaseModel):
     bio: Optional[str] = None
     photos: List[PhotoMeta] = []
     verified: bool = False
+    id_verified: bool = False
     distance_km: Optional[int] = None
     is_online: bool = False
     relationship_types: List[RelationshipType] = []
@@ -356,8 +358,26 @@ class AdminReviewIdRequest(BaseModel):
 
 
 class CheckoutRequest(BaseModel):
-    package_id: Literal["premium_30", "premium_365", "id_verification", "boost_single"]
+    package_id: str  # admin-configured; id_verification is free and not allowed here
     origin_url: str
+
+
+class PaymentPackage(BaseModel):
+    id: str
+    amount: float
+    currency: str = "eur"
+    desc: str
+    enabled: bool = True
+    kind: Literal["premium", "boost", "other"] = "premium"
+    days: Optional[int] = None  # for premium (30 / 365)
+    minutes: Optional[int] = None  # for boost (e.g. 30)
+
+
+class PaymentConfigUpdate(BaseModel):
+    provider: Literal["stripe", "disabled"] = "disabled"
+    stripe_api_key: Optional[str] = None
+    enabled: bool = False
+    packages: Optional[List[PaymentPackage]] = None
 
 
 class AIConfigUpdate(BaseModel):

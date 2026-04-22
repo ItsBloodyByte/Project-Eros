@@ -22,7 +22,16 @@ import "./App.css";
 function Protected({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <div className="min-h-screen grid place-items-center">Loading…</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen grid place-items-center app-shell-bg">
+        <div className="flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[hsl(var(--accent))] border-t-transparent" />
+          <span>Lädt…</span>
+        </div>
+      </div>
+    );
+  }
   if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
   return children;
 }

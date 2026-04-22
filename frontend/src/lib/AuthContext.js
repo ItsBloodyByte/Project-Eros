@@ -23,6 +23,7 @@ export function AuthProvider({ children }) {
     const tok = getStoredToken();
     if (tok) {
       setAuthToken(tok);
+      // keep loading=true until /me resolves to avoid flicker
       refresh().finally(() => setLoading(false));
     } else {
       setLoading(false);

@@ -7,7 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
 import { ReportDialog } from "../components/ReportDialog";
 import { MatchBanner } from "../components/MatchBanner";
-import { BadgeCheck, Heart, MapPin, Lock, Send, EyeOff, ShieldAlert } from "lucide-react";
+import { BadgeCheck, Heart, MapPin, Lock, Send, EyeOff, ShieldAlert, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Textarea } from "../components/ui/textarea";
@@ -152,7 +152,12 @@ export default function ProfileViewPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {profile.verified && <Badge className="gap-1"><BadgeCheck className="h-3 w-3" /> {t("profile.verified")}</Badge>}
+                    {profile.id_verified && (
+                      <Badge className="gap-1 bg-[hsl(var(--accent))]/90 hover:bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]" data-testid="profile-id-verified-badge">
+                        <ShieldCheck className="h-3 w-3" /> ID
+                      </Badge>
+                    )}
+                    {profile.verified && !profile.id_verified && <Badge className="gap-1"><BadgeCheck className="h-3 w-3" /> {t("profile.verified")}</Badge>}
                     {isAdminViewer && <Badge variant="outline" className="gap-1"><EyeOff className="h-3 w-3" /> {t("profile.admin_only")}</Badge>}
                   </div>
                 </div>
