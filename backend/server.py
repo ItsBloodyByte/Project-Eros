@@ -3897,34 +3897,100 @@ async def _record_visit(viewer: dict, target_id: str):
 
 @api_router.get("/me/visitors")
 async def my_visitors(user=Depends(_require_user), limit: int = Query(40, ge=1, le=200)):
-    """Visitors of my profile in the last N days. Premium-gated (non-premium sees a teaser count only)."""
+    """
+    Visitors of my profile.
+    - Premium users: full list within the configured window (e.g. 30 days).
+    - Non-premium users: the 3 most-recent visitors are returned unblurred;
+      additional visits within the last 24h are returned as blurred silhouettes
+      (no name / no photo / just a visited_at timestamp) so free users see that
+      there IS more activity without revealing identities.
+    """
     cfg = await _get_platform_config()
     window_days = int(cfg.get("visitors_window_days", 30))
-    cutoff = (now_utc() - timedelta(days=window_days)).isoformat()
+    cutoff_premium = (now_utc() - timedelta(days=window_days)).isoformat()
+    cutoff_24h = (now_utc() - timedelta(hours=24)).isoformat()
     is_premium = _is_user_premium(user)
-    q = {"target_id": user["id"], "last_visited_at": {"$gte": cutoff}}
-    total = await db.visits.count_documents(q)
-    if not is_premium:
-        return {"total": total, "window_days": window_days, "visitors": [], "premium_required": True}
-    cursor = db.visits.find(q).sort("last_visited_at", -1).limit(limit)
+    viewer_coords = (user.get("location") or {}).get("coordinates")
+
+    # Free-tier configuration
+    free_visible = int(cfg.get("visitors_free_visible", 3))
+    free_window_hours = int(cfg.get("visitors_free_blur_window_hours", 24))
+
+    if is_premium:
+        q = {"target_id": user["id"], "last_visited_at": {"$gte": cutoff_premium}}
+        total = await db.visits.count_documents(q)
+        cursor = db.visits.find(q).sort("last_visited_at", -1).limit(limit)
+        docs = await cursor.to_list(length=limit)
+        visitor_ids = [d.get("viewer_id") for d in docs if d.get("viewer_id")]
+        users_map: Dict = {}
+        if visitor_ids:
+            async for u in db.users.find({"id": {"$in": visitor_ids}}):
+                users_map[u["id"]] = u
+        out = []
+        for d in docs:
+            vid = d.get("viewer_id")
+            vu = users_map.get(vid)
+            if not vu or vu.get("banned"):
+                continue
+            pub = public_user_from_doc(vu, viewer_location=viewer_coords)
+            pub["visited_at"] = d.get("last_visited_at")
+            pub["visit_count"] = int(d.get("count", 1))
+            pub["blurred"] = False
+            out.append(pub)
+        return {
+            "total": total,
+            "window_days": window_days,
+            "visitors": out,
+            "premium_required": False,
+            "is_premium": True,
+            "free_visible": None,
+            "blurred_total": 0,
+        }
+
+    # Free tier: 24h window
+    cutoff = (now_utc() - timedelta(hours=free_window_hours)).isoformat()
+    q_free = {"target_id": user["id"], "last_visited_at": {"$gte": cutoff}}
+    total_free = await db.visits.count_documents(q_free)
+    cursor = db.visits.find(q_free).sort("last_visited_at", -1).limit(limit)
     docs = await cursor.to_list(length=limit)
-    visitor_ids = [d.get("viewer_id") for d in docs if d.get("viewer_id")]
-    users = {}
+    visible_docs = docs[:free_visible]
+    blurred_docs = docs[free_visible:]
+    visitor_ids = [d.get("viewer_id") for d in visible_docs if d.get("viewer_id")]
+    users_map = {}
     if visitor_ids:
         async for u in db.users.find({"id": {"$in": visitor_ids}}):
-            users[u["id"]] = u
-    out = []
-    viewer_coords = (user.get("location") or {}).get("coordinates")
-    for d in docs:
+            users_map[u["id"]] = u
+    visible_out: List[Dict] = []
+    for d in visible_docs:
         vid = d.get("viewer_id")
-        vu = users.get(vid)
+        vu = users_map.get(vid)
         if not vu or vu.get("banned"):
             continue
         pub = public_user_from_doc(vu, viewer_location=viewer_coords)
         pub["visited_at"] = d.get("last_visited_at")
         pub["visit_count"] = int(d.get("count", 1))
-        out.append(pub)
-    return {"total": total, "window_days": window_days, "visitors": out, "premium_required": False}
+        pub["blurred"] = False
+        visible_out.append(pub)
+    blurred_out: List[Dict] = []
+    for idx, d in enumerate(blurred_docs):
+        # We deliberately leak *no* identifying data.
+        blurred_out.append({
+            "id": f"blurred-{idx}",
+            "blurred": True,
+            "visited_at": d.get("last_visited_at"),
+            "visit_count": int(d.get("count", 1)),
+        })
+    return {
+        "total": total_free,
+        "window_days": window_days,
+        "window_hours_free": free_window_hours,
+        "visitors": visible_out,
+        "blurred_visitors": blurred_out,
+        "blurred_total": len(blurred_out),
+        "free_visible": free_visible,
+        "premium_required": len(blurred_out) > 0,
+        "is_premium": False,
+    }
 
 
 # ---------- Super-Like (Premium, rate-limited) ----------

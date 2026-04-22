@@ -18,7 +18,8 @@
     "menu": "Menü",
     "navigate": "Navigation",
     "account_group": "Konto",
-    "preferences": "Einstellungen"
+    "preferences": "Einstellungen",
+    "visitors": "Besucher:innen"
   },
   "auth": {
     "login_title": "Anmelden",

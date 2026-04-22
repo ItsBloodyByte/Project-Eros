@@ -20,6 +20,7 @@ import EventsPage from "./pages/EventsPage";
 import LegalPage from "./pages/LegalPage";
 import BlogListPage from "./pages/BlogListPage";
 import BlogPostPage from "./pages/BlogPostPage";
+import VisitorsPage from "./pages/VisitorsPage";
 import { BroadcastBanner } from "./components/BroadcastBanner";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import "./App.css";
@@ -61,6 +62,7 @@ function AppRoutes() {
       <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
       <Route path="/blog" element={<Protected><BlogListPage /></Protected>} />
       <Route path="/blog/:slug" element={<Protected><BlogPostPage /></Protected>} />
+      <Route path="/visitors" element={<Protected><VisitorsPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
