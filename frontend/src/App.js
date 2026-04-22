@@ -21,6 +21,7 @@ import LegalPage from "./pages/LegalPage";
 import BlogListPage from "./pages/BlogListPage";
 import BlogPostPage from "./pages/BlogPostPage";
 import { BroadcastBanner } from "./components/BroadcastBanner";
+import { MobileBottomNav } from "./components/MobileBottomNav";
 import "./App.css";
 
 function Protected({ children }) {
@@ -72,6 +73,7 @@ function ThemedApp() {
     <>
       <BroadcastBanner />
       <AppRoutes />
+      <MobileBottomNav />
     </>
   );
 }

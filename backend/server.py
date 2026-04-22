@@ -682,8 +682,19 @@ async def discover(
         query["id"] = {"$ne": user["id"], "$nin": list(exclude_ids)}
 
     # One-way filters from viewer
-    if prefs.get("seeking_genders"):
-        query["gender_identity"] = {"$in": prefs["seeking_genders"]}
+    # Gender: union logic — show target if EITHER the viewer seeks the target's gender,
+    # OR the target seeks the viewer's gender. Previously this was strict AND.
+    viewer_seeking = prefs.get("seeking_genders") or []
+    gender_conds: List[Dict] = []
+    if viewer_seeking:
+        gender_conds.append({"gender_identity": {"$in": viewer_seeking}})
+    if my_gender:
+        gender_conds.append({"preferences.seeking_genders": my_gender})
+    if gender_conds:
+        # If only one side specifies anything, fall back to that single condition.
+        query.setdefault("$and", []).append(
+            {"$or": gender_conds} if len(gender_conds) > 1 else gender_conds[0]
+        )
     if prefs.get("relationship_types"):
         query["relationship_types"] = {"$in": prefs["relationship_types"]}
     if prefs.get("seeking_roles"):
@@ -731,9 +742,7 @@ async def discover(
         # Others only appear if they also list at least one of the viewer's kinks.
         query["kinks"] = {"$in": prefs["kinks"]}
 
-    # Bidirectional: their preferences must also match me
-    if my_gender:
-        query["preferences.seeking_genders"] = my_gender
+    # Bidirectional age filter (gender handled above with union logic)
     if my_age:
         query["preferences.age_min"] = {"$lte": my_age}
         query["preferences.age_max"] = {"$gte": my_age}
@@ -1850,6 +1859,56 @@ async def my_broadcasts(user=Depends(_require_user), unread_only: bool = False, 
             continue
         result.append(pub)
     return {"broadcasts": result}
+
+
+@api_router.get("/me/unread-summary")
+async def unread_summary(user=Depends(_require_user)):
+    """
+    Lightweight aggregate for the nav badges:
+    - unread_messages: total messages across all matches not read by the user
+    - unread_matches: matches with at least one unread message from the partner
+    - new_matches: matches created in the last 72h where the user hasn't sent a message yet
+    """
+    uid = user["id"]
+    # total unread messages (partner-sent, not in read_by)
+    match_ids_cursor = db.matches.find(
+        {"$or": [{"user_a": uid}, {"user_b": uid}]}, {"id": 1}
+    )
+    match_ids = [m["id"] async for m in match_ids_cursor]
+    unread_messages = 0
+    unread_match_ids: set = set()
+    if match_ids:
+        pipeline = [
+            {"$match": {
+                "match_id": {"$in": match_ids},
+                "sender_id": {"$ne": uid},
+                "read_by": {"$ne": uid},
+            }},
+            {"$group": {"_id": "$match_id", "count": {"$sum": 1}}},
+        ]
+        async for row in db.messages.aggregate(pipeline):
+            unread_messages += int(row.get("count") or 0)
+            unread_match_ids.add(row["_id"])
+    # new matches (no message by me yet, created in last 72h)
+    from datetime import timedelta
+    cutoff = (now_utc() - timedelta(hours=72)).isoformat()
+    new_matches = 0
+    if match_ids:
+        cursor = db.matches.find({
+            "id": {"$in": match_ids},
+            "created_at": {"$gte": cutoff},
+        })
+        async for m in cursor:
+            has_my_msg = await db.messages.find_one(
+                {"match_id": m["id"], "sender_id": uid}, {"_id": 1}
+            )
+            if not has_my_msg:
+                new_matches += 1
+    return {
+        "unread_messages": unread_messages,
+        "unread_matches": len(unread_match_ids),
+        "new_matches": new_matches,
+    }
 
 
 @api_router.post("/me/broadcasts/{bid}/ack")

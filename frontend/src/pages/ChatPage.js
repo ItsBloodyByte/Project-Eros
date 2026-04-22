@@ -140,28 +140,62 @@ export default function ChatPage() {
               <ArrowLeft className="h-4 w-4" /> Matches
             </Link>
             {peer && (
-              <div className="flex items-center gap-2">
-                <div className="font-display text-lg tracking-tight" data-testid="chat-peer-title">
-                  {peer.display_name}
-                  {peer.partner && (
-                    <span className="text-[hsl(var(--muted-foreground))]"> &amp; {peer.partner.display_name}</span>
-                  )}
-                  {!peer.partner && peer.account_type === "duo" && peer.persona_b?.display_name && (
-                    <span className="text-[hsl(var(--muted-foreground))]"> &amp; {peer.persona_b.display_name}</span>
-                  )}
-                </div>
-                {(peer.partner || (peer.account_type === "duo" && peer.persona_b)) && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/40 px-2 py-0.5 text-[10.5px] font-medium" data-testid="chat-couple-badge">
-                    Paar
-                  </span>
-                )}
-                {peer.is_system && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] px-2 py-0.5 text-[10.5px] font-medium" data-testid="chat-official-badge" title="Offizielles Eros-Profil">
-                    <BadgeCheck className="h-3 w-3" /> Offiziell
-                  </span>
-                )}
-                {peer.is_online && !peer.is_system && <span className="online-dot" />}
-              </div>
+              (() => {
+                const peerAvatar = Array.isArray(peer.photos) && peer.photos.length > 0
+                  ? (peer.photos[0].data || peer.photos[0].url || null)
+                  : null;
+                const canLink = !peer.is_system && peer.id;
+                const HeaderTag = canLink ? Link : "div";
+                const headerProps = canLink
+                  ? { to: `/profile/${peer.id}`, "data-testid": "chat-peer-profile-link",
+                      "aria-label": `Profil von ${peer.display_name} öffnen` }
+                  : {};
+                return (
+                  <HeaderTag
+                    {...headerProps}
+                    className={[
+                      "flex items-center gap-2 rounded-full px-1.5 py-1 -mx-1.5 transition-colors",
+                      canLink ? "hover:bg-[hsl(var(--secondary))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))]" : "",
+                    ].join(" ")}
+                  >
+                    {peerAvatar ? (
+                      <img
+                        src={peerAvatar}
+                        alt=""
+                        className="h-8 w-8 rounded-full object-cover ring-1 ring-[hsl(var(--border))]"
+                        data-testid="chat-peer-avatar"
+                      />
+                    ) : (
+                      <span
+                        className="h-8 w-8 rounded-full bg-[hsl(var(--secondary))] inline-flex items-center justify-center text-xs font-medium text-[hsl(var(--muted-foreground))] ring-1 ring-[hsl(var(--border))]"
+                        data-testid="chat-peer-avatar-fallback"
+                      >
+                        {(peer.display_name || "?").slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                    <div className="font-display text-lg tracking-tight leading-tight" data-testid="chat-peer-title">
+                      {peer.display_name}
+                      {peer.partner && (
+                        <span className="text-[hsl(var(--muted-foreground))]"> &amp; {peer.partner.display_name}</span>
+                      )}
+                      {!peer.partner && peer.account_type === "duo" && peer.persona_b?.display_name && (
+                        <span className="text-[hsl(var(--muted-foreground))]"> &amp; {peer.persona_b.display_name}</span>
+                      )}
+                    </div>
+                    {(peer.partner || (peer.account_type === "duo" && peer.persona_b)) && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/40 px-2 py-0.5 text-[10.5px] font-medium" data-testid="chat-couple-badge">
+                        Paar
+                      </span>
+                    )}
+                    {peer.is_system && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] px-2 py-0.5 text-[10.5px] font-medium" data-testid="chat-official-badge" title="Offizielles Eros-Profil">
+                        <BadgeCheck className="h-3 w-3" /> Offiziell
+                      </span>
+                    )}
+                    {peer.is_online && !peer.is_system && <span className="online-dot" />}
+                  </HeaderTag>
+                );
+              })()
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

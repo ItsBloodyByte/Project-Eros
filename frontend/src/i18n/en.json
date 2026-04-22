@@ -14,7 +14,11 @@
     "logout": "Logout",
     "theme_toggle": "Toggle theme",
     "language": "Language",
-    "edit_profile": "Edit profile"
+    "edit_profile": "Edit profile",
+    "menu": "Menu",
+    "navigate": "Navigation",
+    "account_group": "Account",
+    "preferences": "Preferences"
   },
   "auth": {
     "login_title": "Sign in",

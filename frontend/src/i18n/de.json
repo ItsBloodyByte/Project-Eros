@@ -14,7 +14,11 @@
     "logout": "Abmelden",
     "theme_toggle": "Design wechseln",
     "language": "Sprache",
-    "edit_profile": "Profil bearbeiten"
+    "edit_profile": "Profil bearbeiten",
+    "menu": "Menü",
+    "navigate": "Navigation",
+    "account_group": "Konto",
+    "preferences": "Einstellungen"
   },
   "auth": {
     "login_title": "Anmelden",
