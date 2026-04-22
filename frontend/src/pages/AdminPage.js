@@ -847,6 +847,71 @@ export default function AdminPage() {
                     <UserMiniCard title="Gemeldet" u={reportDetail.reported} />
                   </div>
 
+                  {/* Media of reported user (always visible for moderation) */}
+                  {reportDetail.reported_media && (reportDetail.reported_media.photos?.length > 0 || reportDetail.reported_media.videos?.length > 0) && (
+                    <div className="rounded-md border p-3 space-y-3" data-testid="report-reported-media">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">
+                          Fotos &amp; Videos des Gemeldeten ({(reportDetail.reported_media.photos || []).length} Fotos, {(reportDetail.reported_media.videos || []).length} Videos)
+                        </div>
+                        <Badge variant="outline" className="text-[10px]">Löschsperre: aktiv solange Report offen</Badge>
+                      </div>
+                      {(reportDetail.reported_media.photos || []).length > 0 && (
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                          {reportDetail.reported_media.photos.map((p) => {
+                            const isTargetPhoto = reportDetail.report.target_type === "photo" && reportDetail.report.target_id === p.id;
+                            return (
+                              <div
+                                key={p.id}
+                                className={[
+                                  "relative aspect-[3/4] rounded-md overflow-hidden border bg-[hsl(var(--muted))]",
+                                  isTargetPhoto ? "ring-2 ring-[hsl(var(--destructive))]" : ""
+                                ].join(" ")}
+                                data-testid={`report-reported-photo-${p.id}`}
+                              >
+                                <img src={p.data} alt="" className={`h-full w-full object-cover ${p.nsfw_score >= 0.75 ? "blur-md" : ""}`} />
+                                {p.is_primary && <div className="absolute left-1 top-1 rounded-full bg-black/60 text-white text-[9px] px-1.5 py-0.5">Haupt</div>}
+                                {isTargetPhoto && <div className="absolute right-1 top-1 rounded-full bg-[hsl(var(--destructive))] text-white text-[9px] px-1.5 py-0.5">gemeldet</div>}
+                                <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] px-1.5 py-0.5 flex items-center justify-between">
+                                  <span>NSFW {((p.nsfw_score || 0) * 100).toFixed(0)}%</span>
+                                  <span>{p.has_face ? "face" : "no face"}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {(reportDetail.reported_media.videos || []).length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {reportDetail.reported_media.videos.map((v) => (
+                            <div key={v.id} className="relative aspect-video rounded-md overflow-hidden border bg-black">
+                              <video src={v.data} controls className="h-full w-full object-cover" />
+                              <div className="absolute left-1 top-1 rounded-full bg-black/60 text-white text-[9px] px-1.5 py-0.5">
+                                {v.moderation_status || "—"}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Reporter media (collapsed preview for context) */}
+                  {reportDetail.reporter_media && (reportDetail.reporter_media.photos?.length > 0) && (
+                    <details className="rounded-md border p-3" data-testid="report-reporter-media">
+                      <summary className="cursor-pointer text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--muted-foreground))]">
+                        Fotos des Reporters ({reportDetail.reporter_media.photos.length}) — zum Kontext anzeigen
+                      </summary>
+                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 mt-2">
+                        {reportDetail.reporter_media.photos.map((p) => (
+                          <div key={p.id} className="aspect-[3/4] rounded overflow-hidden border bg-[hsl(var(--muted))]">
+                            <img src={p.data} alt="" className={`h-full w-full object-cover ${p.nsfw_score >= 0.75 ? "blur-md" : ""}`} />
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
                   {/* Target context: Photo */}
                   {reportDetail.target_context?.photo && (
                     <div className="rounded-md border p-3 space-y-2">

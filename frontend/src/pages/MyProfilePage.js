@@ -130,7 +130,18 @@ export default function MyProfilePage() {
     }
   };
 
-  const deletePhoto = async (pid) => { await api.delete(`/me/photos/${pid}`); await refresh(); };
+  const deletePhoto = async (pid) => {
+    try {
+      await api.delete(`/me/photos/${pid}`);
+      await refresh();
+    } catch (e) {
+      if (e.response?.status === 423) {
+        toast.error(e.response.data?.detail || "Aktive Meldung — Foto-Löschung gesperrt.");
+      } else {
+        toast.error(e.response?.data?.detail || "Löschen fehlgeschlagen");
+      }
+    }
+  };
   const makePrimary = async (pid) => { await api.post(`/me/photos/${pid}/primary`); await refresh(); };
   const reorderPhotos = async (order) => {
     try {
@@ -153,7 +164,18 @@ export default function MyProfilePage() {
       toast.error(e.response?.data?.detail || "Upload failed");
     } finally { setUploading(false); }
   };
-  const deleteVideo = async (vid) => { await api.delete(`/me/videos/${vid}`); await refresh(); };
+  const deleteVideo = async (vid) => {
+    try {
+      await api.delete(`/me/videos/${vid}`);
+      await refresh();
+    } catch (e) {
+      if (e.response?.status === 423) {
+        toast.error(e.response.data?.detail || "Aktive Meldung — Video-Löschung gesperrt.");
+      } else {
+        toast.error(e.response?.data?.detail || "Löschen fehlgeschlagen");
+      }
+    }
+  };
 
   const derivedCategory = penisCategoryFor(form.penis_length_cm);
 

@@ -375,6 +375,22 @@ async def upload_photo(body: PhotoUploadRequest, user=Depends(_require_user)):
 
 @api_router.delete("/me/photos/{photo_id}")
 async def delete_photo(photo_id: str, user=Depends(_require_user)):
+    # Evidence preservation: block photo deletion while an active report targets the user or this photo
+    active_against_user = await db.reports.count_documents({
+        "target_type": "user",
+        "target_id": user["id"],
+        "status": {"$in": ["open", "reviewing"]},
+    })
+    active_against_photo = await db.reports.count_documents({
+        "target_type": "photo",
+        "target_id": photo_id,
+        "status": {"$in": ["open", "reviewing"]},
+    })
+    if active_against_user or active_against_photo:
+        raise HTTPException(
+            423,
+            "Fotos können derzeit nicht gelöscht werden: Es läuft eine aktive Meldung. Bitte kontaktiere den Support.",
+        )
     photos = [p for p in user.get("photos", []) if p["id"] != photo_id]
     # ensure at least one primary if any left
     if photos and not any(p.get("is_primary") for p in photos):
@@ -1043,6 +1059,30 @@ async def admin_report_detail(report_id: str, user=Depends(_require_user)):
                                   ((u.get("photos") or [{}])[0].get("data") if u.get("photos") else None)),
         }
 
+    async def _user_media(uid: Optional[str]):
+        if not uid:
+            return {"photos": [], "videos": []}
+        u = await db.users.find_one({"id": uid}, {"photos": 1, "videos": 1})
+        if not u:
+            return {"photos": [], "videos": []}
+        photos = [
+            {
+                "id": p.get("id"),
+                "data": p.get("data"),
+                "nsfw_score": p.get("nsfw_score"),
+                "has_face": p.get("has_face"),
+                "is_primary": bool(p.get("is_primary")),
+            } for p in (u.get("photos") or [])
+        ]
+        videos = [
+            {
+                "id": v.get("id"),
+                "data": v.get("data"),
+                "moderation_status": v.get("moderation_status"),
+            } for v in (u.get("videos") or [])
+        ]
+        return {"photos": photos, "videos": videos}
+
     async def _load_match_thread(match_id: str, highlight_message_id: Optional[str] = None):
         m = await db.matches.find_one({"id": match_id})
         if not m:
@@ -1175,11 +1215,23 @@ async def admin_report_detail(report_id: str, user=Depends(_require_user)):
         resolved_r = await db.reports.count_documents({"target_id": reported["id"], "status": "resolved"})
         reported_stats = {"open": open_r, "resolved": resolved_r}
 
+    # Reported user's media (photos + videos) — always surfaced for context
+    reported_media = None
+    if reported:
+        reported_media = await _user_media(reported["id"])
+
+    # Reporter's primary/public photos as additional context (helpful when reporter claims stalking etc.)
+    reporter_media = None
+    if reporter:
+        reporter_media = await _user_media(reporter["id"])
+
     return {
         "report": serialize_doc(rep),
         "reporter": reporter,
         "reported": reported,
         "reported_stats": reported_stats,
+        "reported_media": reported_media,
+        "reporter_media": reporter_media,
         "target_context": target_context,
         "chat_thread": chat_thread,
         "reporter_history_count": reporter_history_count,
@@ -1584,6 +1636,16 @@ async def upload_video(body: VideoUploadRequest, user=Depends(_require_user)):
 
 @api_router.delete("/me/videos/{video_id}")
 async def delete_video(video_id: str, user=Depends(_require_user)):
+    active_against_user = await db.reports.count_documents({
+        "target_type": "user",
+        "target_id": user["id"],
+        "status": {"$in": ["open", "reviewing"]},
+    })
+    if active_against_user:
+        raise HTTPException(
+            423,
+            "Videos können derzeit nicht gelöscht werden: Es läuft eine aktive Meldung. Bitte kontaktiere den Support.",
+        )
     await db.users.update_one({"id": user["id"]}, {"$pull": {"videos": {"id": video_id}}})
     return {"ok": True}
 
