@@ -569,7 +569,44 @@ async def discover(
     user=Depends(_require_user),
     limit: int = Query(20, ge=1, le=60),
     skip: int = Query(0, ge=0),
+    admin_mode: bool = Query(False),
+    include_hidden: bool = Query(False),
+    include_banned: bool = Query(False),
+    admin_q: Optional[str] = Query(None),
 ):
+    is_staff = user.get("role") in {"admin", "moderator", "superadmin", "content_reviewer", "support"}
+    # Staff-only admin browsing mode — bypass bidirectional + preference + radius filters
+    if admin_mode and is_staff:
+        q: Dict = {"id": {"$ne": user["id"]}, "is_system": {"$ne": True}}
+        if not include_banned:
+            q["banned"] = {"$ne": True}
+        if not include_hidden:
+            q["privacy.hidden_mode"] = {"$ne": True}
+        if admin_q:
+            q["$or"] = [
+                {"display_name": {"$regex": admin_q, "$options": "i"}},
+                {"email": {"$regex": admin_q, "$options": "i"}},
+                {"bio": {"$regex": admin_q, "$options": "i"}},
+            ]
+        cursor = db.users.find(q).sort("last_active", -1).skip(skip).limit(limit)
+        users = await cursor.to_list(length=limit)
+        total = await db.users.count_documents(q)
+        out = []
+        for u in users:
+            pub = public_user_from_doc(u, viewer_location=(user.get("location") or {}).get("coordinates"))
+            pub["admin_flags"] = {
+                "banned": bool(u.get("banned")),
+                "hidden_mode": bool((u.get("privacy") or {}).get("hidden_mode")),
+                "shadow_restricted": bool(u.get("shadow_restricted")),
+                "id_verified": bool(u.get("id_verified")),
+                "role": u.get("role", "user"),
+                "registration_ip": u.get("registration_ip"),
+                "requires_id_verification": bool(u.get("requires_id_verification")),
+                "premium_expires_at": u.get("premium_expires_at"),
+            }
+            out.append(pub)
+        return {"users": out, "total": total, "admin_mode": True}
+
     prefs = user.get("preferences", {}) or {}
     loc = user.get("location")
     my_gender = user.get("gender_identity")
@@ -581,6 +618,7 @@ async def discover(
         "id": {"$ne": user["id"]},
         "banned": {"$ne": True},
         "privacy.hidden_mode": {"$ne": True},
+        "is_system": {"$ne": True},
         "age": {
             "$gte": prefs.get("age_min", 18),
             "$lte": prefs.get("age_max", 99),
@@ -1357,11 +1395,7 @@ async def _eros_match_for(user_id: str) -> dict:
 
 
 async def _fanout_broadcast_as_chat(broadcast: dict) -> int:
-    """Deliver the broadcast as an incoming chat message to each recipient's system match.
-
-    The message is flagged `is_broadcast=True` and carries the HMAC signature so the
-    frontend can render the authenticity seal in the chat bubble.
-    """
+    """Deliver the broadcast as an incoming chat message to each recipient's system match."""
     await _ensure_eros_system_user()
     audience = broadcast.get("audience") or "all"
     q: Dict = {"id": {"$ne": EROS_SYSTEM_USER_ID}, "banned": {"$ne": True}, "is_system": {"$ne": True}}
@@ -1371,6 +1405,21 @@ async def _fanout_broadcast_as_chat(broadcast: dict) -> int:
         q["id_verified"] = True
     elif audience == "staff":
         q["role"] = {"$in": ["admin", "moderator", "superadmin", "content_reviewer", "support"]}
+    elif audience == "segment":
+        seg = broadcast.get("segment") or {}
+        if seg.get("cities"):
+            q["location.city"] = {"$in": seg["cities"]}
+        if seg.get("interests"):
+            q["interests"] = {"$in": seg["interests"]}
+        if seg.get("genders"):
+            q["gender_identity"] = {"$in": seg["genders"]}
+        age_q: Dict = {}
+        if seg.get("age_min") is not None:
+            age_q["$gte"] = int(seg["age_min"])
+        if seg.get("age_max") is not None:
+            age_q["$lte"] = int(seg["age_max"])
+        if age_q:
+            q["age"] = age_q
     count = 0
     async for u in db.users.find(q, {"id": 1}):
         match = await _eros_match_for(u["id"])
@@ -1456,6 +1505,19 @@ async def _public_broadcast(doc: dict, for_user_id: Optional[str] = None) -> dic
     }
 
 
+@api_router.get("/admin/broadcasts/segments/options")
+async def broadcast_segment_options(user=Depends(_require_user)):
+    """Return available cities & interests currently present in the user base (for the composer)."""
+    await _require_role(user, ["admin", "superadmin"])
+    cities = await db.users.distinct("location.city", {"is_system": {"$ne": True}, "banned": {"$ne": True}})
+    cities = sorted([c for c in cities if c])
+    interests = await db.users.distinct("interests", {"is_system": {"$ne": True}, "banned": {"$ne": True}})
+    interests = sorted([i for i in interests if i])
+    genders = await db.users.distinct("gender_identity", {"is_system": {"$ne": True}, "banned": {"$ne": True}})
+    genders = sorted([g for g in genders if g])
+    return {"cities": cities, "interests": interests, "genders": genders}
+
+
 @api_router.post("/admin/broadcasts")
 async def create_broadcast(payload: dict, user=Depends(_require_user)):
     """Create an authentic platform broadcast. Severity: info|warning|urgent. Audience: all|premium|verified|staff."""
@@ -1471,8 +1533,16 @@ async def create_broadcast(payload: dict, user=Depends(_require_user)):
     if severity not in {"info", "warning", "urgent"}:
         raise HTTPException(400, "Ungültige Severity")
     audience = payload.get("audience") or "all"
-    if audience not in {"all", "premium", "verified", "staff"}:
+    if audience not in {"all", "premium", "verified", "staff", "segment"}:
         raise HTTPException(400, "Ungültige Zielgruppe")
+    # Optional segment filters (only used when audience == "segment")
+    segment_cities = payload.get("cities") or []
+    segment_interests = payload.get("interests") or []
+    segment_genders = payload.get("genders") or []
+    segment_age_min = payload.get("age_min")
+    segment_age_max = payload.get("age_max")
+    if audience == "segment" and not any([segment_cities, segment_interests, segment_genders, segment_age_min, segment_age_max]):
+        raise HTTPException(400, "Segment-Broadcasts benötigen mindestens ein Filterkriterium")
     expires_at = None
     if payload.get("expires_at"):
         try:
@@ -1485,6 +1555,13 @@ async def create_broadcast(payload: dict, user=Depends(_require_user)):
         "body": body,
         "severity": severity,
         "audience": audience,
+        "segment": {
+            "cities": segment_cities,
+            "interests": segment_interests,
+            "genders": segment_genders,
+            "age_min": segment_age_min,
+            "age_max": segment_age_max,
+        } if audience == "segment" else None,
         "pinned": bool(payload.get("pinned")),
         "expires_at": expires_at,
         "created_by": user["id"],
@@ -1541,6 +1618,23 @@ def _broadcast_matches_user(doc: dict, user: dict) -> bool:
             return False
     if aud == "verified":
         return bool(user.get("id_verified"))
+    if aud == "segment":
+        seg = doc.get("segment") or {}
+        city = (user.get("location") or {}).get("city") if isinstance(user.get("location"), dict) else None
+        if seg.get("cities") and city not in seg["cities"]:
+            return False
+        if seg.get("interests"):
+            inter = set(user.get("interests") or [])
+            if not (inter & set(seg["interests"])):
+                return False
+        if seg.get("genders") and user.get("gender_identity") not in seg["genders"]:
+            return False
+        age = user.get("age") or 0
+        if seg.get("age_min") is not None and age < int(seg["age_min"]):
+            return False
+        if seg.get("age_max") is not None and age > int(seg["age_max"]):
+            return False
+        return True
     return False
 
 

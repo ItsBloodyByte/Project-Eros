@@ -49,6 +49,19 @@ export function ProfileCard({ user, visited = false }) {
               <ShieldCheck className="h-3 w-3" /> ID
             </span>
           )}
+          {/* Admin-mode diagnostic flags */}
+          {user.admin_flags?.banned && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--destructive))] text-white px-2 py-0.5 text-[10.5px] font-medium" data-testid="profile-admin-flag-banned">gebannt</span>
+          )}
+          {user.admin_flags?.hidden_mode && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/70 text-white px-2 py-0.5 text-[10.5px] font-medium">versteckt</span>
+          )}
+          {user.admin_flags?.shadow_restricted && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/90 text-white px-2 py-0.5 text-[10.5px] font-medium">shadow</span>
+          )}
+          {user.admin_flags?.role && user.admin_flags.role !== "user" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-wide">{user.admin_flags.role}</span>
+          )}
         </div>
 
         {/* Top-right state */}

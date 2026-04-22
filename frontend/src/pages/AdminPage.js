@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { AppHeader } from "../components/AppHeader";
 import { AppFooter } from "../components/AppFooter";
@@ -11,7 +12,7 @@ import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
-import { Bell, ShieldAlert, BadgeCheck } from "lucide-react";
+import { Bell, ShieldAlert, BadgeCheck, ExternalLink } from "lucide-react";
 import { Switch } from "../components/ui/switch";
 import { useAuth } from "../lib/AuthContext";
 import { toast } from "sonner";
@@ -354,21 +355,38 @@ export default function AdminPage() {
 
   // Broadcasts composer
   const [broadcasts, setBroadcasts] = useState([]);
-  const [bcForm, setBcForm] = useState({ title: "", body: "", severity: "info", audience: "all", pinned: false });
+  const [bcForm, setBcForm] = useState({
+    title: "", body: "", severity: "info", audience: "all", pinned: false,
+    cities: [], interests: [], genders: [], age_min: "", age_max: "",
+  });
+  const [bcSegOpts, setBcSegOpts] = useState({ cities: [], interests: [], genders: [] });
   const [bcBusy, setBcBusy] = useState(false);
   const loadBroadcasts = async () => {
     try {
       const { data } = await api.get("/admin/broadcasts");
       setBroadcasts(data.broadcasts || []);
+      const opts = await api.get("/admin/broadcasts/segments/options");
+      setBcSegOpts(opts.data || { cities: [], interests: [], genders: [] });
     } catch {}
   };
+  const toggleInArray = (arr, val) => (arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
   const submitBroadcast = async () => {
     if (!bcForm.title.trim() || !bcForm.body.trim()) { toast.error("Titel und Inhalt sind Pflicht"); return; }
+    if (bcForm.audience === "segment") {
+      const hasAny = bcForm.cities.length || bcForm.interests.length || bcForm.genders.length || bcForm.age_min || bcForm.age_max;
+      if (!hasAny) { toast.error("Segment-Broadcast benötigt mindestens ein Filterkriterium"); return; }
+    }
     setBcBusy(true);
     try {
-      await api.post("/admin/broadcasts", bcForm);
+      const payload = { ...bcForm };
+      if (payload.audience !== "segment") { delete payload.cities; delete payload.interests; delete payload.genders; delete payload.age_min; delete payload.age_max; }
+      else {
+        if (payload.age_min === "") delete payload.age_min; else payload.age_min = Number(payload.age_min);
+        if (payload.age_max === "") delete payload.age_max; else payload.age_max = Number(payload.age_max);
+      }
+      await api.post("/admin/broadcasts", payload);
       toast.success("Broadcast veröffentlicht & authentisch signiert");
-      setBcForm({ title: "", body: "", severity: "info", audience: "all", pinned: false });
+      setBcForm({ title: "", body: "", severity: "info", audience: "all", pinned: false, cities: [], interests: [], genders: [], age_min: "", age_max: "" });
       await loadBroadcasts();
     } catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
     finally { setBcBusy(false); }
@@ -616,7 +634,16 @@ export default function AdminPage() {
                     {reports.map((r) => (
                       <TableRow key={r.id} className="cursor-pointer hover:bg-[hsl(var(--secondary))]/50" data-testid={`admin-report-row-${r.id}`}>
                         <TableCell className="font-mono text-xs" onClick={() => openReport(r.id)}>{r.id.slice(0,8)}</TableCell>
-                        <TableCell onClick={() => openReport(r.id)}>{r.target_type} · <span className="font-mono text-xs">{r.target_id.slice(0,8)}</span></TableCell>
+                        <TableCell onClick={() => openReport(r.id)}>
+                          {r.target_type === "user" ? (
+                            <Link to={`/profile/${r.target_id}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline hover:text-[hsl(var(--accent))]" onClick={(e) => e.stopPropagation()} data-testid={`report-target-profile-${r.id}`}>
+                              user · <span className="font-mono text-xs">{r.target_id.slice(0,8)}</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </Link>
+                          ) : (
+                            <>{r.target_type} · <span className="font-mono text-xs">{r.target_id.slice(0,8)}</span></>
+                          )}
+                        </TableCell>
                         <TableCell className="max-w-[320px] truncate" onClick={() => openReport(r.id)}>{r.reason}</TableCell>
                         <TableCell><Badge variant={r.status==="resolved"?"secondary":"outline"}>{r.status}</Badge></TableCell>
                         <TableCell className="space-x-2">
@@ -644,8 +671,17 @@ export default function AdminPage() {
                   </TableRow></TableHeader>
                   <TableBody>
                     {users.map((u) => (
-                      <TableRow key={u.id}>
-                        <TableCell>{u.display_name}</TableCell>
+                      <TableRow key={u.id} data-testid={`admin-user-row-${u.id}`}>
+                        <TableCell>
+                          <Link
+                            to={`/profile/${u.id}`}
+                            className="font-medium hover:underline flex items-center gap-1"
+                            data-testid={`admin-user-profile-link-${u.id}`}
+                          >
+                            {u.display_name}
+                            <ExternalLink className="h-3 w-3 text-[hsl(var(--muted-foreground))]" />
+                          </Link>
+                        </TableCell>
                         <TableCell className="font-mono text-xs">{u.email}</TableCell>
                         <TableCell>{u.age}</TableCell>
                         <TableCell><Badge variant="outline">{u.role || "user"}</Badge></TableCell>
@@ -653,9 +689,13 @@ export default function AdminPage() {
                           {u.banned && <Badge variant="destructive">banned</Badge>}
                           {u.shadow_restricted && <Badge variant="secondary">shadow</Badge>}
                           {u.id_verified && <Badge>ID</Badge>}
-                          {!u.banned && !u.shadow_restricted && <Badge variant="secondary">aktiv</Badge>}
+                          {u.privacy?.hidden_mode && <Badge variant="outline">versteckt</Badge>}
+                          {!u.banned && !u.shadow_restricted && !u.privacy?.hidden_mode && <Badge variant="secondary">aktiv</Badge>}
                         </TableCell>
                         <TableCell className="space-x-1">
+                          <Button size="sm" variant="ghost" asChild data-testid={`admin-user-view-${u.id}`}>
+                            <Link to={`/profile/${u.id}`}>Ansehen</Link>
+                          </Button>
                           <Button size="sm" variant="outline" onClick={() => openEditUser(u.id)} data-testid={`admin-edit-user-${u.id}`}>Bearbeiten</Button>
                           {u.banned
                             ? <Button size="sm" onClick={() => unban(u.id)}>Entbannen</Button>
@@ -956,6 +996,7 @@ export default function AdminPage() {
                         <SelectItem value="premium">Nur Premium</SelectItem>
                         <SelectItem value="verified">Nur ID-verifiziert</SelectItem>
                         <SelectItem value="staff">Nur Team (Staff)</SelectItem>
+                        <SelectItem value="segment">Segment (Stadt / Interessen …)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -967,6 +1008,86 @@ export default function AdminPage() {
                     <textarea className="w-full min-h-[140px] rounded-md border bg-background p-3 text-sm" maxLength={5000} value={bcForm.body} onChange={(e) => setBcForm({ ...bcForm, body: e.target.value })} data-testid="bc-body" placeholder="Offizielle Mitteilung an deine Zielgruppe …" />
                     <div className="text-[11px] text-right text-[hsl(var(--muted-foreground))]">{bcForm.body.length}/5000</div>
                   </div>
+                  {bcForm.audience === "segment" && (
+                    <div className="md:col-span-3 space-y-3 rounded-md border border-[hsl(var(--accent))]/40 bg-[hsl(var(--accent))]/5 p-3" data-testid="bc-segment">
+                      <div className="font-display text-sm">Segment-Filter</div>
+                      {bcSegOpts.cities.length > 0 && (
+                        <div>
+                          <Label className="text-xs">Städte ({bcForm.cities.length})</Label>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {bcSegOpts.cities.map((c) => (
+                              <button
+                                type="button"
+                                key={c}
+                                onClick={() => setBcForm({ ...bcForm, cities: toggleInArray(bcForm.cities, c) })}
+                                className={[
+                                  "rounded-full px-2.5 py-0.5 text-xs border",
+                                  bcForm.cities.includes(c)
+                                    ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] border-[hsl(var(--accent))]"
+                                    : "border-[hsl(var(--border))] hover:bg-[hsl(var(--secondary))]"
+                                ].join(" ")}
+                                data-testid={`bc-city-${c}`}
+                              >{c}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {bcSegOpts.interests.length > 0 && (
+                        <div>
+                          <Label className="text-xs">Interessen ({bcForm.interests.length})</Label>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {bcSegOpts.interests.map((i) => (
+                              <button
+                                type="button"
+                                key={i}
+                                onClick={() => setBcForm({ ...bcForm, interests: toggleInArray(bcForm.interests, i) })}
+                                className={[
+                                  "rounded-full px-2.5 py-0.5 text-xs border",
+                                  bcForm.interests.includes(i)
+                                    ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] border-[hsl(var(--accent))]"
+                                    : "border-[hsl(var(--border))] hover:bg-[hsl(var(--secondary))]"
+                                ].join(" ")}
+                                data-testid={`bc-interest-${i}`}
+                              >{i}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {bcSegOpts.genders.length > 0 && (
+                        <div>
+                          <Label className="text-xs">Geschlechtsidentitäten ({bcForm.genders.length})</Label>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {bcSegOpts.genders.map((g) => (
+                              <button
+                                type="button"
+                                key={g}
+                                onClick={() => setBcForm({ ...bcForm, genders: toggleInArray(bcForm.genders, g) })}
+                                className={[
+                                  "rounded-full px-2.5 py-0.5 text-xs border",
+                                  bcForm.genders.includes(g)
+                                    ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] border-[hsl(var(--accent))]"
+                                    : "border-[hsl(var(--border))] hover:bg-[hsl(var(--secondary))]"
+                                ].join(" ")}
+                              >{g}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-2 max-w-sm">
+                        <div>
+                          <Label className="text-xs">Alter min</Label>
+                          <Input type="number" min="18" max="120" value={bcForm.age_min} onChange={(e) => setBcForm({ ...bcForm, age_min: e.target.value })} />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Alter max</Label>
+                          <Input type="number" min="18" max="120" value={bcForm.age_max} onChange={(e) => setBcForm({ ...bcForm, age_max: e.target.value })} />
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-[hsl(var(--muted-foreground))]">
+                        Mehrere Filter innerhalb einer Kategorie = ODER; Kategorien untereinander = UND.
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex justify-end">
                   <Button onClick={submitBroadcast} disabled={bcBusy} data-testid="bc-submit">{bcBusy ? "Sende…" : "Authentisch signieren & senden"}</Button>
@@ -1565,7 +1686,9 @@ function UserMiniCard({ title, u }) {
             {u.id_verified && <Badge>ID verifiziert</Badge>}
           </div>
           <div className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
-            <a href={`/profile/${u.id}`} target="_blank" rel="noreferrer" className="underline">Profil öffnen ↗</a>
+            <Link to={`/profile/${u.id}`} target="_blank" rel="noreferrer" className="underline inline-flex items-center gap-1">
+              Profil öffnen <ExternalLink className="h-3 w-3" />
+            </Link>
           </div>
         </div>
       ) : <div className="text-sm text-[hsl(var(--muted-foreground))]">Nicht verfügbar</div>}
