@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { FilterDrawer } from "../components/FilterDrawer";
@@ -10,8 +10,9 @@ import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Link } from "react-router-dom";
-import { Shield } from "lucide-react";
+import { Shield, CheckSquare, Square } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { AdminBulkBar } from "../components/AdminBulkBar";
 
 export default function DiscoverPage() {
   const { t } = useTranslation();
@@ -22,10 +23,16 @@ export default function DiscoverPage() {
   const [skip, setSkip] = useState(0);
 
   const isStaff = user && ["admin", "moderator", "superadmin", "content_reviewer", "support"].includes(user.role);
+  const isAdminLike = user && ["admin", "superadmin"].includes(user.role);
   const [adminMode, setAdminMode] = useState(false);
   const [adminQuery, setAdminQuery] = useState("");
   const [adminOpts, setAdminOpts] = useState({ include_hidden: true, include_banned: true });
   const [adminTotal, setAdminTotal] = useState(0);
+
+  // Bulk selection state (admin-only)
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const load = useCallback(async (skipValue = 0) => {
     setLoading(true);
@@ -58,6 +65,11 @@ export default function DiscoverPage() {
 
   useEffect(() => { load(0); setSkip(0); }, [load]);
 
+  // Exit select mode whenever admin mode is turned off
+  useEffect(() => {
+    if (!adminMode) { setSelectMode(false); setSelectedIds([]); }
+  }, [adminMode]);
+
   const saveFilters = async (prefs) => {
     try {
       await api.patch("/me", { preferences: prefs });
@@ -73,6 +85,34 @@ export default function DiscoverPage() {
     const next = skip + 20;
     setSkip(next);
     load(next);
+  };
+
+  const toggleSelected = (id) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+  const selectAllVisible = () => {
+    const visible = results.map((u) => u.id);
+    const allIn = visible.every((id) => selectedIds.includes(id));
+    setSelectedIds(allIn ? selectedIds.filter((id) => !visible.includes(id)) : Array.from(new Set([...selectedIds, ...visible])));
+  };
+  const allVisibleSelected = useMemo(
+    () => results.length > 0 && results.every((u) => selectedIds.includes(u.id)),
+    [results, selectedIds]
+  );
+
+  const runBulk = async (action) => {
+    if (selectedIds.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const { data } = await api.post("/admin/users/bulk", { user_ids: selectedIds, action });
+      toast.success(`Aktion "${action}" auf ${data.modified}/${data.matched} Konten angewendet`);
+      setSelectedIds([]);
+      await load(0); setSkip(0);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Bulk-Aktion fehlgeschlagen");
+    } finally {
+      setBulkBusy(false);
+    }
   };
 
   return (
@@ -136,10 +176,38 @@ export default function DiscoverPage() {
                   <label className="flex items-center gap-1 text-xs cursor-pointer" title="Gebannte Profile einbeziehen">
                     <input type="checkbox" checked={adminOpts.include_banned} onChange={(e) => setAdminOpts({ ...adminOpts, include_banned: e.target.checked })} /> gebannt
                   </label>
+                  {isAdminLike && (
+                    <Button
+                      size="sm"
+                      variant={selectMode ? "default" : "outline"}
+                      className="rounded-full h-8 gap-1 text-xs"
+                      onClick={() => {
+                        setSelectMode((s) => !s);
+                        if (selectMode) setSelectedIds([]);
+                      }}
+                      data-testid="admin-discover-select-toggle"
+                    >
+                      {selectMode ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+                      {selectMode ? "Auswahl beenden" : "Auswahlmodus"}
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
           </section>
+
+          {/* Bulk action bar */}
+          {isAdminLike && adminMode && selectMode && (
+            <AdminBulkBar
+              selectedIds={selectedIds}
+              totalCount={results.length}
+              onSelectAll={selectAllVisible}
+              onClear={() => setSelectedIds([])}
+              onAction={runBulk}
+              allVisibleSelected={allVisibleSelected}
+              busy={bulkBusy}
+            />
+          )}
 
           {/* Quick filter bar — hidden in admin mode */}
           {!(isStaff && adminMode) && (
@@ -165,13 +233,46 @@ export default function DiscoverPage() {
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5" data-testid="discover-grid">
-                {results.map((u) => (
-                  <ProfileCard
-                    key={u.id}
-                    user={u}
-                    visited={(user?.seen_user_ids || []).includes(u.id)}
-                  />
-                ))}
+                {results.map((u) => {
+                  const selected = selectedIds.includes(u.id);
+                  return (
+                    <div
+                      key={u.id}
+                      className={[
+                        "relative",
+                        selectMode ? "cursor-pointer" : "",
+                        selected ? "ring-2 ring-[hsl(var(--accent))] rounded-[var(--radius-lg)]" : "",
+                      ].join(" ")}
+                      onClickCapture={(e) => {
+                        if (selectMode) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleSelected(u.id);
+                        }
+                      }}
+                      data-testid={`admin-discover-card-wrap-${u.id}`}
+                    >
+                      <ProfileCard
+                        user={u}
+                        visited={(user?.seen_user_ids || []).includes(u.id)}
+                      />
+                      {selectMode && (
+                        <div
+                          className={[
+                            "absolute left-2.5 top-2.5 z-20 h-6 w-6 rounded-md grid place-items-center backdrop-blur-sm border transition-colors",
+                            selected
+                              ? "bg-[hsl(var(--accent))] border-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]"
+                              : "bg-black/55 border-white/40 text-white",
+                          ].join(" ")}
+                          aria-hidden
+                          data-testid={`admin-discover-checkbox-${u.id}`}
+                        >
+                          {selected ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               {hasMore && (
                 <div className="mt-10 flex justify-center">

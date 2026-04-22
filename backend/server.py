@@ -2082,6 +2082,96 @@ async def admin_unban(user_id: str, user=Depends(_require_user)):
     return {"ok": True}
 
 
+# ---------- Bulk user actions (Admin Discover Grid) ----------
+ALLOWED_BULK_ACTIONS = {
+    "ban", "unban",
+    "hide", "unhide",
+    "shadow", "unshadow",
+    "require_id_verification", "clear_id_requirement",
+}
+
+@api_router.post("/admin/users/bulk")
+async def admin_users_bulk(payload: dict, user=Depends(_require_user)):
+    """Apply a moderation action to many users in one call.
+
+    Body: { user_ids: [str], action: str, reason?: str }
+    Actions: ban | unban | hide | unhide | shadow | unshadow |
+             require_id_verification | clear_id_requirement
+    """
+    await _require_role(user, ["admin", "superadmin"])
+    payload = payload or {}
+    user_ids = payload.get("user_ids") or []
+    action = (payload.get("action") or "").strip()
+    reason = (payload.get("reason") or "").strip() or None
+    if not isinstance(user_ids, list) or not user_ids:
+        raise HTTPException(400, "user_ids (Liste) erforderlich")
+    if action not in ALLOWED_BULK_ACTIONS:
+        raise HTTPException(400, f"Ungültige Action. Erlaubt: {sorted(ALLOWED_BULK_ACTIONS)}")
+    # Hard-guard: never touch the system user or the caller themselves
+    protected = {EROS_SYSTEM_USER_ID, user["id"]}
+    ids = [uid for uid in user_ids if isinstance(uid, str) and uid and uid not in protected]
+    if not ids:
+        return {"ok": True, "matched": 0, "modified": 0, "skipped": len(user_ids)}
+
+    # Also protect other superadmins from being mass-banned by non-superadmins
+    if user.get("role") != "superadmin" and action in {"ban", "hide", "shadow"}:
+        supers = await db.users.find({"id": {"$in": ids}, "role": "superadmin"}, {"id": 1}).to_list(length=None)
+        super_ids = {s["id"] for s in supers}
+        ids = [i for i in ids if i not in super_ids]
+        if not ids:
+            raise HTTPException(403, "Keine zulässigen Zielkonten (Superadmins geschützt)")
+
+    q = {"id": {"$in": ids}}
+    update_set: Dict = {}
+    update_unset: Dict = {}
+
+    if action == "ban":
+        update_set["banned"] = True
+        if reason:
+            update_set["ban_reason"] = reason
+    elif action == "unban":
+        update_set["banned"] = False
+        update_unset["ban_reason"] = ""
+    elif action == "hide":
+        update_set["privacy.hidden_mode"] = True
+    elif action == "unhide":
+        update_set["privacy.hidden_mode"] = False
+    elif action == "shadow":
+        update_set["shadow_restricted"] = True
+        if reason:
+            update_set["shadow_reason"] = reason
+    elif action == "unshadow":
+        update_set["shadow_restricted"] = False
+        update_unset["shadow_reason"] = ""
+    elif action == "require_id_verification":
+        update_set["requires_id_verification"] = True
+    elif action == "clear_id_requirement":
+        update_set["requires_id_verification"] = False
+
+    mongo_update: Dict = {}
+    if update_set:
+        mongo_update["$set"] = update_set
+    if update_unset:
+        mongo_update["$unset"] = update_unset
+    if not mongo_update:
+        return {"ok": True, "matched": 0, "modified": 0, "skipped": len(user_ids)}
+
+    res = await db.users.update_many(q, mongo_update)
+    await _audit(
+        user["id"],
+        f"bulk_{action}",
+        None,
+        {"user_ids": ids, "count": len(ids), "reason": reason, "modified": res.modified_count},
+    )
+    return {
+        "ok": True,
+        "matched": res.matched_count,
+        "modified": res.modified_count,
+        "skipped": len(user_ids) - len(ids),
+        "action": action,
+    }
+
+
 @api_router.get("/admin/users")
 async def admin_list_users(user=Depends(_require_user), q: Optional[str] = None,
                            include_hidden: bool = True, include_banned: bool = True):

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { MapPin, Eye, ShieldCheck } from "lucide-react";
 import { NsfwBlurOverlay } from "./NsfwBlurOverlay";
+import { RoleBadge } from "./RoleBadge";
 
 export function ProfileCard({ user, visited = false }) {
   const [revealed, setRevealed] = useState(false);
@@ -60,7 +61,7 @@ export function ProfileCard({ user, visited = false }) {
             <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/90 text-white px-2 py-0.5 text-[10.5px] font-medium">shadow</span>
           )}
           {user.admin_flags?.role && user.admin_flags.role !== "user" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-wide">{user.admin_flags.role}</span>
+            <RoleBadge role={user.admin_flags.role} size="xs" />
           )}
         </div>
 
@@ -97,14 +98,27 @@ export function ProfileCard({ user, visited = false }) {
             <span className="ml-1.5 text-white/80 text-[13px] font-sans font-normal">{user.age}</span>
           </div>
           <div className="mt-1 flex items-center gap-2 text-[11.5px] text-white/85">
-            {user.pronouns && <span className="truncate">{user.pronouns}</span>}
+            {user.city && (
+              <span
+                className="inline-flex items-center gap-1 truncate"
+                data-testid="profile-card-city"
+                title={user.city}
+              >
+                <MapPin className="h-3 w-3 shrink-0" />
+                <span className="truncate">{user.city}</span>
+              </span>
+            )}
             {typeof user.distance_km === "number" && (
               <span
-                className="inline-flex items-center gap-1"
+                className="inline-flex items-center gap-1 shrink-0"
                 data-testid="profile-card-distance-text"
               >
-                <MapPin className="h-3 w-3" /> ~{user.distance_km} km
+                {!user.city && <MapPin className="h-3 w-3" />}
+                ~{user.distance_km} km
               </span>
+            )}
+            {!user.city && !(typeof user.distance_km === "number") && user.pronouns && (
+              <span className="truncate">{user.pronouns}</span>
             )}
           </div>
         </div>

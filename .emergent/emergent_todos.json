@@ -1,26 +1,38 @@
 [
   {
-    "content": "Team-basierte Kanal-Zuweisung: Backend Role-Channel-Mapping + fallback in broadcast/list",
+    "content": "Explore: Profil-Seiten (Stadt-Anzeige), Team-Badge-Komponente, Admin Discover Grid",
     "status": "completed"
   },
   {
-    "content": "Admin-UI: Team-Kanäle Tab für Superadmin mit Rolle × Kanal Matrix",
+    "content": "Backend: `public_user_from_doc` gibt `city` zurück (aus `location.city`)",
     "status": "completed"
   },
   {
-    "content": "30 weitere Seed-Accounts mit variierten Profilen generieren",
+    "content": "Frontend: Stadt in ProfileCard (unter Distanz) und in ProfileViewPage anzeigen",
     "status": "completed"
   },
   {
-    "content": "Broadcasts mit Authentizitäts-Siegel: Backend Model + Endpoints",
+    "content": "RoleBadge-Komponente mit Tooltip-Erklärung erstellen (admin/moderator/superadmin/content_reviewer/support)",
     "status": "completed"
   },
   {
-    "content": "Frontend: Admin Broadcast-Composer + User-seitige Broadcast-Anzeige mit Siegel",
+    "content": "RoleBadge in AdminPage Users-Tab + ProfileCard (admin_flags.role) + ProfileViewPage verwenden",
     "status": "completed"
   },
   {
-    "content": "Build-Check + visuelle Verifikation per Screenshot",
+    "content": "Backend: `POST /api/admin/users/bulk` Endpoint für Bulk-Actions (ban/unban/hide/unhide/shadow/unshadow) mit Audit-Log",
     "status": "completed"
+  },
+  {
+    "content": "Frontend: Multi-Select + Bulk-Action-Bar in DiscoverPage Admin-Ansicht",
+    "status": "completed"
+  },
+  {
+    "content": "Testen & Screenshots: Profile mit Stadt, Badge-Tooltips, Bulk-Actions",
+    "status": "completed"
+  },
+  {
+    "content": "Nach den 3 Tasks: Umfang von Mobile Re-Sync mit Nutzer klären",
+    "status": "in_progress"
   }
 ]

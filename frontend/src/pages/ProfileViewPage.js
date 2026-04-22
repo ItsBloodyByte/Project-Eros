@@ -16,6 +16,7 @@ import { Textarea } from "../components/ui/textarea";
 import { useAuth } from "../lib/AuthContext";
 import { PENIS_RANGES } from "../lib/constants";
 import { useTranslation } from "react-i18next";
+import { RoleBadge } from "../components/RoleBadge";
 
 function Row({ label, value }) {
   if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
@@ -197,18 +198,29 @@ export default function ProfileViewPage() {
                         .filter(Boolean).join(" · ")}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {profile.id_verified && (
                       <Badge className="gap-1 bg-[hsl(var(--accent))]/90 hover:bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]" data-testid="profile-id-verified-badge">
                         <ShieldCheck className="h-3 w-3" /> ID verifiziert
                       </Badge>
                     )}
+                    {profile.role && profile.role !== "user" && (
+                      <RoleBadge role={profile.role} />
+                    )}
                     {isAdminViewer && <Badge variant="outline" className="gap-1"><EyeOff className="h-3 w-3" /> {t("profile.admin_only")}</Badge>}
                   </div>
                 </div>
-                <div className="mt-2 flex items-center gap-3 text-sm text-[hsl(var(--muted-foreground))]">
+                <div className="mt-2 flex items-center gap-3 text-sm text-[hsl(var(--muted-foreground))] flex-wrap">
+                  {profile.city && (
+                    <span className="inline-flex items-center gap-1" data-testid="profile-city">
+                      <MapPin className="h-4 w-4" /> {profile.city}
+                    </span>
+                  )}
                   {typeof profile.distance_km === "number" && (
-                    <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" /> ~{profile.distance_km} km</span>
+                    <span className="inline-flex items-center gap-1" data-testid="profile-distance">
+                      {!profile.city && <MapPin className="h-4 w-4" />}
+                      ~{profile.distance_km} km
+                    </span>
                   )}
                   {profile.is_online && <span className="inline-flex items-center gap-1"><span className="online-dot" /> {t("profile.online")}</span>}
                 </div>

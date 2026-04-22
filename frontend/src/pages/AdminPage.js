@@ -16,6 +16,7 @@ import { Bell, ShieldAlert, BadgeCheck, ExternalLink } from "lucide-react";
 import { Switch } from "../components/ui/switch";
 import { useAuth } from "../lib/AuthContext";
 import { toast } from "sonner";
+import { RoleBadge } from "../components/RoleBadge";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -717,7 +718,13 @@ export default function AdminPage() {
                         </TableCell>
                         <TableCell className="font-mono text-xs">{u.email}</TableCell>
                         <TableCell>{u.age}</TableCell>
-                        <TableCell><Badge variant="outline">{u.role || "user"}</Badge></TableCell>
+                        <TableCell>
+                          {u.role && u.role !== "user" ? (
+                            <RoleBadge role={u.role} />
+                          ) : (
+                            <Badge variant="outline">user</Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="space-x-1">
                           {u.banned && <Badge variant="destructive">banned</Badge>}
                           {u.shadow_restricted && <Badge variant="secondary">shadow</Badge>}
