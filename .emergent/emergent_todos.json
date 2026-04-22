@@ -1,42 +1,26 @@
 [
   {
-    "content": "Schriftart modernisieren: Playfair Display entfernen, Figtree global (+ Fredoka als optionaler Display-Akzent)",
+    "content": "Team-basierte Kanal-Zuweisung: Backend Role-Channel-Mapping + fallback in broadcast/list",
     "status": "completed"
   },
   {
-    "content": "Verifiziert-Badge nur noch bei id_verified (ProfileCard + ProfileView)",
+    "content": "Admin-UI: Team-Kanäle Tab für Superadmin mit Rolle × Kanal Matrix",
     "status": "completed"
   },
   {
-    "content": "Container-Breiten vereinheitlichen: Account, Settings, EditProfile auf max-w-6xl",
+    "content": "30 weitere Seed-Accounts mit variierten Profilen generieren",
     "status": "completed"
   },
   {
-    "content": "Double-Row Desktop Layout für Profil bearbeiten (MyProfile) und Profilansicht",
+    "content": "Broadcasts mit Authentizitäts-Siegel: Backend Model + Endpoints",
     "status": "completed"
   },
   {
-    "content": "Admin Panel: Report-Details Dialog mit vollem Kontext",
+    "content": "Frontend: Admin Broadcast-Composer + User-seitige Broadcast-Anzeige mit Siegel",
     "status": "completed"
   },
   {
-    "content": "Profil-Vorschau-Modus: eigener Profil-Preview als andere User",
-    "status": "completed"
-  },
-  {
-    "content": "Unmatch/Block Pills in ProfileView + Backend Endpoints",
-    "status": "completed"
-  },
-  {
-    "content": "Skeleton-States für Alben-Seite",
-    "status": "completed"
-  },
-  {
-    "content": "Screenshot-Detection-Events (Admin Audit + User-Benachrichtigung)",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend Build + visuelle Verifikation per Screenshot",
+    "content": "Build-Check + visuelle Verifikation per Screenshot",
     "status": "completed"
   }
 ]

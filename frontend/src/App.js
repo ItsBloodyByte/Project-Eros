@@ -18,6 +18,7 @@ import AdminPage from "./pages/AdminPage";
 import AccountPage from "./pages/AccountPage";
 import EventsPage from "./pages/EventsPage";
 import LegalPage from "./pages/LegalPage";
+import { BroadcastBanner } from "./components/BroadcastBanner";
 import "./App.css";
 
 function Protected({ children }) {
@@ -63,7 +64,12 @@ function AppRoutes() {
 function ThemedApp() {
   useTheme();
   useEffect(() => { installScreenshotDeterrents(); }, []);
-  return <AppRoutes />;
+  return (
+    <>
+      <BroadcastBanner />
+      <AppRoutes />
+    </>
+  );
 }
 
 function App() {

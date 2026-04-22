@@ -11,7 +11,7 @@ import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
-import { Bell, ShieldAlert } from "lucide-react";
+import { Bell, ShieldAlert, BadgeCheck } from "lucide-react";
 import { Switch } from "../components/ui/switch";
 import { useAuth } from "../lib/AuthContext";
 import { toast } from "sonner";
@@ -319,6 +319,66 @@ export default function AdminPage() {
   };
   const isChannelActive = (c) => channelsState.all_subscribed || (channelsState.channels || []).includes(c);
 
+  // Team role-channel matrix (superadmin)
+  const [roleChannels, setRoleChannels] = useState(null);
+  const loadRoleChannels = async () => {
+    try {
+      const { data } = await api.get("/admin/role-channels");
+      setRoleChannels(data);
+    } catch (e) { toast.error(e.response?.data?.detail || "Konnte Team-Kanäle nicht laden"); }
+  };
+  const toggleRoleChannel = (role, c) => {
+    setRoleChannels((prev) => {
+      if (!prev) return prev;
+      const cur = prev.roles[role];
+      const current = [...(cur.channels || [])];
+      const next = current.includes(c) ? current.filter((x) => x !== c) : [...current, c];
+      return { ...prev, roles: { ...prev.roles, [role]: { ...cur, channels: next, overridden: true } } };
+    });
+  };
+  const saveRoleChannels = async (role) => {
+    try {
+      const channels = roleChannels.roles[role].channels;
+      await api.post(`/admin/role-channels/${role}`, { channels });
+      toast.success(`Kanäle für Rolle „${role}" gespeichert`);
+      await loadRoleChannels();
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
+  };
+  const resetRoleChannels = async (role) => {
+    try {
+      await api.post(`/admin/role-channels/${role}`, { reset: true });
+      toast.success(`Rolle „${role}" auf Standard zurückgesetzt`);
+      await loadRoleChannels();
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
+  };
+
+  // Broadcasts composer
+  const [broadcasts, setBroadcasts] = useState([]);
+  const [bcForm, setBcForm] = useState({ title: "", body: "", severity: "info", audience: "all", pinned: false });
+  const [bcBusy, setBcBusy] = useState(false);
+  const loadBroadcasts = async () => {
+    try {
+      const { data } = await api.get("/admin/broadcasts");
+      setBroadcasts(data.broadcasts || []);
+    } catch {}
+  };
+  const submitBroadcast = async () => {
+    if (!bcForm.title.trim() || !bcForm.body.trim()) { toast.error("Titel und Inhalt sind Pflicht"); return; }
+    setBcBusy(true);
+    try {
+      await api.post("/admin/broadcasts", bcForm);
+      toast.success("Broadcast veröffentlicht & authentisch signiert");
+      setBcForm({ title: "", body: "", severity: "info", audience: "all", pinned: false });
+      await loadBroadcasts();
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
+    finally { setBcBusy(false); }
+  };
+  const deleteBroadcast = async (id) => {
+    if (!confirm("Broadcast wirklich löschen?")) return;
+    try { await api.delete(`/admin/broadcasts/${id}`); toast.success("Gelöscht"); await loadBroadcasts(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Fehlgeschlagen"); }
+  };
+
   const updateStatus = async (id, status) => {
     await api.post(`/admin/reports/${id}/status`, { status });
     await loadAll();
@@ -541,6 +601,8 @@ export default function AdminPage() {
               {isSuper && <TabsTrigger value="ai" data-testid="admin-tab-ai">KI-Konfig</TabsTrigger>}
               {isSuper && <TabsTrigger value="payments" data-testid="admin-tab-payments">Zahlungen</TabsTrigger>}
               {isSuper && <TabsTrigger value="legal" data-testid="admin-tab-legal" onClick={() => loadLegal(legalKey)}>Rechtliches</TabsTrigger>}
+              <TabsTrigger value="broadcasts" data-testid="admin-tab-broadcasts" onClick={() => loadBroadcasts()}>Broadcasts</TabsTrigger>
+              {isSuper && <TabsTrigger value="team-channels" data-testid="admin-tab-team-channels" onClick={() => loadRoleChannels()}>Team-Kanäle</TabsTrigger>}
               <TabsTrigger value="audit" data-testid="admin-tab-audit">Audit</TabsTrigger>
             </TabsList>
 
@@ -859,6 +921,134 @@ export default function AdminPage() {
                     <a href={`/legal/${legalKey}`} target="_blank" rel="noreferrer" className="text-sm underline text-[hsl(var(--muted-foreground))]" data-testid="legal-preview-link">Vorschau öffnen ↗</a>
                     <Button onClick={saveLegal} data-testid="legal-save-button">Speichern</Button>
                   </div>
+                </div>
+              </TabsContent>
+            )}
+
+            <TabsContent value="broadcasts" className="mt-4 space-y-4">
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="font-display text-lg">Broadcast verfassen</div>
+                  <Badge variant="outline" className="gap-1"><ShieldAlert className="h-3 w-3" /> HMAC-SHA256 signiert</Badge>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="md:col-span-3">
+                    <Label>Titel</Label>
+                    <Input value={bcForm.title} onChange={(e) => setBcForm({ ...bcForm, title: e.target.value })} maxLength={160} data-testid="bc-title" placeholder="Kurze, prägnante Überschrift" />
+                  </div>
+                  <div>
+                    <Label>Severity</Label>
+                    <Select value={bcForm.severity} onValueChange={(v) => setBcForm({ ...bcForm, severity: v })}>
+                      <SelectTrigger data-testid="bc-severity"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="info">Info</SelectItem>
+                        <SelectItem value="warning">Warnung</SelectItem>
+                        <SelectItem value="urgent">Dringend</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Zielgruppe</Label>
+                    <Select value={bcForm.audience} onValueChange={(v) => setBcForm({ ...bcForm, audience: v })}>
+                      <SelectTrigger data-testid="bc-audience"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Alle Nutzer</SelectItem>
+                        <SelectItem value="premium">Nur Premium</SelectItem>
+                        <SelectItem value="verified">Nur ID-verifiziert</SelectItem>
+                        <SelectItem value="staff">Nur Team (Staff)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <label className="flex items-center gap-2 mt-6">
+                    <Switch checked={bcForm.pinned} onCheckedChange={(v) => setBcForm({ ...bcForm, pinned: v })} data-testid="bc-pinned" /> Anheften
+                  </label>
+                  <div className="md:col-span-3">
+                    <Label>Inhalt</Label>
+                    <textarea className="w-full min-h-[140px] rounded-md border bg-background p-3 text-sm" maxLength={5000} value={bcForm.body} onChange={(e) => setBcForm({ ...bcForm, body: e.target.value })} data-testid="bc-body" placeholder="Offizielle Mitteilung an deine Zielgruppe …" />
+                    <div className="text-[11px] text-right text-[hsl(var(--muted-foreground))]">{bcForm.body.length}/5000</div>
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={submitBroadcast} disabled={bcBusy} data-testid="bc-submit">{bcBusy ? "Sende…" : "Authentisch signieren & senden"}</Button>
+                </div>
+              </div>
+
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
+                <Table>
+                  <TableHeader><TableRow>
+                    <TableHead>Titel</TableHead><TableHead>Severity</TableHead><TableHead>Zielgruppe</TableHead><TableHead>Siegel</TableHead><TableHead>Erstellt</TableHead><TableHead>Aktionen</TableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {broadcasts.map((b) => (
+                      <TableRow key={b.id} data-testid={`bc-row-${b.id}`}>
+                        <TableCell className="max-w-[280px] truncate">
+                          <div className="font-medium">{b.pinned && "📌 "}{b.title}</div>
+                          <div className="text-xs text-[hsl(var(--muted-foreground))] truncate">{b.body}</div>
+                        </TableCell>
+                        <TableCell><Badge variant={b.severity === "urgent" ? "destructive" : b.severity === "warning" ? "outline" : "secondary"}>{b.severity}</Badge></TableCell>
+                        <TableCell>{b.audience}</TableCell>
+                        <TableCell>
+                          {b.authentic
+                            ? <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--accent))]"><BadgeCheck className="h-3 w-3" /> verifiziert</span>
+                            : <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--destructive))]">ungültig</span>}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{(b.created_at || "").slice(0,19).replace("T", " ")}</TableCell>
+                        <TableCell><Button size="sm" variant="destructive" onClick={() => deleteBroadcast(b.id)} data-testid={`bc-delete-${b.id}`}>Löschen</Button></TableCell>
+                      </TableRow>
+                    ))}
+                    {broadcasts.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-6">Keine Broadcasts.</TableCell></TableRow>}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+
+            {isSuper && (
+              <TabsContent value="team-channels" className="mt-4">
+                <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <div className="font-display text-lg">Team-Kanal-Zuweisung</div>
+                      <div className="text-xs text-[hsl(var(--muted-foreground))]">Legt Standard-Benachrichtigungen pro Rolle fest. Individuelle User-Einstellungen überschreiben diese Defaults.</div>
+                    </div>
+                  </div>
+                  {!roleChannels && <div className="text-sm text-[hsl(var(--muted-foreground))]">Lädt…</div>}
+                  {roleChannels && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left border-b">
+                            <th className="py-2 pr-3">Rolle</th>
+                            {roleChannels.available_channels.map((c) => (
+                              <th key={c} className="py-2 px-2 text-[11px] font-mono text-[hsl(var(--muted-foreground))]">{c}</th>
+                            ))}
+                            <th className="py-2 px-2 text-right">Aktion</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(roleChannels.roles).map(([role, info]) => (
+                            <tr key={role} className="border-b" data-testid={`role-row-${role}`}>
+                              <td className="py-2 pr-3 font-medium capitalize">
+                                {role} {info.overridden && <Badge variant="outline" className="ml-1 text-[10px]">angepasst</Badge>}
+                              </td>
+                              {roleChannels.available_channels.map((c) => (
+                                <td key={c} className="py-2 px-2 text-center">
+                                  <Switch
+                                    checked={info.channels.includes(c)}
+                                    onCheckedChange={() => toggleRoleChannel(role, c)}
+                                    data-testid={`role-toggle-${role}-${c}`}
+                                  />
+                                </td>
+                              ))}
+                              <td className="py-2 px-2 text-right space-x-1">
+                                <Button size="sm" onClick={() => saveRoleChannels(role)} data-testid={`role-save-${role}`}>Speichern</Button>
+                                {info.overridden && <Button size="sm" variant="ghost" onClick={() => resetRoleChannels(role)}>Zurücksetzen</Button>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
             )}

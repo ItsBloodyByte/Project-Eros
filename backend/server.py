@@ -1031,6 +1031,31 @@ ADMIN_NOTIFICATION_CHANNELS = [
     "photo_retention_set",
 ]
 
+# Default team-based channel assignments (when no explicit role config set)
+DEFAULT_ROLE_CHANNELS: Dict[str, List[str]] = {
+    "support": ["new_report", "id_verification_submitted"],
+    "content_reviewer": ["new_report", "id_verification_submitted", "photo_retention_set", "auto_shadow_restrict"],
+    "moderator": ADMIN_NOTIFICATION_CHANNELS,
+    "admin": ADMIN_NOTIFICATION_CHANNELS,
+    "superadmin": ADMIN_NOTIFICATION_CHANNELS,
+}
+
+
+async def _role_channels(role: str) -> List[str]:
+    """Resolve channels assigned to a role. Admin-configured docs override defaults."""
+    doc = await db.role_channel_assignments.find_one({"role": role})
+    if doc and isinstance(doc.get("channels"), list):
+        return [c for c in doc["channels"] if c in ADMIN_NOTIFICATION_CHANNELS]
+    return list(DEFAULT_ROLE_CHANNELS.get(role, ADMIN_NOTIFICATION_CHANNELS))
+
+
+async def _resolve_user_channels(user_doc: dict) -> List[str]:
+    """User-level channels take priority; fallback to role-level assignment."""
+    stored = user_doc.get("admin_notification_channels")
+    if stored is not None:
+        return [c for c in stored if c in ADMIN_NOTIFICATION_CHANNELS]
+    return await _role_channels(user_doc.get("role") or "user")
+
 
 class AdminWSManager:
     """Broadcasts moderation events to all connected admin/moderator sockets.
@@ -1101,16 +1126,13 @@ async def ws_admin(websocket: WebSocket, token: str = Query(...), channels: Opti
     if not user or user.get("role") not in {"admin", "moderator", "superadmin", "content_reviewer"}:
         await websocket.close(code=4403)
         return
-    # Channel resolution order: query string (ad-hoc), stored user prefs, else all.
+    # Channel resolution: query string (ad-hoc) > user prefs > team default > all.
     if channels:
         requested = {c.strip() for c in channels.split(",") if c.strip()}
         subs = (requested & set(ADMIN_NOTIFICATION_CHANNELS)) or None
     else:
-        stored = user.get("admin_notification_channels")
-        if stored is None:
-            subs = None  # all
-        else:
-            subs = (set(stored) & set(ADMIN_NOTIFICATION_CHANNELS)) or set()
+        resolved = await _resolve_user_channels(user)
+        subs = set(resolved) if resolved else set()
     await admin_ws_manager.connect(websocket, subs)
     try:
         # Send a greeting with recent unread notifications so newly-connected mods catch up
@@ -1151,23 +1173,31 @@ async def ws_admin(websocket: WebSocket, token: str = Query(...), channels: Opti
 @api_router.get("/admin/notifications")
 async def list_admin_notifications(user=Depends(_require_user), limit: int = 50):
     await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
-    # Respect stored channel subscriptions. None == all.
-    stored = user.get("admin_notification_channels")
-    q: Dict = {}
-    if stored is not None:
-        channels = list(set(stored) & set(ADMIN_NOTIFICATION_CHANNELS))
-        q = {"type": {"$in": channels}} if channels else {"type": {"$in": ["__never__"]}}
+    resolved = await _resolve_user_channels(user)
+    q: Dict = {"type": {"$in": resolved}} if resolved else {"type": {"$in": ["__never__"]}}
     items = await db.admin_notifications.find(q).sort("created_at", -1).limit(min(limit, 200)).to_list(length=limit)
-    return {"notifications": serialize_doc(items), "subscribed_channels": stored, "available_channels": ADMIN_NOTIFICATION_CHANNELS}
+    stored = user.get("admin_notification_channels")
+    return {
+        "notifications": serialize_doc(items),
+        "subscribed_channels": stored,
+        "effective_channels": resolved,
+        "source": "user" if stored is not None else "team",
+        "available_channels": ADMIN_NOTIFICATION_CHANNELS,
+    }
 
 
 @api_router.get("/admin/notifications/channels")
 async def get_notification_channels(user=Depends(_require_user)):
     await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
     stored = user.get("admin_notification_channels")
+    resolved = await _resolve_user_channels(user)
+    team_channels = await _role_channels(user.get("role") or "user")
     return {
-        "channels": stored if stored is not None else ADMIN_NOTIFICATION_CHANNELS,
+        "channels": stored if stored is not None else resolved,
+        "effective_channels": resolved,
         "all_subscribed": stored is None,
+        "source": "user" if stored is not None else "team",
+        "team_channels": team_channels,
         "available_channels": ADMIN_NOTIFICATION_CHANNELS,
     }
 
@@ -1176,15 +1206,233 @@ async def get_notification_channels(user=Depends(_require_user)):
 async def set_notification_channels(payload: dict, user=Depends(_require_user)):
     await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
     payload = payload or {}
-    if payload.get("all_subscribed"):
+    if payload.get("all_subscribed") or payload.get("use_team_default"):
         await db.users.update_one({"id": user["id"]}, {"$unset": {"admin_notification_channels": ""}})
-        return {"channels": ADMIN_NOTIFICATION_CHANNELS, "all_subscribed": True, "available_channels": ADMIN_NOTIFICATION_CHANNELS}
+        team = await _role_channels(user.get("role") or "user")
+        return {
+            "channels": team,
+            "effective_channels": team,
+            "all_subscribed": True,
+            "source": "team",
+            "team_channels": team,
+            "available_channels": ADMIN_NOTIFICATION_CHANNELS,
+        }
     raw = payload.get("channels") or []
     if not isinstance(raw, list):
         raise HTTPException(400, "channels must be a list")
     cleaned = [c for c in raw if c in ADMIN_NOTIFICATION_CHANNELS]
     await db.users.update_one({"id": user["id"]}, {"$set": {"admin_notification_channels": cleaned}})
-    return {"channels": cleaned, "all_subscribed": False, "available_channels": ADMIN_NOTIFICATION_CHANNELS}
+    return {
+        "channels": cleaned,
+        "effective_channels": cleaned,
+        "all_subscribed": False,
+        "source": "user",
+        "team_channels": await _role_channels(user.get("role") or "user"),
+        "available_channels": ADMIN_NOTIFICATION_CHANNELS,
+    }
+
+
+# ---- Team (role-based) channel assignment — superadmin ----
+@api_router.get("/admin/role-channels")
+async def get_role_channels(user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    roles = ["support", "content_reviewer", "moderator", "admin", "superadmin"]
+    out = {}
+    for r in roles:
+        out[r] = {
+            "role": r,
+            "channels": await _role_channels(r),
+            "default": DEFAULT_ROLE_CHANNELS.get(r, ADMIN_NOTIFICATION_CHANNELS),
+            "overridden": bool(await db.role_channel_assignments.find_one({"role": r})),
+        }
+    return {"roles": out, "available_channels": ADMIN_NOTIFICATION_CHANNELS}
+
+
+@api_router.post("/admin/role-channels/{role}")
+async def set_role_channels(role: str, payload: dict, user=Depends(_require_user)):
+    await _require_role(user, ["superadmin"])
+    if role not in {"support", "content_reviewer", "moderator", "admin", "superadmin"}:
+        raise HTTPException(400, "Invalid role")
+    payload = payload or {}
+    if payload.get("reset"):
+        await db.role_channel_assignments.delete_one({"role": role})
+        return {"role": role, "channels": DEFAULT_ROLE_CHANNELS.get(role, ADMIN_NOTIFICATION_CHANNELS), "overridden": False}
+    raw = payload.get("channels") or []
+    if not isinstance(raw, list):
+        raise HTTPException(400, "channels must be a list")
+    cleaned = [c for c in raw if c in ADMIN_NOTIFICATION_CHANNELS]
+    await db.role_channel_assignments.update_one(
+        {"role": role},
+        {"$set": {"role": role, "channels": cleaned, "updated_at": now_utc().isoformat(), "updated_by": user["id"]}},
+        upsert=True,
+    )
+    await _audit(user["id"], "role_channels_set", role, {"channels": cleaned})
+    return {"role": role, "channels": cleaned, "overridden": True}
+
+
+# ---- Authenticated Broadcasts (official messages from the platform team) ----
+import hmac as _hmac
+import hashlib as _hashlib
+
+def _broadcast_signature(doc: dict) -> str:
+    """HMAC-SHA256 over canonical fields, using the server secret. Only the backend can produce this."""
+    from auth import JWT_SECRET
+    payload = "\n".join([
+        "v1",
+        str(doc.get("id") or ""),
+        str(doc.get("title") or ""),
+        str(doc.get("body") or ""),
+        str(doc.get("severity") or ""),
+        str(doc.get("audience") or ""),
+        str(doc.get("created_by") or ""),
+        str(doc.get("created_at") or ""),
+    ])
+    return _hmac.new(JWT_SECRET.encode("utf-8"), payload.encode("utf-8"), _hashlib.sha256).hexdigest()
+
+
+def _verify_broadcast(doc: dict) -> bool:
+    sig = doc.get("signature")
+    if not sig:
+        return False
+    return _hmac.compare_digest(sig, _broadcast_signature(doc))
+
+
+async def _public_broadcast(doc: dict, for_user_id: Optional[str] = None) -> dict:
+    # Look up author display name & role for the seal
+    author = None
+    if doc.get("created_by"):
+        author_doc = await db.users.find_one({"id": doc["created_by"]}, {"display_name": 1, "role": 1})
+        if author_doc:
+            author = {"id": author_doc.get("id"), "display_name": author_doc.get("display_name"), "role": author_doc.get("role", "admin")}
+    ack = False
+    if for_user_id:
+        ack = bool(await db.broadcast_reads.find_one({"broadcast_id": doc.get("id"), "user_id": for_user_id}))
+    return {
+        "id": doc.get("id"),
+        "title": doc.get("title"),
+        "body": doc.get("body"),
+        "severity": doc.get("severity"),
+        "audience": doc.get("audience"),
+        "created_at": doc.get("created_at"),
+        "expires_at": doc.get("expires_at"),
+        "pinned": bool(doc.get("pinned")),
+        "author": author,
+        # Authenticity seal: signature + verification flag computed server-side
+        "signature": doc.get("signature"),
+        "authentic": _verify_broadcast(doc),
+        "read": ack,
+    }
+
+
+@api_router.post("/admin/broadcasts")
+async def create_broadcast(payload: dict, user=Depends(_require_user)):
+    """Create an authentic platform broadcast. Severity: info|warning|urgent. Audience: all|premium|verified|staff."""
+    await _require_role(user, ["admin", "superadmin"])
+    payload = payload or {}
+    title = (payload.get("title") or "").strip()
+    body = (payload.get("body") or "").strip()
+    if not title or not body:
+        raise HTTPException(400, "Titel und Inhalt sind erforderlich")
+    if len(title) > 160 or len(body) > 5000:
+        raise HTTPException(400, "Titel max 160, Inhalt max 5000 Zeichen")
+    severity = payload.get("severity") or "info"
+    if severity not in {"info", "warning", "urgent"}:
+        raise HTTPException(400, "Ungültige Severity")
+    audience = payload.get("audience") or "all"
+    if audience not in {"all", "premium", "verified", "staff"}:
+        raise HTTPException(400, "Ungültige Zielgruppe")
+    expires_at = None
+    if payload.get("expires_at"):
+        try:
+            expires_at = datetime.fromisoformat(str(payload["expires_at"])).isoformat()
+        except Exception:
+            raise HTTPException(400, "expires_at ungültig")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "title": title,
+        "body": body,
+        "severity": severity,
+        "audience": audience,
+        "pinned": bool(payload.get("pinned")),
+        "expires_at": expires_at,
+        "created_by": user["id"],
+        "created_at": now_utc().isoformat(),
+    }
+    doc["signature"] = _broadcast_signature(doc)
+    await db.broadcasts.insert_one(doc)
+    await _audit(user["id"], "broadcast_created", doc["id"], {"audience": audience, "severity": severity})
+    try:
+        await notify_admins({
+            "type": "broadcast_sent", "broadcast_id": doc["id"], "severity": severity,
+            "audience": audience, "title": title, "at": doc["created_at"],
+        })
+    except Exception:
+        pass
+    return await _public_broadcast(doc)
+
+
+@api_router.get("/admin/broadcasts")
+async def list_admin_broadcasts(user=Depends(_require_user), limit: int = 100):
+    await _require_role(user, ["admin", "superadmin", "moderator", "content_reviewer", "support"])
+    items = await db.broadcasts.find({}).sort("created_at", -1).limit(min(limit, 200)).to_list(length=limit)
+    return {"broadcasts": [await _public_broadcast(d) for d in items]}
+
+
+@api_router.delete("/admin/broadcasts/{bid}")
+async def delete_broadcast(bid: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    await db.broadcasts.delete_one({"id": bid})
+    await db.broadcast_reads.delete_many({"broadcast_id": bid})
+    await _audit(user["id"], "broadcast_deleted", bid)
+    return {"ok": True}
+
+
+def _broadcast_matches_user(doc: dict, user: dict) -> bool:
+    aud = doc.get("audience") or "all"
+    if aud == "all":
+        return True
+    if aud == "staff":
+        return user.get("role") in {"admin", "moderator", "superadmin", "content_reviewer", "support"}
+    if aud == "premium":
+        pe = user.get("premium_expires_at")
+        if not pe:
+            return False
+        try:
+            return datetime.fromisoformat(pe) > now_utc()
+        except Exception:
+            return False
+    if aud == "verified":
+        return bool(user.get("id_verified"))
+    return False
+
+
+@api_router.get("/me/broadcasts")
+async def my_broadcasts(user=Depends(_require_user), unread_only: bool = False, limit: int = 20):
+    now_iso = now_utc().isoformat()
+    q: Dict = {"$or": [{"expires_at": None}, {"expires_at": {"$gt": now_iso}}]}
+    items = await db.broadcasts.find(q).sort([("pinned", -1), ("created_at", -1)]).limit(min(limit, 100)).to_list(length=limit)
+    result: List[Dict] = []
+    for d in items:
+        if not _broadcast_matches_user(d, user):
+            continue
+        pub = await _public_broadcast(d, for_user_id=user["id"])
+        if unread_only and pub.get("read"):
+            continue
+        result.append(pub)
+    return {"broadcasts": result}
+
+
+@api_router.post("/me/broadcasts/{bid}/ack")
+async def ack_broadcast(bid: str, user=Depends(_require_user)):
+    b = await db.broadcasts.find_one({"id": bid})
+    if not b:
+        raise HTTPException(404, "Broadcast not found")
+    await db.broadcast_reads.update_one(
+        {"broadcast_id": bid, "user_id": user["id"]},
+        {"$set": {"broadcast_id": bid, "user_id": user["id"], "ack_at": now_utc().isoformat()}},
+        upsert=True,
+    )
+    return {"ok": True}
 
 
 @api_router.post("/admin/notifications/{nid}/ack")
