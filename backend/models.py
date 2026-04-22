@@ -14,6 +14,34 @@ Orientation = Literal[
 RelationshipType = Literal["casual", "serious", "friendship", "open", "undecided"]
 SeekingRole = Literal["top", "bottom", "versatile", "any"]
 PhotoCategory = Literal["face", "individual", "nsfw"]
+BodyType = Literal["slim", "athletic", "average", "muscular", "curvy", "bear", "cub", "chub", "twink", "jock", "dad"]
+SmokingStatus = Literal["never", "sometimes", "often", "prefer_not_say"]
+DrinkingStatus = Literal["never", "sometimes", "often", "prefer_not_say"]
+DietType = Literal["omnivore", "vegetarian", "vegan", "pescetarian", "kosher", "halal", "other"]
+StiStatus = Literal["negative", "positive_undetectable", "positive", "on_prep", "prefer_not_say"]
+CupSize = Literal["A", "B", "C", "D", "DD", "E", "F", "G", "H", "I"]
+PenisCategory = Literal["S", "M", "L", "XL", "XXL"]
+
+
+def categorize_penis_length(cm: Optional[float]) -> Optional[str]:
+    """Typisch: S<=12, M<=15, L<=18, XL<=21, XXL>21 cm Länge."""
+    if cm is None:
+        return None
+    try:
+        v = float(cm)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0:
+        return None
+    if v <= 12:
+        return "S"
+    if v <= 15:
+        return "M"
+    if v <= 18:
+        return "L"
+    if v <= 21:
+        return "XL"
+    return "XXL"
 
 
 class RegisterRequest(BaseModel):
@@ -71,6 +99,18 @@ class UserPreferences(BaseModel):
     only_verified: bool = False
     hide_seen: bool = True
     online_only: bool = False
+    # Phase 4 extended
+    body_types: List[BodyType] = []
+    min_height_cm: Optional[int] = None
+    max_height_cm: Optional[int] = None
+    smoking: List[SmokingStatus] = []
+    drinking: List[DrinkingStatus] = []
+    diet: List[DietType] = []
+    sti_status: List[StiStatus] = []
+    cup_sizes: List[CupSize] = []
+    penis_categories: List[PenisCategory] = []
+    languages: List[str] = []
+    ethnicities: List[str] = []
 
 
 class PhotoMeta(BaseModel):
@@ -115,6 +155,20 @@ class ProfileUpdate(BaseModel):
     relationship_types: Optional[List[RelationshipType]] = None
     seeking_roles: Optional[List[SeekingRole]] = None
     kinks: Optional[List[str]] = None
+    # Phase 4 extended
+    height_cm: Optional[int] = Field(default=None, ge=100, le=250)
+    body_type: Optional[BodyType] = None
+    ethnicity: Optional[str] = None
+    languages: Optional[List[str]] = None
+    interests: Optional[List[str]] = None
+    smoking: Optional[SmokingStatus] = None
+    drinking: Optional[DrinkingStatus] = None
+    diet: Optional[DietType] = None
+    sti_status: Optional[StiStatus] = None
+    sti_tested_on: Optional[str] = None  # ISO date string
+    cup_size: Optional[CupSize] = None
+    penis_length_cm: Optional[float] = Field(default=None, ge=1, le=40)
+    penis_girth_cm: Optional[float] = Field(default=None, ge=1, le=40)
 
 
 class PhotoUploadRequest(BaseModel):
@@ -276,3 +330,52 @@ class EventRsvpRequest(BaseModel):
 class AdminSetRoleRequest(BaseModel):
     user_id: str
     role: Literal["user", "support", "content_reviewer", "moderator", "admin", "superadmin"]
+
+
+# ----- Phase 5 additions -----
+
+class TravelPlanCreate(BaseModel):
+    city: str = Field(min_length=2, max_length=80)
+    country: Optional[str] = None
+    location: Optional[Location] = None
+    starts_at: datetime
+    ends_at: datetime
+    note: Optional[str] = None
+
+
+class IdVerificationSubmit(BaseModel):
+    document_type: Literal["passport", "id_card", "drivers_license"]
+    selfie_data_url: str  # data:image/...
+    document_data_url: str  # data:image/...
+
+
+class AdminReviewIdRequest(BaseModel):
+    user_id: str
+    decision: Literal["approved", "rejected"]
+    note: Optional[str] = None
+
+
+class CheckoutRequest(BaseModel):
+    package_id: Literal["premium_30", "premium_365", "id_verification", "boost_single"]
+    origin_url: str
+
+
+class AIConfigUpdate(BaseModel):
+    provider: Literal["gemini", "openai", "ollama"]
+    model: str
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None  # for Ollama / custom endpoints
+    enabled: bool = True
+
+
+class AdminUserUpdate(BaseModel):
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+    email_verified: Optional[bool] = None
+    verified: Optional[bool] = None
+    id_verified: Optional[bool] = None
+    banned: Optional[bool] = None
+    ban_reason: Optional[str] = None
+    premium_expires_at: Optional[datetime] = None
+    shadow_restricted: Optional[bool] = None
+    shadow_reason: Optional[str] = None

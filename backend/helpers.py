@@ -63,6 +63,24 @@ def user_is_online(last_active: Any) -> bool:
     return delta <= 300
 
 
+def _penis_category(cm):
+    try:
+        v = float(cm)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0:
+        return None
+    if v <= 12:
+        return "S"
+    if v <= 15:
+        return "M"
+    if v <= 18:
+        return "L"
+    if v <= 21:
+        return "XL"
+    return "XXL"
+
+
 def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
                          privacy: Optional[dict] = None) -> dict:
     photos = doc.get("photos", []) or []
@@ -80,6 +98,7 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
     is_online = user_is_online(doc.get("last_active"))
     if not owner_privacy.get("show_online_status", True):
         is_online = False
+    penis_len = doc.get("penis_length_cm")
     return {
         "id": doc["id"],
         "display_name": doc.get("display_name", ""),
@@ -92,8 +111,23 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
         "verified": bool(doc.get("verified", False)),
         "distance_km": distance_km,
         "is_online": is_online,
-        "relationship_types": doc.get("relationship_types", []),
-        "seeking_roles": doc.get("seeking_roles", []),
-        "kinks": doc.get("kinks", []),
+        "relationship_types": doc.get("relationship_types", []) or [],
+        "seeking_roles": doc.get("seeking_roles", []) or [],
+        "kinks": doc.get("kinks", []) or [],
         "role": doc.get("role", "user"),
+        # Phase 4 extended (always returned; frontend hides empties)
+        "height_cm": doc.get("height_cm"),
+        "body_type": doc.get("body_type"),
+        "ethnicity": doc.get("ethnicity"),
+        "languages": doc.get("languages", []) or [],
+        "interests": doc.get("interests", []) or [],
+        "smoking": doc.get("smoking"),
+        "drinking": doc.get("drinking"),
+        "diet": doc.get("diet"),
+        "sti_status": doc.get("sti_status"),
+        "sti_tested_on": doc.get("sti_tested_on"),
+        "cup_size": doc.get("cup_size"),
+        "penis_length_cm": penis_len,
+        "penis_girth_cm": doc.get("penis_girth_cm"),
+        "penis_category": _penis_category(penis_len),
     }

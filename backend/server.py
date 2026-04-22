@@ -68,6 +68,12 @@ from models import (
     EventCreate,
     EventRsvpRequest,
     AdminSetRoleRequest,
+    TravelPlanCreate,
+    IdVerificationSubmit,
+    AdminReviewIdRequest,
+    CheckoutRequest,
+    AIConfigUpdate,
+    AdminUserUpdate,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -157,6 +163,19 @@ async def root():
 @api_router.get("/health")
 async def health():
     return {"status": "ok", "time": now_utc().isoformat()}
+
+
+@api_router.post("/client-event")
+async def client_event(payload: dict):
+    """Lightweight, unauthenticated telemetry used e.g. by the screenshot
+    deterrent to signal attempts. Rate-limit externally in production."""
+    await db.client_events.insert_one({
+        "id": str(uuid.uuid4()),
+        "type": str(payload.get("type", "unknown"))[:40],
+        "reason": str(payload.get("reason", ""))[:80],
+        "created_at": now_utc().isoformat(),
+    })
+    return {"ok": True}
 
 
 # ---------- Auth ----------
@@ -265,6 +284,10 @@ async def update_me(body: ProfileUpdate, user=Depends(_require_user)):
     for field in [
         "display_name", "age", "gender_identity", "pronouns", "orientation",
         "bio", "relationship_types", "seeking_roles", "kinks",
+        # Phase 4 extended
+        "height_cm", "body_type", "ethnicity", "languages", "interests",
+        "smoking", "drinking", "diet", "sti_status", "sti_tested_on",
+        "cup_size", "penis_length_cm", "penis_girth_cm",
     ]:
         val = getattr(body, field)
         if val is not None:
@@ -378,6 +401,35 @@ async def discover(
     if prefs.get("hide_seen") and seen:
         query["id"] = {"$ne": user["id"], "$nin": list(seen)}
 
+    # Phase 4 extended filters
+    if prefs.get("body_types"):
+        query["body_type"] = {"$in": prefs["body_types"]}
+    if prefs.get("min_height_cm") or prefs.get("max_height_cm"):
+        h: Dict = {}
+        if prefs.get("min_height_cm"):
+            h["$gte"] = int(prefs["min_height_cm"])
+        if prefs.get("max_height_cm"):
+            h["$lte"] = int(prefs["max_height_cm"])
+        if h:
+            query["height_cm"] = h
+    if prefs.get("smoking"):
+        query["smoking"] = {"$in": prefs["smoking"]}
+    if prefs.get("drinking"):
+        query["drinking"] = {"$in": prefs["drinking"]}
+    if prefs.get("diet"):
+        query["diet"] = {"$in": prefs["diet"]}
+    if prefs.get("sti_status"):
+        query["sti_status"] = {"$in": prefs["sti_status"]}
+    if prefs.get("cup_sizes"):
+        query["cup_size"] = {"$in": prefs["cup_sizes"]}
+    if prefs.get("languages"):
+        query["languages"] = {"$in": prefs["languages"]}
+    if prefs.get("ethnicities"):
+        query["ethnicity"] = {"$in": prefs["ethnicities"]}
+    if prefs.get("kinks"):
+        # Others only appear if they also list at least one of the viewer's kinks.
+        query["kinks"] = {"$in": prefs["kinks"]}
+
     # Bidirectional: their preferences must also match me
     if my_gender:
         query["preferences.seeking_genders"] = my_gender
@@ -406,10 +458,15 @@ async def discover(
 
     viewer_coords = loc.get("coordinates") if loc else None
     results = []
+    wanted_penis = set(prefs.get("penis_categories") or [])
     for d in docs:
         pub = public_user_from_doc(d, viewer_location=viewer_coords)
         pub["boosted"] = (d.get("boost_expires_at") or "") > now_iso
         pub["is_premium"] = (d.get("premium_expires_at") or "") > now_iso
+        # Penis category post-filter (derived)
+        if wanted_penis:
+            if pub.get("penis_category") not in wanted_penis:
+                continue
         # Online-only post-filter (privacy-aware)
         if prefs.get("online_only") and not pub["is_online"]:
             continue
@@ -426,8 +483,10 @@ async def mark_seen(user_id: str, user=Depends(_require_user)):
 @api_router.get("/users/{user_id}")
 async def view_user(user_id: str, user=Depends(_require_user)):
     doc = await _get_user_doc(user_id)
-    if doc.get("banned") or doc.get("privacy", {}).get("hidden_mode"):
-        raise HTTPException(404, "Not found")
+    is_admin = user.get("role") in {"admin", "moderator", "superadmin", "content_reviewer", "support"}
+    if not is_admin:
+        if doc.get("banned") or doc.get("privacy", {}).get("hidden_mode"):
+            raise HTTPException(404, "Not found")
     pub = public_user_from_doc(
         doc, viewer_location=(user.get("location") or {}).get("coordinates")
     )
@@ -443,7 +502,18 @@ async def view_user(user_id: str, user=Depends(_require_user)):
             ]}
         )
         match = m["id"] if m else None
-    return {**pub, "i_liked": bool(my_like), "they_liked": bool(their_like), "match_id": match}
+    extra = {}
+    if is_admin:
+        extra = {
+            "admin_view": True,
+            "email": doc.get("email"),
+            "banned": bool(doc.get("banned")),
+            "ban_reason": doc.get("ban_reason"),
+            "hidden_mode": bool((doc.get("privacy") or {}).get("hidden_mode")),
+            "last_active": doc.get("last_active"),
+            "role_of_target": doc.get("role", "user"),
+        }
+    return {**pub, "i_liked": bool(my_like), "they_liked": bool(their_like), "match_id": match, **extra}
 
 
 # ---------- Likes & Matches ----------
@@ -854,15 +924,37 @@ async def admin_unban(user_id: str, user=Depends(_require_user)):
 
 
 @api_router.get("/admin/users")
-async def admin_list_users(user=Depends(_require_user), q: Optional[str] = None):
-    await _require_role(user, ["admin", "moderator", "superadmin"])
+async def admin_list_users(user=Depends(_require_user), q: Optional[str] = None,
+                           include_hidden: bool = True, include_banned: bool = True):
+    await _require_role(user, ["admin", "moderator", "support", "content_reviewer", "superadmin"])
     query: Dict = {}
     if q:
         query["$or"] = [{"email": {"$regex": q, "$options": "i"}},
                          {"display_name": {"$regex": q, "$options": "i"}}]
-    cursor = db.users.find(query, {"password_hash": 0}).limit(200)
-    items = await cursor.to_list(length=200)
+    if not include_banned:
+        query["banned"] = {"$ne": True}
+    cursor = db.users.find(query, {"password_hash": 0}).limit(500)
+    items = await cursor.to_list(length=500)
     return {"users": serialize_doc(items)}
+
+
+@api_router.get("/admin/matches")
+async def admin_list_matches(user=Depends(_require_user), user_id: Optional[str] = None):
+    await _require_role(user, ["admin", "moderator", "superadmin"])
+    q: Dict = {}
+    if user_id:
+        q = {"$or": [{"user_a": user_id}, {"user_b": user_id}]}
+    cursor = db.matches.find(q).sort("created_at", -1).limit(500)
+    items = await cursor.to_list(length=500)
+    return {"matches": serialize_doc(items)}
+
+
+@api_router.get("/admin/matches/{match_id}/messages")
+async def admin_match_messages(match_id: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin"])
+    cursor = db.messages.find({"match_id": match_id}).sort("created_at", 1).limit(500)
+    items = await cursor.to_list(length=500)
+    return {"messages": serialize_doc(items)}
 
 
 @api_router.get("/admin/audit")
@@ -1356,8 +1448,344 @@ async def admin_list_pending_videos(user=Depends(_require_user)):
     return {"videos": out}
 
 
-# ---------- Discover: boost-aware ordering ----------
-# Patch the existing discover endpoint to prefer boosted profiles.
+# =====================================================================
+# Phase 5: Travel, ID Verification, Auto-Mod, User Management, Payments, AI Config
+# =====================================================================
+from fastapi import Request  # noqa: E402
+
+AUTO_MOD_UNIQUE_REPORT_THRESHOLD = 10
+
+
+def _client_ip(req: Request) -> str:
+    return (req.headers.get("x-forwarded-for") or req.client.host or "").split(",")[0].strip()
+
+
+# --- Auto-Mod: count unique reporter IPs, shadow-restrict when threshold crossed ---
+async def _maybe_shadow_restrict(target_user_id: str):
+    pipeline = [
+        {"$match": {"target_type": "user", "target_id": target_user_id, "status": {"$ne": "rejected"}}},
+        {"$group": {"_id": "$reporter_ip"}},
+        {"$count": "unique"},
+    ]
+    cur = db.reports.aggregate(pipeline)
+    rows = await cur.to_list(1)
+    unique = rows[0]["unique"] if rows else 0
+    if unique >= AUTO_MOD_UNIQUE_REPORT_THRESHOLD:
+        await db.users.update_one(
+            {"id": target_user_id, "shadow_restricted": {"$ne": True}},
+            {"$set": {
+                "shadow_restricted": True,
+                "shadow_reason": f"auto-mod: {unique} unique reports",
+                "shadow_restricted_at": now_utc().isoformat(),
+            }},
+        )
+        await _audit("auto-mod", "shadow_restrict", target_user_id, {"unique_reports": unique})
+
+
+# --- Patch create_report to track ip + auto-mod ---
+@api_router.post("/reports", response_model=ReportPublic)
+async def create_report(body: ReportCreate, request: Request, user=Depends(_require_user)):
+    ip = _client_ip(request)
+    # prevent spam: one open report per (reporter,target)
+    existing = await db.reports.find_one({
+        "reporter_id": user["id"], "target_id": body.target_id, "target_type": body.target_type,
+        "status": {"$in": ["open", "reviewing"]},
+    })
+    if existing:
+        return ReportPublic(**{**existing, "created_at": now_utc()})
+    r = {
+        "id": str(uuid.uuid4()),
+        "reporter_id": user["id"],
+        "reporter_ip": ip,
+        "target_type": body.target_type,
+        "target_id": body.target_id,
+        "reason": body.reason,
+        "detail": body.detail,
+        "status": "open",
+        "created_at": now_utc().isoformat(),
+    }
+    await db.reports.insert_one(r)
+    await _audit(user["id"], "report_created", r["id"], {"target": body.target_id})
+    if body.target_type == "user":
+        await _maybe_shadow_restrict(body.target_id)
+    return ReportPublic(**{**r, "created_at": now_utc()})
+
+
+# --- Travel plans ---
+@api_router.post("/travel")
+async def create_travel(body: TravelPlanCreate, user=Depends(_require_user)):
+    plan = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "city": body.city,
+        "country": body.country,
+        "location": (
+            {"type": "Point", "coordinates": body.location.coordinates}
+            if body.location else None
+        ),
+        "starts_at": body.starts_at.isoformat(),
+        "ends_at": body.ends_at.isoformat(),
+        "note": body.note,
+        "created_at": now_utc().isoformat(),
+    }
+    await db.travel.insert_one(plan)
+    await _audit(user["id"], "travel_created", plan["id"])
+    return serialize_doc(plan)
+
+
+@api_router.get("/travel/mine")
+async def list_my_travel(user=Depends(_require_user)):
+    items = await db.travel.find({"user_id": user["id"]}).sort("starts_at", 1).to_list(100)
+    return {"plans": serialize_doc(items)}
+
+
+@api_router.delete("/travel/{plan_id}")
+async def delete_travel(plan_id: str, user=Depends(_require_user)):
+    await db.travel.delete_one({"id": plan_id, "user_id": user["id"]})
+    return {"ok": True}
+
+
+# --- ID Verification ---
+@api_router.post("/verification/id")
+async def submit_id_verification(body: IdVerificationSubmit, user=Depends(_require_user)):
+    for dataurl in [body.selfie_data_url, body.document_data_url]:
+        if not dataurl.startswith("data:image/"):
+            raise HTTPException(400, "Invalid image data URL")
+    rec = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "document_type": body.document_type,
+        "selfie_data_url": body.selfie_data_url,
+        "document_data_url": body.document_data_url,
+        "status": "pending",
+        "submitted_at": now_utc().isoformat(),
+    }
+    await db.id_verifications.insert_one(rec)
+    await db.users.update_one({"id": user["id"]}, {"$set": {"id_verification_status": "pending"}})
+    return {"ok": True, "status": "pending"}
+
+
+@api_router.get("/admin/verifications")
+async def admin_list_verifications(user=Depends(_require_user), status: Optional[str] = "pending"):
+    await _require_role(user, ["admin", "moderator", "content_reviewer", "superadmin"])
+    q: Dict = {}
+    if status:
+        q["status"] = status
+    items = await db.id_verifications.find(q).sort("submitted_at", -1).to_list(200)
+    return {"verifications": serialize_doc(items)}
+
+
+@api_router.post("/admin/verifications/review")
+async def admin_review_verification(body: AdminReviewIdRequest, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "content_reviewer", "superadmin"])
+    await db.id_verifications.update_one(
+        {"user_id": body.user_id, "status": "pending"},
+        {"$set": {"status": body.decision, "reviewed_by": user["id"],
+                   "reviewed_at": now_utc().isoformat(), "review_note": body.note}},
+    )
+    user_update: Dict = {"id_verification_status": body.decision}
+    if body.decision == "approved":
+        user_update["id_verified"] = True
+        user_update["verified"] = True  # grant general verified badge too
+    await db.users.update_one({"id": body.user_id}, {"$set": user_update})
+    await _audit(user["id"], "id_review", body.user_id, {"decision": body.decision})
+    return {"ok": True}
+
+
+# --- Admin user management ---
+@api_router.patch("/admin/users/{user_id}")
+async def admin_update_user(user_id: str, body: AdminUserUpdate, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    upd: Dict = {}
+    for f in ["display_name", "bio", "email_verified", "verified", "id_verified",
+              "banned", "ban_reason", "shadow_restricted", "shadow_reason"]:
+        v = getattr(body, f)
+        if v is not None:
+            upd[f] = v
+    if body.premium_expires_at is not None:
+        upd["premium_expires_at"] = body.premium_expires_at.isoformat()
+    if upd:
+        await db.users.update_one({"id": user_id}, {"$set": upd})
+        await _audit(user["id"], "user_update", user_id, {"fields": list(upd.keys())})
+    return {"ok": True}
+
+
+@api_router.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    await db.users.delete_one({"id": user_id})
+    await db.likes.delete_many({"$or": [{"from_user": user_id}, {"to_user": user_id}]})
+    matches = await db.matches.find({"$or": [{"user_a": user_id}, {"user_b": user_id}]}).to_list(1000)
+    match_ids = [m["id"] for m in matches]
+    await db.matches.delete_many({"id": {"$in": match_ids}})
+    await db.messages.delete_many({"match_id": {"$in": match_ids}})
+    await db.albums.delete_many({"owner_id": user_id})
+    await _audit(user["id"], "user_hard_delete", user_id)
+    return {"ok": True}
+
+
+@api_router.delete("/admin/content/{kind}/{item_id}")
+async def admin_delete_content(kind: str, item_id: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin"])
+    if kind == "message":
+        await db.messages.delete_one({"id": item_id})
+    elif kind == "album":
+        await db.albums.delete_one({"id": item_id})
+    elif kind == "event":
+        await db.events.delete_one({"id": item_id})
+    elif kind == "photo":
+        await db.users.update_many({}, {"$pull": {"photos": {"id": item_id}}})
+    elif kind == "video":
+        await db.users.update_many({}, {"$pull": {"videos": {"id": item_id}}})
+    else:
+        raise HTTPException(400, "Unknown content kind")
+    await _audit(user["id"], f"content_delete_{kind}", item_id)
+    return {"ok": True}
+
+
+# --- AI configuration (admin-editable runtime) ---
+AI_CONFIG_KEY = "ai_moderation"
+
+
+@api_router.get("/admin/ai-config")
+async def admin_get_ai_config(user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    cfg = await db.settings.find_one({"key": AI_CONFIG_KEY}) or {}
+    cfg.pop("_id", None)
+    # Don't leak api key in GET after set, return masked
+    if cfg.get("api_key"):
+        cfg["api_key_masked"] = "***" + cfg["api_key"][-4:]
+        cfg.pop("api_key", None)
+    return cfg or {"provider": "gemini", "model": "gemini-2.5-flash", "enabled": True}
+
+
+@api_router.post("/admin/ai-config")
+async def admin_set_ai_config(body: AIConfigUpdate, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    doc = {
+        "key": AI_CONFIG_KEY,
+        "provider": body.provider,
+        "model": body.model,
+        "base_url": body.base_url,
+        "enabled": body.enabled,
+        "updated_at": now_utc().isoformat(),
+        "updated_by": user["id"],
+    }
+    if body.api_key:
+        doc["api_key"] = body.api_key
+    await db.settings.update_one({"key": AI_CONFIG_KEY}, {"$set": doc}, upsert=True)
+    await _audit(user["id"], "ai_config_update", meta={"provider": body.provider, "model": body.model})
+    return {"ok": True}
+
+
+# --- Stripe payments ---
+from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest  # noqa: E402
+
+PACKAGES = {
+    "premium_30":      {"amount": 9.99,  "currency": "eur", "desc": "Eros Premium 30 days"},
+    "premium_365":     {"amount": 89.00, "currency": "eur", "desc": "Eros Premium 1 year"},
+    "id_verification": {"amount": 4.99,  "currency": "eur", "desc": "ID verification review"},
+    "boost_single":    {"amount": 1.99,  "currency": "eur", "desc": "Single 30-min boost"},
+}
+
+
+@api_router.get("/payments/packages")
+async def list_packages(user=Depends(_require_user)):
+    return {"packages": {k: {**v, "id": k} for k, v in PACKAGES.items()}}
+
+
+@api_router.post("/payments/checkout")
+async def create_checkout(body: CheckoutRequest, request: Request, user=Depends(_require_user)):
+    pkg = PACKAGES.get(body.package_id)
+    if not pkg:
+        raise HTTPException(400, "Unknown package")
+    api_key = os.environ.get("STRIPE_API_KEY", "")
+    if not api_key:
+        raise HTTPException(500, "Stripe not configured")
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+    origin = body.origin_url.rstrip("/")
+    success_url = f"{origin}/payments/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin}/account"
+    req = CheckoutSessionRequest(
+        amount=float(pkg["amount"]),
+        currency=pkg["currency"],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={"user_id": user["id"], "package_id": body.package_id},
+    )
+    session = await stripe_checkout.create_checkout_session(req)
+    await db.payment_transactions.insert_one({
+        "id": str(uuid.uuid4()),
+        "session_id": session.session_id,
+        "user_id": user["id"],
+        "package_id": body.package_id,
+        "amount": pkg["amount"],
+        "currency": pkg["currency"],
+        "payment_status": "initiated",
+        "created_at": now_utc().isoformat(),
+    })
+    return {"url": session.url, "session_id": session.session_id}
+
+
+async def _apply_successful_payment(session_id: str, metadata: Dict):
+    """Idempotent: apply entitlement based on package_id once."""
+    txn = await db.payment_transactions.find_one({"session_id": session_id})
+    if not txn:
+        return
+    if txn.get("payment_status") == "paid":
+        return  # already applied
+    pkg_id = metadata.get("package_id") or txn.get("package_id")
+    uid = metadata.get("user_id") or txn.get("user_id")
+    upd = {"payment_status": "paid", "paid_at": now_utc().isoformat()}
+    await db.payment_transactions.update_one({"session_id": session_id}, {"$set": upd})
+    if pkg_id in {"premium_30", "premium_365"} and uid:
+        days = 30 if pkg_id == "premium_30" else 365
+        new_exp = now_utc() + timedelta(days=days)
+        existing = await db.users.find_one({"id": uid})
+        base = parse_dt((existing or {}).get("premium_expires_at")) or now_utc()
+        if base > now_utc():
+            new_exp = base + timedelta(days=days)
+        await db.users.update_one({"id": uid}, {"$set": {"premium_expires_at": new_exp.isoformat()}})
+    elif pkg_id == "id_verification" and uid:
+        await db.users.update_one({"id": uid}, {"$set": {"id_verification_paid": True}})
+    elif pkg_id == "boost_single" and uid:
+        new_exp = now_utc() + timedelta(minutes=30)
+        await db.users.update_one({"id": uid}, {"$set": {"boost_expires_at": new_exp.isoformat()}})
+
+
+@api_router.get("/payments/status/{session_id}")
+async def payment_status(session_id: str, request: Request, user=Depends(_require_user)):
+    api_key = os.environ.get("STRIPE_API_KEY", "")
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+    status = await stripe_checkout.get_checkout_status(session_id)
+    if status.payment_status == "paid":
+        await _apply_successful_payment(session_id, status.metadata or {})
+    txn = await db.payment_transactions.find_one({"session_id": session_id})
+    return {"status": status.status, "payment_status": status.payment_status,
+            "amount_total": status.amount_total, "currency": status.currency,
+            "metadata": status.metadata, "txn": serialize_doc(txn) if txn else None}
+
+
+@app.post("/api/webhook/stripe")
+async def stripe_webhook(request: Request):
+    api_key = os.environ.get("STRIPE_API_KEY", "")
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    body = await request.body()
+    sig = request.headers.get("Stripe-Signature")
+    stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+    try:
+        evt = await stripe_checkout.handle_webhook(body, sig)
+    except Exception as e:
+        logger.exception("Webhook handling error: %s", e)
+        raise HTTPException(400, "Invalid webhook")
+    if evt.payment_status == "paid":
+        await _apply_successful_payment(evt.session_id, evt.metadata or {})
+    return {"ok": True}
 
 
 # ---------- Wire ----------

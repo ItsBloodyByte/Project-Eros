@@ -8,8 +8,10 @@ import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 export default function DiscoverPage() {
+  const { t } = useTranslation();
   const { user, refresh } = useAuth();
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,11 +26,11 @@ export default function DiscoverPage() {
       else setResults((prev) => [...prev, ...data.results]);
       setHasMore(data.has_more);
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to load discovery");
+      toast.error(e.response?.data?.detail || t("filters.save_failed"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { load(0); setSkip(0); }, [load]);
 
@@ -37,9 +39,9 @@ export default function DiscoverPage() {
       await api.patch("/me", { preferences: prefs });
       await refresh();
       load(0); setSkip(0);
-      toast.success("Filters applied");
+      toast.success(t("filters.filters_applied"));
     } catch (e) {
-      toast.error("Failed to save filters");
+      toast.error(t("filters.save_failed"));
     }
   };
 
@@ -56,11 +58,11 @@ export default function DiscoverPage() {
         <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-16">
           <div className="flex items-center justify-between py-5 gap-2">
             <div>
-              <h1 className="font-display text-3xl sm:text-4xl">Discover</h1>
-              <div className="text-sm text-[hsl(var(--muted-foreground))]">Your filters are mutual. Hello, {user?.display_name}.</div>
+              <h1 className="font-display text-3xl sm:text-4xl">{t("discover.title")}</h1>
+              <div className="text-sm text-[hsl(var(--muted-foreground))]">{t("discover.hello", { name: user?.display_name || "" })}</div>
             </div>
             <div className="flex items-center gap-2">
-              <Link to="/me" className="text-sm underline text-[hsl(var(--muted-foreground))]" data-testid="edit-profile-link">Edit profile</Link>
+              <Link to="/me" className="text-sm underline text-[hsl(var(--muted-foreground))]" data-testid="edit-profile-link">{t("nav.edit_profile")}</Link>
               <FilterDrawer prefs={user?.preferences || {}} onChange={() => {}} onApply={saveFilters} />
             </div>
           </div>
@@ -73,10 +75,8 @@ export default function DiscoverPage() {
             </div>
           ) : results.length === 0 ? (
             <div className="grid place-items-center py-20 text-center">
-              <div className="font-display text-2xl">Nothing here yet</div>
-              <div className="text-sm text-[hsl(var(--muted-foreground))] mt-2 max-w-md">
-                Try widening your filters or your distance radius. Because filters are mutual, both sides must match.
-              </div>
+              <div className="font-display text-2xl">{t("discover.no_results_title")}</div>
+              <div className="text-sm text-[hsl(var(--muted-foreground))] mt-2 max-w-md">{t("discover.no_results_desc")}</div>
             </div>
           ) : (
             <>
@@ -85,7 +85,7 @@ export default function DiscoverPage() {
               </div>
               {hasMore && (
                 <div className="mt-6 flex justify-center">
-                  <Button variant="outline" onClick={onLoadMore} data-testid="discover-load-more">Load more</Button>
+                  <Button variant="outline" onClick={onLoadMore} data-testid="discover-load-more">{t("discover.load_more")}</Button>
                 </div>
               )}
             </>

@@ -1,11 +1,13 @@
 import { Checkbox } from "./ui/checkbox";
+import { useTranslation } from "react-i18next";
 
 export function ConsentCheckboxGroup({ value, onChange }) {
+  const { t } = useTranslation();
   const items = [
-    { key: "terms", title: "Terms of use", desc: "I accept the terms of use of the platform.", required: true },
-    { key: "privacy", title: "Privacy policy", desc: "I accept how my data is processed (GDPR).", required: true },
-    { key: "sensitive_data", title: "Sensitive data", desc: "I consent to processing of sensitive data (orientation, preferences, rounded location).", required: true },
-    { key: "nsfw_view", title: "View sensitive media", desc: "Optional. I am 18+ and may choose to reveal blurred content.", required: false },
+    { key: "terms", title: t("auth.consent_terms_title"), desc: t("auth.consent_terms_desc"), required: true },
+    { key: "privacy", title: t("auth.consent_privacy_title"), desc: t("auth.consent_privacy_desc"), required: true },
+    { key: "sensitive_data", title: t("auth.consent_sensitive_title"), desc: t("auth.consent_sensitive_desc"), required: true },
+    { key: "nsfw_view", title: t("auth.consent_nsfw_title"), desc: t("auth.consent_nsfw_desc"), required: false },
   ];
   const toggle = (k) => onChange({ ...value, [k]: !value[k] });
   return (

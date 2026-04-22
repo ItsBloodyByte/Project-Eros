@@ -1,7 +1,9 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import { Toaster } from "./components/ui/sonner";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { useTheme } from "./lib/theme";
+import { installScreenshotDeterrents } from "./lib/screenshotGuard";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import OnboardingPage from "./pages/OnboardingPage";
@@ -48,6 +50,7 @@ function AppRoutes() {
 
 function ThemedApp() {
   useTheme();
+  useEffect(() => { installScreenshotDeterrents(); }, []);
   return <AppRoutes />;
 }
 

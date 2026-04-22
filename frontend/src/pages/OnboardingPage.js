@@ -13,8 +13,10 @@ import { GENDERS, ORIENTATIONS, RELATIONSHIP_TYPES, SEEKING_ROLES } from "../lib
 import { toast } from "sonner";
 import { ImagePlus, CheckCircle2 } from "lucide-react";
 import { NsfwBlurOverlay } from "../components/NsfwBlurOverlay";
+import { useTranslation } from "react-i18next";
 
 export default function OnboardingPage() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const { user, refresh } = useAuth();
   const [step, setStep] = useState(1);
@@ -23,22 +25,14 @@ export default function OnboardingPage() {
     pronouns: "",
     orientation: "",
     bio: "",
-    location: null, // [lng, lat]
+    location: null,
     relationship_types: [],
     seeking_roles: [],
     preferences: {
-      age_min: 21,
-      age_max: 40,
-      seeking_genders: [],
-      radius_km: 50,
-      only_with_photos: true,
-      only_face_photo: false,
-      only_verified: false,
-      hide_seen: true,
-      online_only: false,
-      relationship_types: [],
-      seeking_roles: [],
-      kinks: [],
+      age_min: 21, age_max: 40, seeking_genders: [], radius_km: 50,
+      only_with_photos: true, only_face_photo: false, only_verified: false,
+      hide_seen: true, online_only: false,
+      relationship_types: [], seeking_roles: [], kinks: [],
     },
   });
   const [photos, setPhotos] = useState([]);
@@ -123,7 +117,7 @@ export default function OnboardingPage() {
       const dataUrl = await fileToDataUrl(file);
       const { data } = await api.post("/me/photos", { data_url: dataUrl, is_primary: photos.length === 0 });
       setPhotos((p) => [...p, data]);
-      toast.success(`Photo analyzed (NSFW ${(data.nsfw_score * 100).toFixed(0)}%, face: ${data.has_face ? "yes" : "no"})`);
+      toast.success(t("profile.photo_analyzed", { nsfw: (data.nsfw_score * 100).toFixed(0), face: data.has_face ? "ja" : "nein" }));
     } catch (e) {
       toast.error(e.response?.data?.detail || "Upload failed");
     } finally {
@@ -136,133 +130,117 @@ export default function OnboardingPage() {
     nav("/");
   };
 
+  const Chip = ({ on, onClick, children, testid }) => (
+    <button type="button" onClick={onClick} data-testid={testid}
+      className={`rounded-full border px-3 py-1 text-xs transition-colors ${on ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] border-transparent" : "hover:bg-[hsl(var(--secondary))]"}`}>
+      {children}
+    </button>
+  );
+
   return (
     <div className="min-h-screen app-shell-bg py-10 px-4">
       <div className="mx-auto max-w-xl">
         <div className="mb-4">
           <Progress value={pct} />
-          <div className="mt-2 text-xs text-[hsl(var(--muted-foreground))]">Step {step} of {total}</div>
+          <div className="mt-2 text-xs text-[hsl(var(--muted-foreground))]">{t("onboarding.step", { current: step, total })}</div>
         </div>
         <div className="p-5 rounded-[var(--radius-lg)] border bg-card shadow-[var(--shadow-md)]">
           {step === 1 && (
             <div className="space-y-4">
-              <div className="font-display text-2xl">Identity</div>
+              <div className="font-display text-2xl">{t("onboarding.identity")}</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Gender identity</Label>
+                  <Label>{t("profile.gender_identity")}</Label>
                   <Select value={form.gender_identity} onValueChange={(v) => setForm({ ...form, gender_identity: v })}>
-                    <SelectTrigger data-testid="onboarding-gender-select"><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectTrigger data-testid="onboarding-gender-select"><SelectValue placeholder={t("profile.select")} /></SelectTrigger>
                     <SelectContent>
-                      {GENDERS.map((g) => <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>)}
+                      {GENDERS.map((g) => <SelectItem key={g} value={g}>{t(`genders.${g}`)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>Pronouns</Label>
+                  <Label>{t("profile.pronouns")}</Label>
                   <Input data-testid="onboarding-pronouns-input" value={form.pronouns} onChange={(e) => setForm({ ...form, pronouns: e.target.value })} placeholder="they/them" />
                 </div>
               </div>
               <div>
-                <Label>Orientation</Label>
+                <Label>{t("profile.orientation")}</Label>
                 <Select value={form.orientation} onValueChange={(v) => setForm({ ...form, orientation: v })}>
-                  <SelectTrigger data-testid="onboarding-orientation-select"><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectTrigger data-testid="onboarding-orientation-select"><SelectValue placeholder={t("profile.select")} /></SelectTrigger>
                   <SelectContent>
-                    {ORIENTATIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    {ORIENTATIONS.map((o) => <SelectItem key={o} value={o}>{t(`orientations.${o}`)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Bio</Label>
-                <Textarea rows={3} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} data-testid="onboarding-bio-textarea" placeholder="A few lines about you…" />
+                <Label>{t("profile.bio")}</Label>
+                <Textarea rows={3} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} data-testid="onboarding-bio-textarea" />
               </div>
               <div>
-                <Label>Relationship types</Label>
+                <Label>{t("filters.relationship_types")}</Label>
                 <div className="mt-1 flex flex-wrap gap-2">
-                  {RELATIONSHIP_TYPES.map((r) => {
-                    const on = form.relationship_types.includes(r.value);
-                    return (
-                      <button type="button" key={r.value}
-                        onClick={() => toggleArr("relationship_types", r.value)}
-                        className={`rounded-full border px-3 py-1 text-xs transition-colors ${on ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] border-transparent" : "hover:bg-[hsl(var(--secondary))]"}`}>
-                        {r.label}
-                      </button>
-                    );
-                  })}
+                  {RELATIONSHIP_TYPES.map((r) => (
+                    <Chip key={r} on={form.relationship_types.includes(r)} onClick={() => toggleArr("relationship_types", r)}>
+                      {t(`relationships.${r}`)}
+                    </Chip>
+                  ))}
                 </div>
               </div>
               <div>
-                <Label>Seeking roles (optional)</Label>
+                <Label>{t("filters.seeking_roles")}</Label>
                 <div className="mt-1 flex flex-wrap gap-2">
-                  {SEEKING_ROLES.map((r) => {
-                    const on = form.seeking_roles.includes(r.value);
-                    return (
-                      <button type="button" key={r.value}
-                        onClick={() => toggleArr("seeking_roles", r.value)}
-                        className={`rounded-full border px-3 py-1 text-xs transition-colors ${on ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] border-transparent" : "hover:bg-[hsl(var(--secondary))]"}`}>
-                        {r.label}
-                      </button>
-                    );
-                  })}
+                  {SEEKING_ROLES.map((r) => (
+                    <Chip key={r} on={form.seeking_roles.includes(r)} onClick={() => toggleArr("seeking_roles", r)}>
+                      {t(`roles.${r}`)}
+                    </Chip>
+                  ))}
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button onClick={saveBasics} data-testid="onboarding-step1-next">Continue</Button>
+                <Button onClick={saveBasics} data-testid="onboarding-step1-next">{t("onboarding.continue")}</Button>
               </div>
             </div>
           )}
 
           {step === 2 && (
             <div className="space-y-4">
-              <div className="font-display text-2xl">Preferences</div>
-              <div className="text-sm text-[hsl(var(--muted-foreground))]">
-                Your age and gender filters are mutual — we only show people whose preferences also match yours.
-              </div>
+              <div className="font-display text-2xl">{t("onboarding.preferences")}</div>
+              <div className="text-sm text-[hsl(var(--muted-foreground))]">{t("onboarding.mutual_intro")}</div>
               <div>
-                <Label>Seeking genders</Label>
+                <Label>{t("filters.seeking_genders")}</Label>
                 <div className="mt-1 flex flex-wrap gap-2">
-                  {GENDERS.map((g) => {
-                    const on = form.preferences.seeking_genders.includes(g.value);
-                    return (
-                      <button type="button" key={g.value}
-                        onClick={() => toggleArr("seeking_genders", g.value, "preferences")}
-                        className={`rounded-full border px-3 py-1 text-xs transition-colors ${on ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] border-transparent" : "hover:bg-[hsl(var(--secondary))]"}`}
-                        data-testid={`onboarding-seek-${g.value}`}>
-                        {g.label}
-                      </button>
-                    );
-                  })}
+                  {GENDERS.map((g) => (
+                    <Chip key={g} on={form.preferences.seeking_genders.includes(g)}
+                      onClick={() => toggleArr("seeking_genders", g, "preferences")} testid={`onboarding-seek-${g}`}>
+                      {t(`genders.${g}`)}
+                    </Chip>
+                  ))}
                 </div>
               </div>
               <div>
-                <Label>Age range {form.preferences.age_min} – {form.preferences.age_max}</Label>
-                <Slider
-                  min={18} max={99} step={1}
+                <Label>{t("onboarding.age_range_label", { min: form.preferences.age_min, max: form.preferences.age_max })}</Label>
+                <Slider min={18} max={99} step={1}
                   value={[form.preferences.age_min, form.preferences.age_max]}
                   onValueChange={([a, b]) => setForm({ ...form, preferences: { ...form.preferences, age_min: a, age_max: b } })}
-                  data-testid="onboarding-age-range"
-                />
+                  data-testid="onboarding-age-range" />
               </div>
               <div>
-                <Label>Distance radius {form.preferences.radius_km} km</Label>
-                <Slider
-                  min={1} max={500} step={1}
+                <Label>{t("onboarding.distance_radius", { km: form.preferences.radius_km })}</Label>
+                <Slider min={1} max={500} step={1}
                   value={[form.preferences.radius_km]}
-                  onValueChange={([v]) => setForm({ ...form, preferences: { ...form.preferences, radius_km: v } })}
-                />
+                  onValueChange={([v]) => setForm({ ...form, preferences: { ...form.preferences, radius_km: v } })} />
               </div>
               <div className="flex justify-between gap-2">
-                <Button variant="ghost" onClick={() => setStep(1)}>Back</Button>
-                <Button onClick={savePreferences} data-testid="onboarding-step2-next">Continue</Button>
+                <Button variant="ghost" onClick={() => setStep(1)}>{t("onboarding.back")}</Button>
+                <Button onClick={savePreferences} data-testid="onboarding-step2-next">{t("onboarding.continue")}</Button>
               </div>
             </div>
           )}
 
           {step === 3 && (
             <div className="space-y-4">
-              <div className="font-display text-2xl">Photos</div>
-              <div className="text-sm text-[hsl(var(--muted-foreground))]">
-                Upload at least one photo. Our AI will analyze each photo for safety (face detection + sensitive content). Sensitive photos will be blurred for others until they confirm 18+.
-              </div>
+              <div className="font-display text-2xl">{t("onboarding.photos")}</div>
+              <div className="text-sm text-[hsl(var(--muted-foreground))]">{t("onboarding.photo_desc")}</div>
               <div className="grid grid-cols-3 gap-3">
                 {photos.map((p) => {
                   const isNsfw = p.nsfw_score >= 0.75;
@@ -279,33 +257,32 @@ export default function OnboardingPage() {
                   );
                 })}
                 <label className="aspect-[3/4] grid place-items-center rounded-md border border-dashed hover:bg-[hsl(var(--secondary))] cursor-pointer text-sm text-[hsl(var(--muted-foreground))]" data-testid="onboarding-photo-upload">
-                  <div className="flex flex-col items-center gap-1">
-                    <ImagePlus className="h-5 w-5" />
-                    <span>{uploading ? "Analyzing..." : "Add photo"}</span>
+                  <div className="flex flex-col items-center gap-1"><ImagePlus className="h-5 w-5" />
+                    <span>{uploading ? t("profile.analyzing") : t("profile.add_photo")}</span>
                   </div>
                   <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadPhoto(e.target.files[0])} data-testid="onboarding-photo-input" />
                 </label>
               </div>
               <div className="flex justify-between gap-2">
-                <Button variant="ghost" onClick={() => setStep(2)}>Back</Button>
-                <Button onClick={() => setStep(4)} disabled={photos.length === 0} data-testid="onboarding-step3-next">Continue</Button>
+                <Button variant="ghost" onClick={() => setStep(2)}>{t("onboarding.back")}</Button>
+                <Button onClick={() => setStep(4)} disabled={photos.length === 0} data-testid="onboarding-step3-next">{t("onboarding.continue")}</Button>
               </div>
             </div>
           )}
 
           {step === 4 && (
             <div className="space-y-4">
-              <div className="font-display text-2xl">All set</div>
-              <div className="text-sm text-[hsl(var(--muted-foreground))]">You can refine your profile any time in Settings.</div>
+              <div className="font-display text-2xl">{t("onboarding.ready_title")}</div>
+              <div className="text-sm text-[hsl(var(--muted-foreground))]">{t("onboarding.ready_desc")}</div>
               <div className="rounded-md border p-4 flex items-center gap-3">
                 <CheckCircle2 className="h-5 w-5 text-[hsl(var(--accent))]" />
                 <div>
-                  <div className="font-medium">Profile ready</div>
-                  <div className="text-xs text-[hsl(var(--muted-foreground))]">Start discovering people who match your preferences — mutually.</div>
+                  <div className="font-medium">{t("onboarding.ready_title")}</div>
+                  <div className="text-xs text-[hsl(var(--muted-foreground))]">{t("onboarding.mutual_intro")}</div>
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button onClick={finish} data-testid="onboarding-finish-button">Enter Eros</Button>
+                <Button onClick={finish} data-testid="onboarding-finish-button">{t("onboarding.enter")}</Button>
               </div>
             </div>
           )}

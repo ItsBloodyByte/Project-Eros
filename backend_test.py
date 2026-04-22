@@ -1005,9 +1005,280 @@ class DatingPlatformTester:
             if success:
                 success, resp = self.make_request('POST', f'/admin/unban/{alice_id}', token=admin_token)
 
+    def test_phase4_extended_profile_fields(self):
+        """Test Phase 4 extended profile fields"""
+        print("\n🔍 Testing Phase 4: Extended Profile Fields...")
+        
+        # Test PATCH /api/me with new fields
+        werner_token = self.tokens.get("werner@eros.app")
+        if not werner_token:
+            self.log_test("Phase 4 Extended Fields", False, "Werner token not available")
+            return
+        
+        extended_data = {
+            "height_cm": 184,
+            "body_type": "athletic", 
+            "ethnicity": "European",
+            "languages": ["Deutsch", "English"],
+            "interests": ["fitness", "travel"],
+            "smoking": "never",
+            "drinking": "sometimes", 
+            "diet": "omnivore",
+            "sti_status": "negative",
+            "sti_tested_on": "2026-01-15",
+            "cup_size": None,  # Not applicable for Werner
+            "penis_length_cm": 17.5,
+            "penis_girth_cm": 13.2
+        }
+        
+        success, resp = self.make_request('PATCH', '/me', extended_data, werner_token)
+        if success and resp:
+            data = resp.json()
+            self.log_test("PATCH /api/me accepts new fields", success, 
+                         f"Updated Werner with extended fields")
+        else:
+            self.log_test("PATCH /api/me accepts new fields", False, "Failed to update extended fields")
+
+    def test_phase4_penis_categorization(self):
+        """Test penis length categorization"""
+        print("\n🔍 Testing Phase 4: Penis Categorization...")
+        
+        werner_token = self.tokens.get("werner@eros.app")
+        if not werner_token:
+            self.log_test("Penis Categorization", False, "Werner token not available")
+            return
+        
+        # Get Werner's profile to check penis_category
+        success, resp = self.make_request('GET', '/me', token=werner_token)
+        if success and resp:
+            data = resp.json()
+            penis_length = data.get("penis_length_cm")
+            penis_category = data.get("penis_category")
+            
+            # Test categorization: 17.5cm should be 'L' (15-18cm range)
+            expected_category = "L"
+            category_correct = penis_category == expected_category
+            
+            self.log_test("GET /api/users/:id penis categorization", 
+                         category_correct and penis_length == 17.5,
+                         f"Length: {penis_length}cm, Category: {penis_category}, Expected: {expected_category}")
+        else:
+            self.log_test("GET /api/users/:id penis categorization", False, "Failed to get Werner's profile")
+
+    def test_phase4_extended_filters(self):
+        """Test Phase 4 extended discovery filters"""
+        print("\n🔍 Testing Phase 4: Extended Discovery Filters...")
+        
+        alice_token = self.tokens.get("alice@eros.app")
+        if not alice_token:
+            self.log_test("Extended Filters", False, "Alice token not available")
+            return
+        
+        # Update Alice's preferences with extended filters
+        extended_prefs = {
+            "preferences": {
+                "age_min": 30,
+                "age_max": 40,
+                "seeking_genders": ["man"],
+                "body_types": ["athletic"],
+                "min_height_cm": 170,
+                "max_height_cm": 200,
+                "penis_categories": ["L"],
+                "languages": ["Deutsch"]
+            }
+        }
+        
+        success, resp = self.make_request('PATCH', '/me', extended_prefs, alice_token)
+        if success:
+            # Test discovery with extended filters
+            success2, resp2 = self.make_request('GET', '/discover', token=alice_token)
+            if success2 and resp2:
+                data = resp2.json()
+                results = data.get("results", [])
+                
+                # Werner should match: athletic body, 184cm height, L penis category, speaks Deutsch
+                werner_found = any(u.get("display_name") == "Werner" for u in results)
+                
+                self.log_test("Extended discovery filters", werner_found,
+                             f"Werner found with extended filters: {werner_found}, Results: {len(results)}")
+            else:
+                self.log_test("Extended discovery filters", False, "Failed to get discovery results")
+        else:
+            self.log_test("Extended discovery filters", False, "Failed to update preferences")
+
+    def test_phase4_kinks_mutual_filter(self):
+        """Test kinks mutual filter requirement"""
+        print("\n🔍 Testing Phase 4: Kinks Mutual Filter...")
+        
+        alice_token = self.tokens.get("alice@eros.app")
+        werner_token = self.tokens.get("werner@eros.app")
+        
+        if not alice_token or not werner_token:
+            self.log_test("Kinks Mutual Filter", False, "Tokens not available")
+            return
+        
+        # Set Alice's kinks
+        alice_kinks = {"kinks": ["Sneaker", "Socken"]}
+        success1, _ = self.make_request('PATCH', '/me', alice_kinks, alice_token)
+        
+        # Set Werner's kinks (overlapping with Alice)
+        werner_kinks = {"kinks": ["Sneaker", "Feet"]}
+        success2, _ = self.make_request('PATCH', '/me', werner_kinks, werner_token)
+        
+        if success1 and success2:
+            # Update Alice's preferences to filter by kinks
+            kink_prefs = {
+                "preferences": {
+                    "kinks": ["Sneaker"]  # Alice wants people with Sneaker kink
+                }
+            }
+            success3, _ = self.make_request('PATCH', '/me', kink_prefs, alice_token)
+            
+            if success3:
+                # Test discovery - Werner should appear (he has Sneaker kink)
+                success4, resp = self.make_request('GET', '/discover', token=alice_token)
+                if success4 and resp:
+                    data = resp.json()
+                    results = data.get("results", [])
+                    werner_found = any(u.get("display_name") == "Werner" for u in results)
+                    
+                    self.log_test("Kinks mutual filter", werner_found,
+                                 f"Werner found with mutual kink filter: {werner_found}")
+                else:
+                    self.log_test("Kinks mutual filter", False, "Failed to get discovery results")
+            else:
+                self.log_test("Kinks mutual filter", False, "Failed to set kink preferences")
+        else:
+            self.log_test("Kinks mutual filter", False, "Failed to set user kinks")
+
+    def test_phase4_auth_only_profiles(self):
+        """Test profiles require authentication"""
+        print("\n🔍 Testing Phase 4: Auth-Only Profiles...")
+        
+        # Try to access user profile without auth - need to get a user ID first
+        werner_token = self.tokens.get("werner@eros.app")
+        if werner_token:
+            # Get Werner's user ID
+            success, resp = self.make_request('GET', '/me', token=werner_token)
+            if success and resp:
+                werner_id = resp.json().get("id")
+                if werner_id:
+                    # Try to access without auth
+                    success2, resp2 = self.make_request('GET', f'/users/{werner_id}', expected_status=401)
+                    self.log_test("GET /api/users/:id without auth returns 401", success2,
+                                 "Correctly requires authentication")
+                else:
+                    self.log_test("GET /api/users/:id without auth returns 401", False, "Could not get Werner's ID")
+            else:
+                self.log_test("GET /api/users/:id without auth returns 401", False, "Could not get Werner's profile")
+        else:
+            self.log_test("GET /api/users/:id without auth returns 401", False, "Werner token not available")
+
+    def test_phase4_hidden_banned_profiles(self):
+        """Test hidden and banned profile handling for different roles"""
+        print("\n🔍 Testing Phase 4: Hidden/Banned Profile Access...")
+        
+        admin_token = self.tokens.get("admin@eros.app")
+        alice_token = self.tokens.get("alice@eros.app")
+        werner_token = self.tokens.get("werner@eros.app")
+        
+        if not all([admin_token, alice_token, werner_token]):
+            self.log_test("Hidden/Banned Profiles", False, "Required tokens not available")
+            return
+        
+        # Get Werner's user ID
+        success, resp = self.make_request('GET', '/me', token=werner_token)
+        if not success or not resp:
+            self.log_test("Hidden/Banned Profiles", False, "Could not get Werner's profile")
+            return
+        
+        werner_id = resp.json().get("id")
+        if not werner_id:
+            self.log_test("Hidden/Banned Profiles", False, "Could not get Werner's ID")
+            return
+        
+        # Set Werner to hidden mode
+        hidden_data = {"privacy": {"hidden_mode": True}}
+        success1, _ = self.make_request('PATCH', '/me', hidden_data, werner_token)
+        
+        if success1:
+            # Regular user (Alice) should get 404
+            success2, resp2 = self.make_request('GET', f'/users/{werner_id}', 
+                                              token=alice_token, expected_status=404)
+            
+            # Admin should get 200 with admin_view=true
+            success3, resp3 = self.make_request('GET', f'/users/{werner_id}', token=admin_token)
+            
+            admin_view = False
+            hidden_mode = False
+            if success3 and resp3:
+                data = resp3.json()
+                admin_view = data.get("admin_view", False)
+                hidden_mode = data.get("hidden_mode", False)
+            
+            self.log_test("Hidden profile: regular user gets 404", success2,
+                         "Alice correctly blocked from hidden Werner")
+            self.log_test("Hidden profile: admin gets 200 with admin_view", 
+                         success3 and admin_view and hidden_mode,
+                         f"Admin view: {admin_view}, Hidden mode: {hidden_mode}")
+        else:
+            self.log_test("Hidden profile setup", False, "Failed to set hidden mode")
+
+    def test_phase4_admin_endpoints(self):
+        """Test admin-only endpoints with different roles"""
+        print("\n🔍 Testing Phase 4: Admin Role Permissions...")
+        
+        admin_token = self.tokens.get("admin@eros.app")
+        content_reviewer_token = self.tokens.get("review@eros.app")
+        support_token = self.tokens.get("support@eros.app")
+        alice_token = self.tokens.get("alice@eros.app")
+        
+        if not all([admin_token, content_reviewer_token, support_token, alice_token]):
+            self.log_test("Admin Endpoints", False, "Required tokens not available")
+            return
+        
+        # Test GET /api/admin/users for different roles
+        success1, resp1 = self.make_request('GET', '/admin/users', token=admin_token)
+        self.log_test("GET /api/admin/users - admin access", success1, "Admin can access users endpoint")
+        
+        success2, resp2 = self.make_request('GET', '/admin/users', token=content_reviewer_token)
+        self.log_test("GET /api/admin/users - content_reviewer access", success2, "Content reviewer can access users endpoint")
+        
+        success3, resp3 = self.make_request('GET', '/admin/users', token=support_token)
+        self.log_test("GET /api/admin/users - support access", success3, "Support can access users endpoint")
+        
+        success4, resp4 = self.make_request('GET', '/admin/users', token=alice_token, expected_status=403)
+        self.log_test("GET /api/admin/users - user blocked", success4, "Regular user correctly blocked from admin endpoint")
+        
+        # Test admin-only endpoints
+        success5, resp5 = self.make_request('GET', '/admin/matches', token=admin_token)
+        self.log_test("GET /api/admin/matches - admin access", success5, "Admin can access matches endpoint")
+        
+        success6, resp6 = self.make_request('GET', '/admin/matches', token=content_reviewer_token, expected_status=403)
+        self.log_test("GET /api/admin/matches - content_reviewer blocked", success6, "Content reviewer correctly blocked from matches endpoint")
+
+    def test_phase4_client_event_endpoint(self):
+        """Test unauthenticated client event endpoint"""
+        print("\n🔍 Testing Phase 4: Client Event Endpoint...")
+        
+        event_data = {
+            "type": "screenshot_attempt",
+            "reason": "right_click_blocked"
+        }
+        
+        success, resp = self.make_request('POST', '/client-event', event_data)
+        if success and resp:
+            data = resp.json()
+            self.log_test("POST /api/client-event unauthenticated", 
+                         success and data.get("ok") == True,
+                         "Client event endpoint accepts unauthenticated requests")
+        else:
+            self.log_test("POST /api/client-event unauthenticated", False,
+                         "Client event endpoint failed")
+
     def run_all_tests(self):
         """Run comprehensive test suite including Phase 3"""
-        print("🚀 Starting Comprehensive Dating Platform API Tests (Phase 3)")
+        print("🚀 Starting Comprehensive Dating Platform API Tests (Phase 4)")
         print(f"Testing against: {self.base_url}")
         print("=" * 60)
         
@@ -1034,6 +1305,16 @@ class DatingPlatformTester:
             self.test_phase3_premium_features()
             self.test_phase3_events()
             self.test_phase3_admin_roles()
+            
+            # Phase 4 tests (new)
+            self.test_phase4_extended_profile_fields()
+            self.test_phase4_penis_categorization()
+            self.test_phase4_extended_filters()
+            self.test_phase4_kinks_mutual_filter()
+            self.test_phase4_auth_only_profiles()
+            self.test_phase4_hidden_banned_profiles()
+            self.test_phase4_admin_endpoints()
+            self.test_phase4_client_event_endpoint()
             
         except Exception as e:
             print(f"\n❌ Test suite error: {str(e)}")

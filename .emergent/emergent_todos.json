@@ -1,38 +1,54 @@
 [
   {
-    "content": "Phase 3: Email verification flow (in-app code)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 3: MFA via TOTP (enable/disable + login challenge)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 3: Video clips (upload + playback in profile / messages)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 3: Premium tier (upgrade, who-liked-me, message-first)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 3: Boosts (temporary discovery priority)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 3: Events (create/list/RSVP)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 3: Extended admin roles (content_reviewer, support) + seed",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 3: Testing agent full round + fix",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 3: Finish & deliver",
+    "content": "Edit5: Posthog + Emergent badge entfernen",
     "status": "in_progress"
+  },
+  {
+    "content": "Edit6: Name/Alter/Gender Pflicht, Alter immutable",
+    "status": "pending"
+  },
+  {
+    "content": "Edit2: Max 5 Fotos (1 primär + 4 sekundär)",
+    "status": "pending"
+  },
+  {
+    "content": "Edit3: Besuchte Profile mit Auge markieren",
+    "status": "pending"
+  },
+  {
+    "content": "Edit1: Gender-konditionale Profilfelder",
+    "status": "pending"
+  },
+  {
+    "content": "Feature3: ID-Verifikation mit Badge",
+    "status": "pending"
+  },
+  {
+    "content": "Feature4: Auto-Mod Shadow-Restrict nach 10 unique IP Reports",
+    "status": "pending"
+  },
+  {
+    "content": "Feature5: User-Management-Panel (edit/delete/roles/premium)",
+    "status": "pending"
+  },
+  {
+    "content": "Feature2: Reiseplaner mit Sichtbarkeit 1 Woche vor Reise",
+    "status": "pending"
+  },
+  {
+    "content": "Feature1: Admin-konfigurierbare AI (Gemini/OpenAI/Ollama local)",
+    "status": "pending"
+  },
+  {
+    "content": "Feature6: Stripe Buchungssystem für Premium",
+    "status": "pending"
+  },
+  {
+    "content": "Edit4: Design eleganter strukturieren",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 5: Testing + Deliver",
+    "status": "pending"
   }
 ]

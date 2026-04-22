@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Eros",
+    "slug": "eros",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "eros",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.eros.mobile"
+    },
+    "android": {
+      "package": "app.eros.mobile"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "extra": {
+      "backendUrl": "https://auto-implement-2.preview.emergentagent.com"
+    },
+    "plugins": ["expo-localization", "expo-screen-capture"]
+  }
+}
