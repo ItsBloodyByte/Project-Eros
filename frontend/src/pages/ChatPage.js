@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import { Switch } from "../components/ui/switch";
 import { Label } from "../components/ui/label";
-import { Send, Paperclip, ArrowLeft, Timer, Shield } from "lucide-react";
+import { Send, Paperclip, ArrowLeft, Timer, Shield, BadgeCheck, Lock } from "lucide-react";
 import { toast } from "sonner";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -24,6 +24,7 @@ export default function ChatPage() {
   const [text, setText] = useState("");
   const [selfDestruct, setSelfDestruct] = useState(false);
   const [peer, setPeer] = useState(null);
+  const [matchMeta, setMatchMeta] = useState({ locked: false, system_match: false, locked_reason: null });
   const [typing, setTyping] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const wsRef = useRef(null);
@@ -37,6 +38,7 @@ export default function ChatPage() {
         const m = data.matches.find((x) => x.id === matchId);
         if (!m) { toast.error("Match not found"); nav("/matches"); return; }
         setPeer(m.user);
+        setMatchMeta({ locked: !!m.locked, system_match: !!m.system_match, locked_reason: m.locked_reason || null });
         const res = await api.get(`/matches/${matchId}/messages`);
         setMessages(res.data.messages);
       } catch (e) {
@@ -133,7 +135,12 @@ export default function ChatPage() {
             {peer && (
               <div className="flex items-center gap-2">
                 <div className="font-display text-lg tracking-tight">{peer.display_name}</div>
-                {peer.is_online && <span className="online-dot" />}
+                {peer.is_system && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] px-2 py-0.5 text-[10.5px] font-medium" data-testid="chat-official-badge" title="Offizielles Eros-Profil">
+                    <BadgeCheck className="h-3 w-3" /> Offiziell
+                  </span>
+                )}
+                {peer.is_online && !peer.is_system && <span className="online-dot" />}
               </div>
             )}
             <DropdownMenu>
@@ -171,27 +178,44 @@ export default function ChatPage() {
             {messages.length === 0 && <div className="text-sm text-[hsl(var(--muted-foreground))] text-center py-16">Schreib hallo — sei warm und konkret.</div>}
           </div>
 
-          <div className="mt-3 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
-            <Label className="flex items-center gap-2 cursor-pointer">
-              <Switch checked={selfDestruct} onCheckedChange={setSelfDestruct} data-testid="self-destruct-toggle" />
-              <span className="inline-flex items-center gap-1"><Timer className="h-3 w-3" /> Selbstzerstörung nach 60 s</span>
-            </Label>
-          </div>
+          {matchMeta.locked ? (
+            <div
+              className="mt-3 rounded-[var(--radius-lg)] bg-[hsl(var(--accent))]/10 ring-1 ring-[hsl(var(--accent))]/30 p-4 flex items-start gap-3"
+              data-testid="chat-locked-banner"
+            >
+              <Lock className="h-4 w-4 shrink-0 mt-0.5 text-[hsl(var(--accent))]" />
+              <div className="text-sm">
+                <div className="font-medium text-[hsl(var(--foreground))]">Offizielle Mitteilung — du kannst hierauf nicht antworten</div>
+                <div className="text-[hsl(var(--muted-foreground))] text-xs mt-0.5">
+                  Dieses Gespräch stammt vom verifizierten Eros-Team. Bei Fragen wende dich bitte an den Support.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="mt-3 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
+                <Label className="flex items-center gap-2 cursor-pointer">
+                  <Switch checked={selfDestruct} onCheckedChange={setSelfDestruct} data-testid="self-destruct-toggle" />
+                  <span className="inline-flex items-center gap-1"><Timer className="h-3 w-3" /> Selbstzerstörung nach 60 s</span>
+                </Label>
+              </div>
 
-          <div className="mt-2 flex items-end gap-2 rounded-[var(--radius-lg)] bg-[hsl(var(--card))] p-2 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && sendMedia(e.target.files[0])} data-testid="chat-media-input" />
-            <Button variant="ghost" size="icon" onClick={() => fileRef.current?.click()} data-testid="chat-attach-button"><Paperclip className="h-4 w-4" /></Button>
-            <Textarea
-              value={text}
-              rows={1}
-              className="min-h-10 border-0 bg-transparent shadow-none focus-visible:ring-0 resize-none"
-              onChange={(e) => { setText(e.target.value); setTyping(true); }}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              placeholder="Nachricht schreiben …"
-              data-testid="chat-text-input"
-            />
-            <Button onClick={send} data-testid="chat-send-button" className="gap-1 rounded-full"><Send className="h-4 w-4" /></Button>
-          </div>
+              <div className="mt-2 flex items-end gap-2 rounded-[var(--radius-lg)] bg-[hsl(var(--card))] p-2 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && sendMedia(e.target.files[0])} data-testid="chat-media-input" />
+                <Button variant="ghost" size="icon" onClick={() => fileRef.current?.click()} data-testid="chat-attach-button"><Paperclip className="h-4 w-4" /></Button>
+                <Textarea
+                  value={text}
+                  rows={1}
+                  className="min-h-10 border-0 bg-transparent shadow-none focus-visible:ring-0 resize-none"
+                  onChange={(e) => { setText(e.target.value); setTyping(true); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                  placeholder="Nachricht schreiben …"
+                  data-testid="chat-text-input"
+                />
+                <Button onClick={send} data-testid="chat-send-button" className="gap-1 rounded-full"><Send className="h-4 w-4" /></Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

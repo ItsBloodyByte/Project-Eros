@@ -5,7 +5,7 @@ import { AppHeader } from "../components/AppHeader";
 import { AppFooter } from "../components/AppFooter";
 import { Skeleton } from "../components/ui/skeleton";
 import { Badge } from "../components/ui/badge";
-import { MessagesSquare, ShieldCheck } from "lucide-react";
+import { MessagesSquare, ShieldCheck, BadgeCheck } from "lucide-react";
 
 export default function MatchesPage() {
   const [matches, setMatches] = useState([]);
@@ -55,25 +55,41 @@ export default function MatchesPage() {
                   <li key={m.id}>
                     <Link
                       to={`/chat/${m.id}`}
-                      className="flex items-center gap-4 px-4 py-3.5 hover:bg-[hsl(var(--secondary))]/50 transition-colors duration-[var(--dur-2)] ease-[var(--ease-out)]"
+                      className={[
+                        "flex items-center gap-4 px-4 py-3.5 transition-colors duration-[var(--dur-2)] ease-[var(--ease-out)]",
+                        m.system_match
+                          ? "bg-[hsl(var(--accent))]/5 hover:bg-[hsl(var(--accent))]/10"
+                          : "hover:bg-[hsl(var(--secondary))]/50",
+                      ].join(" ")}
                       data-testid={`match-row-${m.id}`}
                     >
                       <div className="relative shrink-0">
-                        <div className="h-14 w-14 rounded-full overflow-hidden bg-[hsl(var(--muted))] ring-1 ring-[hsl(var(--border))]/70">
+                        <div className={`h-14 w-14 rounded-full overflow-hidden bg-[hsl(var(--muted))] ring-1 ${m.system_match ? "ring-[hsl(var(--accent))]/60" : "ring-[hsl(var(--border))]/70"}`}>
                           {primary && <img src={primary.data} alt="" className={`h-full w-full object-cover ${isNsfw ? "blur-md" : ""}`} />}
                         </div>
-                        {m.user.is_online && <span className="online-dot absolute -right-0.5 -bottom-0.5 ring-2 ring-[hsl(var(--card))]" />}
+                        {m.system_match ? (
+                          <span className="absolute -right-0.5 -bottom-0.5 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] p-0.5 ring-2 ring-[hsl(var(--card))]" title="Offizielles Eros-Profil">
+                            <BadgeCheck className="h-3 w-3" />
+                          </span>
+                        ) : m.user.is_online && <span className="online-dot absolute -right-0.5 -bottom-0.5 ring-2 ring-[hsl(var(--card))]" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <div className="font-display text-lg tracking-tight truncate">{m.user.display_name}</div>
-                          {m.user.id_verified && (
+                          {m.system_match ? (
+                            <Badge className="rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] border-transparent text-[10px] gap-1" data-testid="match-official-badge">
+                              <BadgeCheck className="h-3 w-3" /> Offiziell
+                            </Badge>
+                          ) : m.user.id_verified ? (
                             <ShieldCheck className="h-3.5 w-3.5 text-[hsl(var(--verified))]" aria-label="verifiziert" />
-                          )}
+                          ) : null}
                         </div>
                         <div className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
-                          {m.user.age}{m.user.pronouns ? ` · ${m.user.pronouns}` : ""}
-                          {m.last_message_preview && <span className="ml-1.5 italic">· {m.last_message_preview.slice(0, 60)}</span>}
+                          {m.system_match
+                            ? <span>Verifizierte Mitteilung vom Eros-Team</span>
+                            : <>{m.user.age}{m.user.pronouns ? ` · ${m.user.pronouns}` : ""}
+                               {m.last_message_preview && <span className="ml-1.5 italic">· {m.last_message_preview.slice(0, 60)}</span>}</>
+                          }
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

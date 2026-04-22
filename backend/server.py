@@ -112,10 +112,13 @@ async def startup():
         # IP flagging with automatic expiry (minor-attempt protection)
         try:
             await db.ip_flags.create_index("ip")
-            # TTL index: remove doc after `expires_at` naturally. Requires expires_at as Date.
-            # Our docs store ISO strings; we clean lazily on read. Still add a plain index.
         except Exception:
             pass
+        # Official Eros system profile (used as sender of broadcast DMs)
+        try:
+            await _ensure_eros_system_user()
+        except Exception as ex:
+            logger.warning("Could not ensure Eros system user: %s", ex)
         logger.info("Mongo indexes ensured.")
     except Exception as e:
         logger.exception("Index creation failed: %s", e)
@@ -838,7 +841,7 @@ async def unblock_user(target_user_id: str, user=Depends(_require_user)):
 async def list_matches(user=Depends(_require_user)):
     cursor = db.matches.find(
         {"$or": [{"user_a": user["id"]}, {"user_b": user["id"]}]}
-    ).sort("created_at", -1)
+    ).sort([("locked", -1), ("last_message_at", -1), ("created_at", -1)])
     matches = await cursor.to_list(length=200)
     out = []
     for m in matches:
@@ -847,6 +850,7 @@ async def list_matches(user=Depends(_require_user)):
         if not other or other.get("banned"):
             continue
         pub = public_user_from_doc(other, viewer_location=(user.get("location") or {}).get("coordinates"))
+        pub["is_system"] = bool(other.get("is_system"))
         # unread count
         unread = await db.messages.count_documents(
             {"match_id": m["id"], "sender_id": {"$ne": user["id"]}, "read_by": {"$ne": user["id"]}}
@@ -858,6 +862,9 @@ async def list_matches(user=Depends(_require_user)):
                 "created_at": m["created_at"],
                 "last_message_at": m.get("last_message_at"),
                 "unread_count": unread,
+                "locked": bool(m.get("locked")),
+                "locked_reason": m.get("locked_reason"),
+                "system_match": bool(m.get("system_match")),
             }
         )
     return {"matches": out}
@@ -893,6 +900,10 @@ async def list_messages(match_id: str, user=Depends(_require_user), limit: int =
 @api_router.post("/messages")
 async def send_message(body: SendMessageRequest, user=Depends(_require_user)):
     m = await _match_or_403(body.match_id, user["id"])
+    # Broadcast / system-locked matches are read-only for non-staff users
+    if m.get("locked"):
+        if user.get("role") not in {"admin", "superadmin"}:
+            raise HTTPException(403, "Dieser Chat ist eine offizielle Eros-Mitteilung — du kannst darauf nicht antworten.")
     if not body.text and not body.media_data_url:
         raise HTTPException(400, "Message must have text or media")
     if body.text and contains_link_like(body.text):
@@ -1274,6 +1285,127 @@ async def set_role_channels(role: str, payload: dict, user=Depends(_require_user
 import hmac as _hmac
 import hashlib as _hashlib
 
+EROS_SYSTEM_USER_ID = "eros-system-user"
+
+
+async def _ensure_eros_system_user() -> dict:
+    """Idempotently create the official 'Eros' profile used as sender of broadcast DMs."""
+    doc = await db.users.find_one({"id": EROS_SYSTEM_USER_ID})
+    if doc:
+        return doc
+    doc = {
+        "id": EROS_SYSTEM_USER_ID,
+        "email": "noreply@eros.app",
+        "password_hash": hash_password(str(uuid.uuid4())),  # unreachable
+        "display_name": "Eros",
+        "age": 99,
+        "birth_date": "1900-01-01",
+        "gender_identity": "other",
+        "pronouns": None,
+        "orientation": None,
+        "bio": "Offizielles Eros-Profil. Mitteilungen vom Team erscheinen hier als verifizierte Nachrichten.",
+        "location": None,
+        "photos": [{
+            "id": str(uuid.uuid4()),
+            "data": "https://images.unsplash.com/photo-1557800636-894a64c1696f?w=800&q=80&auto=format&fit=crop",
+            "nsfw_score": 0.0,
+            "has_face": False,
+            "category": "logo",
+            "is_primary": True,
+        }],
+        "preferences": {},
+        "privacy": {"hidden_mode": True, "read_receipts": False, "show_online_status": False, "show_typing": False, "screenshot_notifications": False},
+        "relationship_types": [],
+        "seeking_roles": [],
+        "kinks": [],
+        "verified": True,
+        "id_verified": True,
+        "banned": False,
+        "role": "admin",
+        "is_system": True,
+        "consents": {"terms": True, "privacy": True, "sensitive_data": True, "accepted_at": now_utc().isoformat(), "version": 1},
+        "created_at": now_utc().isoformat(),
+        "last_active": now_utc().isoformat(),
+    }
+    await db.users.insert_one(doc)
+    return doc
+
+
+async def _eros_match_for(user_id: str) -> dict:
+    """Return (creating if necessary) the locked system match between a user and the Eros profile."""
+    existing = await db.matches.find_one({
+        "locked": True, "system_match": True,
+        "$or": [
+            {"user_a": EROS_SYSTEM_USER_ID, "user_b": user_id},
+            {"user_a": user_id, "user_b": EROS_SYSTEM_USER_ID},
+        ],
+    })
+    if existing:
+        return existing
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_a": EROS_SYSTEM_USER_ID,
+        "user_b": user_id,
+        "locked": True,
+        "locked_reason": "broadcast",
+        "system_match": True,
+        "created_at": now_utc().isoformat(),
+        "last_message_at": now_utc().isoformat(),
+    }
+    await db.matches.insert_one(doc)
+    return doc
+
+
+async def _fanout_broadcast_as_chat(broadcast: dict) -> int:
+    """Deliver the broadcast as an incoming chat message to each recipient's system match.
+
+    The message is flagged `is_broadcast=True` and carries the HMAC signature so the
+    frontend can render the authenticity seal in the chat bubble.
+    """
+    await _ensure_eros_system_user()
+    audience = broadcast.get("audience") or "all"
+    q: Dict = {"id": {"$ne": EROS_SYSTEM_USER_ID}, "banned": {"$ne": True}, "is_system": {"$ne": True}}
+    if audience == "premium":
+        q["premium_expires_at"] = {"$gt": now_utc().isoformat()}
+    elif audience == "verified":
+        q["id_verified"] = True
+    elif audience == "staff":
+        q["role"] = {"$in": ["admin", "moderator", "superadmin", "content_reviewer", "support"]}
+    count = 0
+    async for u in db.users.find(q, {"id": 1}):
+        match = await _eros_match_for(u["id"])
+        text = f"**{broadcast['title']}**\n\n{broadcast['body']}"
+        msg = {
+            "id": str(uuid.uuid4()),
+            "match_id": match["id"],
+            "sender_id": EROS_SYSTEM_USER_ID,
+            "text": text,
+            "media_data_url": None,
+            "nsfw_score": None,
+            "self_destruct_at": None,
+            "read_by": [EROS_SYSTEM_USER_ID],
+            "is_broadcast": True,
+            "broadcast_id": broadcast["id"],
+            "broadcast_signature": broadcast.get("signature"),
+            "broadcast_severity": broadcast.get("severity"),
+            "broadcast_authentic": _verify_broadcast(broadcast),
+            "created_at": now_utc().isoformat(),
+        }
+        await db.messages.insert_one(msg)
+        await db.matches.update_one({"id": match["id"]}, {"$set": {"last_message_at": msg["created_at"]}})
+        # push to any open chat socket
+        try:
+            await ws_manager.broadcast(match["id"], {
+                "type": "message",
+                "message": serialize_doc(msg),
+                "for_users": [u["id"], EROS_SYSTEM_USER_ID],
+            })
+        except Exception:
+            pass
+        count += 1
+    return count
+
+
 def _broadcast_signature(doc: dict) -> str:
     """HMAC-SHA256 over canonical fields, using the server secret. Only the backend can produce this."""
     from auth import JWT_SECRET
@@ -1360,7 +1492,13 @@ async def create_broadcast(payload: dict, user=Depends(_require_user)):
     }
     doc["signature"] = _broadcast_signature(doc)
     await db.broadcasts.insert_one(doc)
-    await _audit(user["id"], "broadcast_created", doc["id"], {"audience": audience, "severity": severity})
+    # Fan-out as locked system chat messages from the official Eros profile
+    try:
+        delivered = await _fanout_broadcast_as_chat(doc)
+    except Exception as ex:
+        logger.warning("broadcast fanout failed: %s", ex)
+        delivered = 0
+    await _audit(user["id"], "broadcast_created", doc["id"], {"audience": audience, "severity": severity, "delivered": delivered})
     try:
         await notify_admins({
             "type": "broadcast_sent", "broadcast_id": doc["id"], "severity": severity,

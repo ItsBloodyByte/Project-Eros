@@ -1,19 +1,27 @@
 import { format } from "date-fns";
-import { Check, CheckCheck, Clock, MoreHorizontal } from "lucide-react";
+import { Check, CheckCheck, Clock, MoreHorizontal, BadgeCheck } from "lucide-react";
 import { ReportDialog } from "./ReportDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useState } from "react";
 
 export function ChatBubble({ message, me }) {
   const isMe = message.sender_id === me?.id;
+  const isBroadcast = !!message.is_broadcast;
   const time = message.created_at ? format(new Date(message.created_at), "HH:mm") : "";
   const isNsfw = message.media_data_url && (message.nsfw_score ?? 0) >= 0.75;
   const isRead = isMe && (message.read_by?.length || 0) > 1;
   const [reportOpen, setReportOpen] = useState(false);
 
+  // Split **Title**\n\nBody into title + body for broadcast
+  let bcTitle = null, bcBody = message.text;
+  if (isBroadcast && message.text) {
+    const m = message.text.match(/^\*\*(.+?)\*\*\n\n([\s\S]*)$/);
+    if (m) { bcTitle = m[1]; bcBody = m[2]; }
+  }
+
   return (
     <div className={`group flex w-full items-end gap-2 ${isMe ? "justify-end" : "justify-start"}`} data-testid="chat-bubble">
-      {!isMe && (
+      {!isMe && !isBroadcast && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -34,13 +42,37 @@ export function ChatBubble({ message, me }) {
       <div
         className={[
           "max-w-[78%] px-3.5 py-2.5 text-sm leading-relaxed shadow-[var(--shadow-sm)]",
-          isMe
-            ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] bubble-mine"
-            : "bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))] ring-1 ring-[hsl(var(--border))]/70 bubble-theirs",
+          isBroadcast
+            ? "bg-[hsl(var(--accent))]/10 ring-1 ring-[hsl(var(--accent))]/40 text-[hsl(var(--foreground))] rounded-[var(--radius-lg)]"
+            : isMe
+              ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] bubble-mine"
+              : "bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))] ring-1 ring-[hsl(var(--border))]/70 bubble-theirs",
         ].join(" ")}
+        data-testid={isBroadcast ? "chat-broadcast-bubble" : "chat-bubble-content"}
       >
-        {message.text && (
-          <div className="whitespace-pre-wrap" data-testid="chat-message-text">{message.text}</div>
+        {isBroadcast && (
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                message.broadcast_authentic
+                  ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]"
+                  : "bg-[hsl(var(--destructive))]/20 text-[hsl(var(--destructive))]"
+              }`}
+              title={message.broadcast_authentic ? "HMAC-SHA256 signiert vom Eros-Team" : "Signatur ungültig"}
+              data-testid="chat-authentic-seal"
+            >
+              <BadgeCheck className="h-3 w-3" /> {message.broadcast_authentic ? "Verifiziert" : "Ungültig"}
+            </span>
+            {message.broadcast_severity && message.broadcast_severity !== "info" && (
+              <span className="text-[10px] uppercase tracking-wide text-[hsl(var(--destructive))]">
+                {message.broadcast_severity === "urgent" ? "Dringend" : "Warnung"}
+              </span>
+            )}
+          </div>
+        )}
+        {bcTitle && <div className="font-display text-base mb-1">{bcTitle}</div>}
+        {bcBody && (
+          <div className="whitespace-pre-wrap" data-testid="chat-message-text">{bcBody}</div>
         )}
         {message.media_data_url && (
           <div className="mt-1.5 overflow-hidden rounded-[var(--radius-sm)]">
@@ -48,17 +80,22 @@ export function ChatBubble({ message, me }) {
             {isNsfw && <div className="text-[11px] opacity-80 mt-1">Sensibler Inhalt — tippe, um separat zu öffnen.</div>}
           </div>
         )}
-        <div className={`mt-1 flex items-center gap-1.5 text-[10.5px] font-mono ${isMe ? "opacity-80 justify-end" : "text-[hsl(var(--muted-foreground))]"}`}>
+        <div className={`mt-1 flex items-center gap-1.5 text-[10.5px] font-mono ${isMe && !isBroadcast ? "opacity-80 justify-end" : "text-[hsl(var(--muted-foreground))]"}`}>
           <span>{time}</span>
-          {message.self_destruct_at && <><span>·</span><Clock className="h-3 w-3" /></>}
-          {isMe && (
+          {isBroadcast && message.broadcast_signature && (
+            <span className="truncate opacity-70" title={`Signatur: ${message.broadcast_signature}`}>
+              · sig {message.broadcast_signature.slice(0, 10)}…
+            </span>
+          )}
+          {message.self_destruct_at && !isBroadcast && <><span>·</span><Clock className="h-3 w-3" /></>}
+          {isMe && !isBroadcast && (
             isRead
               ? <CheckCheck className="h-3.5 w-3.5" aria-label="gelesen" data-testid="chat-read-receipt" />
               : <Check className="h-3.5 w-3.5" aria-label="gesendet" />
           )}
         </div>
       </div>
-      {!isMe && (
+      {!isMe && !isBroadcast && (
         <ReportHiddenTrigger open={reportOpen} onOpenChange={setReportOpen} targetId={message.id} />
       )}
     </div>
