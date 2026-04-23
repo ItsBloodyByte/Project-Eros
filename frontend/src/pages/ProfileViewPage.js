@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { RoleBadge } from "../components/RoleBadge";
 import { PersonDetails } from "../components/PersonDetails";
 import { MoodBadge } from "../components/MoodBadge";
+import { RelationshipStatusBadge } from "../components/RelationshipStatusBadge";
 import { AcquaintancesSection } from "../components/AcquaintancesSection";
 
 function Row({ label, value }) {
@@ -229,6 +230,9 @@ export default function ProfileViewPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     {profile.current_mood && (
                       <MoodBadge mood={profile.current_mood} size="md" testid="profile-mood-badge" />
+                    )}
+                    {profile.relationship_status && profile.relationship_status !== "not_specified" && (
+                      <RelationshipStatusBadge value={profile.relationship_status} />
                     )}
                     {(profile.partner || (profile.account_type === "duo" && profile.persona_b)) && (
                       <Badge className="gap-1 bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/40" data-testid="profile-couple-badge">

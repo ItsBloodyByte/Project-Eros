@@ -83,6 +83,9 @@ from models import (
     AIConfigUpdate,
     AdminUserUpdate,
     LegalPageUpdate,
+    LocationHeartbeatRequest,
+    PayPalOrderRequest,
+    KlarnaSessionRequest,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -453,6 +456,9 @@ async def login(body: LoginRequest, request: "Request" = None):
 @api_router.get("/me")
 async def me(user=Depends(_require_user)):
     pub = public_user_from_doc(user)
+    # /me always exposes the true role to the owner, even when role_badge_visible=False
+    # (the toggle hides the role only from OTHERS, not from the staff member themselves).
+    pub["role"] = user.get("role", "user")
     now_iso = now_utc().isoformat()
     return {
         **pub,
@@ -486,6 +492,7 @@ async def update_me(body: ProfileUpdate, user=Depends(_require_user)):
         "height_cm", "body_type", "ethnicity", "languages", "interests",
         "smoking", "drinking", "diet", "sti_status", "sti_tested_on",
         "cup_size", "penis_length_cm", "penis_girth_cm", "current_mood",
+        "relationship_status",
     ]:
         val = getattr(body, field)
         if val is None:
@@ -503,7 +510,9 @@ async def update_me(body: ProfileUpdate, user=Depends(_require_user)):
     if update:
         await db.users.update_one({"id": user["id"]}, {"$set": update})
     fresh = await db.users.find_one({"id": user["id"]})
-    return public_user_from_doc(fresh)
+    pub = public_user_from_doc(fresh)
+    pub["role"] = fresh.get("role", "user")  # owner always sees own role
+    return pub
 
 
 @api_router.patch("/me/mood")
@@ -520,6 +529,35 @@ async def update_mood(body: MoodUpdateRequest, user=Depends(_require_user)):
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     fresh = await db.users.find_one({"id": user["id"]})
     return public_user_from_doc(fresh)
+
+
+@api_router.post("/me/location")
+async def update_location_heartbeat(body: LocationHeartbeatRequest, user=Depends(_require_user)):
+    """
+    Lightweight GPS heartbeat. Frontend calls this every ~15 min while the tab
+    is visible so that distance-based discovery uses fresh coordinates. Accepts
+    [lng, lat]; accuracy_m is logged for future radius heuristics.
+    """
+    if not body.coordinates or len(body.coordinates) != 2:
+        raise HTTPException(400, "coordinates must be [lng, lat]")
+    lng, lat = body.coordinates
+    try:
+        lng = float(lng)
+        lat = float(lat)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "coordinates must be numeric")
+    if not (-180.0 <= lng <= 180.0) or not (-90.0 <= lat <= 90.0):
+        raise HTTPException(400, "coordinates out of range")
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "location": {"type": "Point", "coordinates": [lng, lat]},
+            "location_updated_at": now_utc().isoformat(),
+            "location_accuracy_m": float(body.accuracy_m) if body.accuracy_m is not None else None,
+            "last_active": now_utc().isoformat(),
+        }},
+    )
+    return {"ok": True, "updated_at": now_utc().isoformat()}
 
 
 # ---------- Photos ----------
@@ -3890,6 +3928,17 @@ def _find_package(cfg: Dict, pkg_id: str) -> Optional[Dict]:
     return None
 
 
+def _live_providers(cfg: Dict) -> Dict[str, bool]:
+    """Return which admin-configured payment providers have enough credentials to run live."""
+    keys = cfg.get("provider_keys") or {}
+    stripe_ok = bool((keys.get("stripe") or {}).get("secret_key") or cfg.get("stripe_api_key"))
+    pp = keys.get("paypal") or {}
+    paypal_ok = bool(pp.get("client_id") and (pp.get("secret") or pp.get("client_secret")))
+    kl = keys.get("klarna") or {}
+    klarna_ok = bool((kl.get("username") or kl.get("merchant_id")) and (kl.get("password") or kl.get("auth_token")))
+    return {"stripe": stripe_ok, "paypal": paypal_ok, "klarna": klarna_ok}
+
+
 @api_router.get("/payments/packages")
 async def list_packages(user=Depends(_require_user)):
     cfg = await _get_payment_config()
@@ -3897,8 +3946,9 @@ async def list_packages(user=Depends(_require_user)):
     return {
         "enabled": bool(cfg.get("enabled")) and cfg.get("provider") != "disabled",
         "provider": cfg.get("provider", "disabled"),
-        "supported": cfg.get("provider", "disabled") == "stripe",
+        "supported": cfg.get("provider", "disabled") in {"stripe", "paypal", "klarna"},
         "packages": pkgs,
+        "providers_live": _live_providers(cfg),
     }
 
 
@@ -3914,7 +3964,7 @@ async def admin_get_payment_config(user=Depends(_require_user)):
     cfg["provider_keys_masked"] = _mask_provider_keys(cfg.get("provider_keys") or {})
     cfg.pop("provider_keys", None)
     # inform which providers have a live server-side integration
-    cfg["supported_providers"] = ["stripe"]
+    cfg["supported_providers"] = ["stripe", "paypal", "klarna"]
     cfg["known_providers"] = ["stripe", "paypal", "mollie", "klarna", "paddle", "custom"]
     return cfg
 
@@ -4073,6 +4123,196 @@ async def stripe_webhook(request: Request):
     if evt.payment_status == "paid":
         await _apply_successful_payment(evt.session_id, evt.metadata or {})
     return {"ok": True}
+
+
+# ---------- PayPal (Orders v2, REST) ----------
+PAYPAL_API = {
+    "sandbox": "https://api-m.sandbox.paypal.com",
+    "live": "https://api-m.paypal.com",
+}
+
+
+async def _paypal_access_token(cfg: Dict) -> tuple[str, str]:
+    """Obtain an OAuth2 client-credentials token. Returns (token, api_base)."""
+    keys = (cfg.get("provider_keys") or {}).get("paypal") or {}
+    client_id = keys.get("client_id")
+    client_secret = keys.get("secret") or keys.get("client_secret")
+    if not client_id or not client_secret:
+        raise HTTPException(400, "PayPal ist nicht konfiguriert (Client-ID / Secret fehlen).")
+    env = (keys.get("environment") or "sandbox").lower()
+    api_base = PAYPAL_API.get("live" if env in {"live", "production", "prod"} else "sandbox")
+    import httpx as _httpx
+    async with _httpx.AsyncClient(timeout=20) as http:
+        r = await http.post(
+            f"{api_base}/v1/oauth2/token",
+            data={"grant_type": "client_credentials"},
+            auth=(client_id, client_secret),
+            headers={"Accept": "application/json"},
+        )
+        if r.status_code >= 400:
+            logger.error("PayPal OAuth error: %s %s", r.status_code, r.text[:500])
+            raise HTTPException(502, "PayPal-Authentifizierung fehlgeschlagen")
+        return r.json().get("access_token"), api_base
+
+
+@api_router.post("/payments/paypal/create-order")
+async def paypal_create_order(body: PayPalOrderRequest, user=Depends(_require_user)):
+    """Create a PayPal Orders v2 order. Returns the approval URL for redirect."""
+    cfg = await _get_payment_config()
+    pkg = _find_package(cfg, body.package_id)
+    if not pkg:
+        raise HTTPException(400, "Paket nicht verfügbar")
+    token, api_base = await _paypal_access_token(cfg)
+    amount_str = f"{float(pkg['amount']):.2f}"
+    origin = (body.origin_url or "").rstrip("/")
+    payload = {
+        "intent": "CAPTURE",
+        "purchase_units": [{
+            "reference_id": pkg["id"],
+            "description": pkg.get("desc") or pkg["id"],
+            "custom_id": f"{user['id']}|{pkg['id']}",
+            "amount": {
+                "currency_code": (pkg.get("currency") or "eur").upper(),
+                "value": amount_str,
+            },
+        }],
+        "application_context": {
+            "brand_name": "Eros",
+            "user_action": "PAY_NOW",
+            "return_url": f"{origin}/payments/paypal/return",
+            "cancel_url": f"{origin}/payments/paypal/cancel",
+        },
+    }
+    import httpx as _httpx
+    async with _httpx.AsyncClient(timeout=20) as http:
+        r = await http.post(
+            f"{api_base}/v2/checkout/orders",
+            json=payload,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        if r.status_code >= 400:
+            logger.error("PayPal create order error: %s %s", r.status_code, r.text[:500])
+            raise HTTPException(502, "PayPal-Bestellung konnte nicht angelegt werden")
+        data = r.json()
+    approve = next((lnk.get("href") for lnk in (data.get("links") or []) if lnk.get("rel") == "approve"), None)
+    # Persist a pending transaction for later webhook / capture reconciliation
+    await db.payment_transactions.insert_one({
+        "id": str(__import__("uuid").uuid4()),
+        "provider": "paypal",
+        "order_id": data.get("id"),
+        "user_id": user["id"],
+        "package_id": pkg["id"],
+        "amount": float(pkg["amount"]),
+        "currency": (pkg.get("currency") or "eur").upper(),
+        "status": "created",
+        "created_at": now_utc().isoformat(),
+    })
+    return {"order_id": data.get("id"), "approve_url": approve, "status": data.get("status")}
+
+
+@api_router.post("/payments/paypal/{order_id}/capture")
+async def paypal_capture_order(order_id: str, user=Depends(_require_user)):
+    """Capture a PayPal order after user approval; activates premium / boost on success."""
+    cfg = await _get_payment_config()
+    token, api_base = await _paypal_access_token(cfg)
+    import httpx as _httpx
+    async with _httpx.AsyncClient(timeout=20) as http:
+        r = await http.post(
+            f"{api_base}/v2/checkout/orders/{order_id}/capture",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        if r.status_code >= 400:
+            logger.error("PayPal capture error: %s %s", r.status_code, r.text[:500])
+            raise HTTPException(502, "PayPal-Zahlung konnte nicht eingezogen werden")
+        data = r.json()
+    status_ok = (data.get("status") == "COMPLETED")
+    txn = await db.payment_transactions.find_one({"provider": "paypal", "order_id": order_id})
+    if status_ok and txn and txn.get("status") != "paid":
+        # Apply to user based on package metadata
+        pkg = _find_package(cfg, txn.get("package_id"))
+        if pkg:
+            meta = {"user_id": user["id"], "package_id": pkg["id"], "kind": pkg.get("kind", "premium"),
+                    "days": pkg.get("days"), "minutes": pkg.get("minutes")}
+            try:
+                await _apply_successful_payment(order_id, meta)
+            except Exception as ex:
+                logger.warning("PayPal apply failed: %s", ex)
+        await db.payment_transactions.update_one(
+            {"_id": txn["_id"]},
+            {"$set": {"status": "paid", "paid_at": now_utc().isoformat()}},
+        )
+    return {"status": data.get("status"), "order_id": order_id, "paid": status_ok}
+
+
+# ---------- Klarna (Payments v1) ----------
+async def _klarna_api_base(cfg: Dict) -> tuple[str, str]:
+    """Return (basic_auth_header, api_base)."""
+    keys = (cfg.get("provider_keys") or {}).get("klarna") or {}
+    username = keys.get("username") or keys.get("merchant_id")
+    password = keys.get("password") or keys.get("auth_token")
+    if not username or not password:
+        raise HTTPException(400, "Klarna ist nicht konfiguriert (Username / Password fehlen).")
+    region = (keys.get("region") or "eu").lower()
+    env = (keys.get("environment") or "sandbox").lower()
+    host_map = {
+        ("eu", "sandbox"): "https://api.playground.klarna.com",
+        ("eu", "live"): "https://api.klarna.com",
+        ("na", "sandbox"): "https://api-na.playground.klarna.com",
+        ("na", "live"): "https://api-na.klarna.com",
+        ("oc", "sandbox"): "https://api-oc.playground.klarna.com",
+        ("oc", "live"): "https://api-oc.klarna.com",
+    }
+    api_base = host_map.get((region, env)) or host_map[("eu", "sandbox")]
+    import base64 as _b64
+    basic = "Basic " + _b64.b64encode(f"{username}:{password}".encode()).decode()
+    return basic, api_base
+
+
+@api_router.post("/payments/klarna/create-session")
+async def klarna_create_session(body: KlarnaSessionRequest, user=Depends(_require_user)):
+    """Create a Klarna Payments session. Returns client_token for the frontend widget."""
+    cfg = await _get_payment_config()
+    pkg = _find_package(cfg, body.package_id)
+    if not pkg:
+        raise HTTPException(400, "Paket nicht verfügbar")
+    auth_header, api_base = await _klarna_api_base(cfg)
+    amount_cents = int(round(float(pkg["amount"]) * 100))
+    currency = (pkg.get("currency") or "eur").upper()
+    country = (body.country or "DE").upper()
+    payload = {
+        "purchase_country": country,
+        "purchase_currency": currency,
+        "locale": "de-DE" if country in {"DE", "AT", "CH"} else "en-GB",
+        "order_amount": amount_cents,
+        "order_tax_amount": 0,
+        "order_lines": [{
+            "type": "digital",
+            "reference": pkg["id"],
+            "name": pkg.get("desc") or pkg["id"],
+            "quantity": 1,
+            "unit_price": amount_cents,
+            "tax_rate": 0,
+            "total_amount": amount_cents,
+            "total_tax_amount": 0,
+        }],
+        "merchant_reference1": f"{user['id']}|{pkg['id']}",
+    }
+    import httpx as _httpx
+    async with _httpx.AsyncClient(timeout=20) as http:
+        r = await http.post(
+            f"{api_base}/payments/v1/sessions",
+            json=payload,
+            headers={"Authorization": auth_header, "Content-Type": "application/json"},
+        )
+        if r.status_code >= 400:
+            logger.error("Klarna session error: %s %s", r.status_code, r.text[:500])
+            raise HTTPException(502, "Klarna-Session konnte nicht erstellt werden")
+        data = r.json()
+    return {
+        "session_id": data.get("session_id"),
+        "client_token": data.get("client_token"),
+        "payment_method_categories": data.get("payment_method_categories") or [],
+    }
 
 
 # ---------- Legal / Info Pages (CMS-light) ----------

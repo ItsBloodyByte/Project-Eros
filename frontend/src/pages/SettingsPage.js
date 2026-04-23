@@ -8,9 +8,13 @@ import { Switch } from "../components/ui/switch";
 import { Label } from "../components/ui/label";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Download, Trash, Shield, Moon, Sun, Monitor } from "lucide-react";
+import { Download, Trash, Shield, Moon, Sun, Monitor, BadgeCheck, Heart } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../lib/theme";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { RELATIONSHIP_STATUSES } from "../components/RelationshipStatusBadge";
+
+const STAFF_ROLES = new Set(["admin", "superadmin", "moderator", "content_reviewer", "support"]);
 
 export default function SettingsPage() {
   const { user, refresh, logout } = useAuth();
@@ -97,7 +101,50 @@ export default function SettingsPage() {
               <Row label="Screenshot-Hinweise" hint="Benachrichtige andere bei erkanntem Screenshot">
                 <Switch checked={!!privacy.screenshot_notifications} onCheckedChange={(v) => save({ screenshot_notifications: v })} data-testid="privacy-screenshot" />
               </Row>
+              {STAFF_ROLES.has(user.role) && (
+                <Row
+                  label="Rollen-Badge anzeigen"
+                  hint="Wenn aktiv: Dein Team-Status (z.B. Moderator:in, Admin) ist für andere auf deinem Profil sichtbar."
+                >
+                  <Switch
+                    checked={privacy.role_badge_visible !== false}
+                    onCheckedChange={(v) => save({ role_badge_visible: v })}
+                    data-testid="privacy-role-badge"
+                  />
+                </Row>
+              )}
             </div>
+          </section>
+
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] p-6 space-y-4 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60" data-testid="relationship-status-section">
+            <div className="flex items-center gap-2">
+              <Heart className="h-4 w-4 text-[hsl(var(--accent))]" />
+              <div className="font-display text-lg tracking-tight">Beziehungsstatus</div>
+            </div>
+            <div className="text-sm text-[hsl(var(--muted-foreground))]">
+              Dein aktueller Status wird auf deinem Profil als Badge angezeigt. „Keine Angabe" blendet den Badge aus.
+            </div>
+            <Select
+              value={user.relationship_status || "not_specified"}
+              onValueChange={async (v) => {
+                try {
+                  await api.patch("/me", { relationship_status: v === "not_specified" ? null : v });
+                  await refresh();
+                  toast.success("Beziehungsstatus aktualisiert");
+                } catch {
+                  toast.error("Speichern fehlgeschlagen");
+                }
+              }}
+            >
+              <SelectTrigger data-testid="relationship-status-select" className="max-w-sm">
+                <SelectValue placeholder="Beziehungsstatus wählen" />
+              </SelectTrigger>
+              <SelectContent>
+                {RELATIONSHIP_STATUSES.map((r) => (
+                  <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </section>
 
           <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] p-6 space-y-4 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">

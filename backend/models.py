@@ -22,6 +22,10 @@ StiStatus = Literal["negative", "positive_undetectable", "positive", "on_prep", 
 CupSize = Literal["A", "B", "C", "D", "DD", "E", "F", "G", "H", "I"]
 PenisCategory = Literal["S", "M", "L", "XL", "XXL"]
 Mood = Literal["sex_meet", "dating", "chatting", "online"]
+RelationshipStatus = Literal[
+    "not_specified", "single", "taken", "married",
+    "open_relationship", "complicated", "polyamorous", "divorced", "widowed"
+]
 
 
 def categorize_penis_length(cm: Optional[float]) -> Optional[str]:
@@ -92,6 +96,9 @@ class PrivacySettings(BaseModel):
     hidden_mode: bool = False
     screenshot_notifications: bool = True
     stealth_mode: bool = False  # Premium: browse without leaving "seen" traces or visitor log
+    # Staff can decide whether their role badge is visible on their public profile.
+    # Defaults to True so existing staff remain visible until they explicitly hide it.
+    role_badge_visible: bool = True
 
 
 class UserPreferences(BaseModel):
@@ -180,6 +187,7 @@ class ProfileUpdate(BaseModel):
     penis_length_cm: Optional[float] = Field(default=None, ge=1, le=40)
     penis_girth_cm: Optional[float] = Field(default=None, ge=1, le=40)
     current_mood: Optional[Mood] = None
+    relationship_status: Optional[RelationshipStatus] = None
 
 
 class MoodUpdateRequest(BaseModel):
@@ -433,3 +441,19 @@ class AcquaintanceResponseBody(BaseModel):
 class LegalPageUpdate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content_markdown: str = Field(default="", max_length=200_000)
+
+
+class LocationHeartbeatRequest(BaseModel):
+    # [lng, lat]
+    coordinates: List[float]
+    accuracy_m: Optional[float] = None
+
+
+class PayPalOrderRequest(BaseModel):
+    package_id: str
+    origin_url: str
+
+
+class KlarnaSessionRequest(BaseModel):
+    package_id: str
+    country: str = "DE"

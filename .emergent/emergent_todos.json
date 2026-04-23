@@ -1,26 +1,46 @@
 [
   {
-    "content": "Bestehenden Broadcast-Code (Backend-Modelle, Admin-Endpunkte) in server.py erkunden",
+    "content": "Integration-Playbook für Payment-Provider (PayPal + Klarna + SEPA/Apple/GPay via Stripe + Crypto) anfordern",
     "status": "completed"
   },
   {
-    "content": "AccountPage.js und verwandte Frontend-Strukturen inspizieren",
+    "content": "Backend: User-Modell um role_badge_visible und relationship_status erweitern",
     "status": "completed"
   },
   {
-    "content": "Backend-Endpunkt /api/me/broadcasts mit Filtern (Zeitraum, Severity, Search, Read-Status, Pagination) erweitern",
+    "content": "Backend: PATCH /me/privacy erweitert (role_badge_visible)",
     "status": "completed"
   },
   {
-    "content": "Frontend: BroadcastHistorySection-Komponente + Integration in AccountPage",
+    "content": "Backend: public_user_from_doc respektiert role_badge_visible",
     "status": "completed"
   },
   {
-    "content": "Frontend: Filter-UI (Severity-Select, Search, Zeitraum-Presets, Read-Status) mit Shadcn bauen",
+    "content": "Backend: POST /api/me/location (GPS-Heartbeat) + /me returns own role for owner",
     "status": "completed"
   },
   {
-    "content": "End-to-End Test via Testing-Agent",
+    "content": "Backend: PayPal + Klarna Echtintegration via httpx (create-order / capture / create-session)",
     "status": "completed"
+  },
+  {
+    "content": "Frontend: Toggle 'Rolle als Badge anzeigen' im SettingsPage (nur für Staff)",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: RelationshipStatus-Select in Settings + Badge-Komponente für ProfileView",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: useLocationHeartbeat Hook (15 min, nur sichtbarer Tab, respektiert stealth_mode)",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: PayPal-Button / Klarna-Widget im Checkout-Flow (offen - braucht Admin-Keys)",
+    "status": "pending"
+  },
+  {
+    "content": "Apple/Google Pay via Stripe PR-Button + BTCPay-Option (optional, Folge-Iteration)",
+    "status": "pending"
   }
 ]

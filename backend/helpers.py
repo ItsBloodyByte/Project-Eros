@@ -192,6 +192,10 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
     is_online = user_is_online(doc.get("last_active"))
     if not owner_privacy.get("show_online_status", True):
         is_online = False
+    # Role badge: staff can hide their platform role from their public profile.
+    role_value = doc.get("role", "user") or "user"
+    if role_value != "user" and owner_privacy.get("role_badge_visible", True) is False:
+        role_value = "user"
     penis_len = doc.get("penis_length_cm")
     # Prefer birth_date-derived age when available; fall back to stored `age`.
     derived_age = compute_age(doc.get("birth_date"))
@@ -214,7 +218,7 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
         "relationship_types": doc.get("relationship_types", []) or [],
         "seeking_roles": doc.get("seeking_roles", []) or [],
         "kinks": doc.get("kinks", []) or [],
-        "role": doc.get("role", "user"),
+        "role": role_value,
         # Phase 4 extended (always returned; frontend hides empties)
         "height_cm": doc.get("height_cm"),
         "body_type": doc.get("body_type"),
@@ -236,6 +240,7 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
         "partner_user_id": doc.get("partner_user_id"),
         "persona_b": _persona_b_public(doc.get("persona_b"), list_mode=list_mode) if doc.get("account_type") == "duo" else None,
         "current_mood": doc.get("current_mood"),
+        "relationship_status": doc.get("relationship_status"),
     }
 
 
