@@ -238,6 +238,9 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
         "account_type": doc.get("account_type") or "single",
         "couple_id": doc.get("couple_id"),
         "partner_user_id": doc.get("partner_user_id"),
+        # Opt-out flag: when False, other users cannot send couple invites.
+        # Surfaced publicly so profile pages can hide the "Als Partner verknüpfen" button.
+        "allow_couple_invites": owner_privacy.get("allow_couple_invites", True),
         "persona_b": _persona_b_public(doc.get("persona_b"), list_mode=list_mode) if doc.get("account_type") == "duo" else None,
         "current_mood": doc.get("current_mood"),
         "relationship_status": doc.get("relationship_status"),

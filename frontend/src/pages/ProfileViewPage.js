@@ -21,6 +21,7 @@ import { PersonDetails } from "../components/PersonDetails";
 import { MoodBadge } from "../components/MoodBadge";
 import { getRelationshipStatusMeta } from "../components/RelationshipStatusBadge";
 import { AcquaintancesSection } from "../components/AcquaintancesSection";
+import { CoupleInviteSection } from "../components/CoupleInviteSection";
 
 function Row({ label, value }) {
   if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
@@ -437,6 +438,12 @@ export default function ProfileViewPage() {
               isOwnProfile={previewMode || profile.id === me?.id}
               targetDisplayName={profile.display_name}
               disableRequest={previewMode}
+            />
+
+            <CoupleInviteSection
+              profile={profile}
+              me={me}
+              previewMode={previewMode}
             />
           </div>
         </main>

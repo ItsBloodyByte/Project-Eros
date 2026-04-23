@@ -6117,7 +6117,10 @@ async def _couple_identity_ids(user_doc: dict) -> List[str]:
 async def couple_invite(payload: dict, user=Depends(_require_user)):
     """Invite another Eros account to become your linked partner.
 
-    Accepts `email` or `user_id`. The invitee gets a notification + can accept/decline.
+    Primary flow: caller passes `user_id` (the profile they are looking at).
+    Legacy flow: `email` is still accepted but deprecated — the UI no longer
+    exposes it. The invitee receives an in-app notification AND a chat system
+    message with Accept / Decline buttons, mirroring the acquaintance flow.
     """
     if user.get("account_type") == "duo":
         raise HTTPException(400, "Duo-Accounts können keinen zweiten Partner verknüpfen.")
@@ -6130,7 +6133,7 @@ async def couple_invite(payload: dict, user=Depends(_require_user)):
     elif payload.get("email"):
         target = await db.users.find_one({"email": str(payload["email"]).strip().lower()})
     else:
-        raise HTTPException(400, "email oder user_id erforderlich")
+        raise HTTPException(400, "user_id oder email erforderlich")
     if not target:
         raise HTTPException(404, "Kein Konto mit diesen Daten gefunden")
     if target["id"] == user["id"]:
@@ -6141,14 +6144,22 @@ async def couple_invite(payload: dict, user=Depends(_require_user)):
         raise HTTPException(400, "Das Zielkonto ist bereits ein Paar-Account")
     if target.get("partner_user_id"):
         raise HTTPException(400, "Das Zielkonto ist bereits verknüpft")
-    # Prevent duplicate pending invites
+    # Respect the invitee's opt-out flag.
+    if (target.get("privacy") or {}).get("allow_couple_invites") is False:
+        raise HTTPException(403, "Diese:r Nutzer:in hat Partner-Einladungen deaktiviert.")
+    # Prevent duplicate pending invites (in either direction).
     existing = await db.couple_invites.find_one({
-        "from_user_id": user["id"], "to_user_id": target["id"], "status": "pending",
+        "status": "pending",
+        "$or": [
+            {"from_user_id": user["id"], "to_user_id": target["id"]},
+            {"from_user_id": target["id"], "to_user_id": user["id"]},
+        ],
     })
     if existing:
         return {"ok": True, "already_pending": True, "invite_id": existing["id"]}
+    invite_id = str(uuid.uuid4())
     invite = {
-        "id": str(uuid.uuid4()),
+        "id": invite_id,
         "from_user_id": user["id"],
         "to_user_id": target["id"],
         "from_display_name": user.get("display_name"),
@@ -6157,14 +6168,32 @@ async def couple_invite(payload: dict, user=Depends(_require_user)):
         "created_at": now_utc().isoformat(),
         "resolved_at": None,
     }
-    await db.couple_invites.insert_one(invite)
-    await _audit(user["id"], "couple_invite_sent", target["id"], {"invite_id": invite["id"]})
-    # Ping the admin WS so support sees this event (also useful for user notifications later)
+    # Post the invite as a system chat message (Accept/Decline buttons live there).
     try:
-        await admin_ws_manager.broadcast({"type": "couple_invite", "invite_id": invite["id"], "channel": "couples"})
+        match_id = await _get_or_create_match(user["id"], target["id"])
+        requester_name = user.get("display_name") or "Jemand"
+        text = f"{requester_name} möchte dich als Partner:in verknüpfen."
+        msg = await _post_system_message(
+            match_id, user, text,
+            extra={
+                "kind": "couple_invite",
+                "couple_invite_id": invite_id,
+                "couple_invite_from_id": user["id"],
+                "couple_invite_to_id": target["id"],
+                "couple_invite_status": "pending",
+            },
+        )
+        invite["message_id"] = msg["id"]
+        invite["match_id"] = match_id
+    except Exception as ex:
+        logger.warning("couple_invite system message failed: %s", ex)
+    await db.couple_invites.insert_one(invite)
+    await _audit(user["id"], "couple_invite_sent", target["id"], {"invite_id": invite_id})
+    try:
+        await admin_ws_manager.broadcast({"type": "couple_invite", "invite_id": invite_id, "channel": "couples"})
     except Exception:
         pass
-    return {"ok": True, "invite_id": invite["id"]}
+    return {"ok": True, "invite_id": invite_id}
 
 
 @api_router.get("/couples/invites")
@@ -6210,6 +6239,16 @@ async def couple_accept(invite_id: str, user=Depends(_require_user)):
         {"$set": {"status": "superseded", "resolved_at": now_iso}},
     )
     await db.couple_invites.update_one({"id": invite_id}, {"$set": {"status": "accepted", "resolved_at": now_iso, "couple_id": couple_id}})
+    # Mirror the status change into the original chat system message, so the
+    # Accept/Decline buttons disappear on both ends.
+    if invite.get("message_id") and invite.get("match_id"):
+        try:
+            await db.messages.update_one(
+                {"id": invite["message_id"]},
+                {"$set": {"couple_invite_status": "accepted"}},
+            )
+        except Exception:
+            pass
     await _audit(user["id"], "couple_linked", couple_id, {"initiator": initiator["id"], "partner": user["id"]})
     return {"ok": True, "couple_id": couple_id}
 
@@ -6222,6 +6261,14 @@ async def couple_decline(invite_id: str, user=Depends(_require_user)):
     if invite.get("status") != "pending":
         raise HTTPException(400, "Einladung ist nicht mehr offen")
     await db.couple_invites.update_one({"id": invite_id}, {"$set": {"status": "declined", "resolved_at": now_utc().isoformat()}})
+    if invite.get("message_id"):
+        try:
+            await db.messages.update_one(
+                {"id": invite["message_id"]},
+                {"$set": {"couple_invite_status": "declined"}},
+            )
+        except Exception:
+            pass
     await _audit(user["id"], "couple_invite_declined", invite_id)
     return {"ok": True}
 
@@ -6235,6 +6282,14 @@ async def couple_revoke(invite_id: str, user=Depends(_require_user)):
     if invite.get("status") != "pending":
         raise HTTPException(400, "Einladung ist nicht mehr offen")
     await db.couple_invites.update_one({"id": invite_id}, {"$set": {"status": "revoked", "resolved_at": now_utc().isoformat()}})
+    if invite.get("message_id"):
+        try:
+            await db.messages.update_one(
+                {"id": invite["message_id"]},
+                {"$set": {"couple_invite_status": "revoked"}},
+            )
+        except Exception:
+            pass
     return {"ok": True}
 
 

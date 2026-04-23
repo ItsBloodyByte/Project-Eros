@@ -198,25 +198,20 @@ export function CoupleSection() {
         </div>
       )}
 
-      {/* Invite form — hidden for duo or already-linked accounts */}
+      {/* Invite hint — the actual invitation is triggered from the partner's profile page. */}
       {!isDuo && !isLinked && (
-        <div className="rounded-md border-2 border-dashed p-4">
+        <div className="rounded-md border-2 border-dashed p-4 space-y-2">
           <Label className="text-xs uppercase tracking-wide text-[hsl(var(--muted-foreground))]">Partner einladen</Label>
-          <div className="mt-2 flex flex-col sm:flex-row gap-2">
-            <Input
-              placeholder="E-Mail-Adresse oder User-ID"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              data-testid="couple-invite-input"
-              className="sm:max-w-md"
-            />
-            <Button onClick={invite} disabled={busy || !inviteEmail.trim()} data-testid="couple-invite-submit" className="gap-1">
-              <UserPlus className="h-4 w-4" /> Einladung senden
-            </Button>
-          </div>
-          <div className="text-[11px] text-[hsl(var(--muted-foreground))] mt-2">
-            Dein Partner muss ein Eros-Konto haben. Die Einladung erscheint in seinem/ihrem Konto-Bereich und kann dort angenommen werden.
-          </div>
+          <p className="text-sm leading-relaxed">
+            Öffne das Profil deines Partners in der App und klicke dort auf
+            <span className="mx-1 inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/30 px-2 py-0.5 text-xs font-medium align-middle">
+              <Heart className="h-3 w-3" /> Als Partner verknüpfen
+            </span>
+            . Die Einladung erscheint anschließend hier <em>und</em> als Chatnachricht auf beiden Seiten.
+          </p>
+          <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
+            Kein E-Mail-Versand — beide Konten müssen bereits bei Eros existieren.
+          </p>
         </div>
       )}
 

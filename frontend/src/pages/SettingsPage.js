@@ -99,6 +99,16 @@ export default function SettingsPage() {
               <Row label="Screenshot-Hinweise" hint="Benachrichtige andere bei erkanntem Screenshot">
                 <Switch checked={!!privacy.screenshot_notifications} onCheckedChange={(v) => save({ screenshot_notifications: v })} data-testid="privacy-screenshot" />
               </Row>
+              <Row
+                label="Partner-Einladungen zulassen"
+                hint="Wenn aus: andere können dich nicht als Partner:in für ein gemeinsames Paarprofil anfragen."
+              >
+                <Switch
+                  checked={privacy.allow_couple_invites !== false}
+                  onCheckedChange={(v) => save({ allow_couple_invites: v })}
+                  data-testid="privacy-allow-couple-invites"
+                />
+              </Row>
               {STAFF_ROLES.has(user.role) && (
                 <Row
                   label="Rollen-Badge anzeigen"

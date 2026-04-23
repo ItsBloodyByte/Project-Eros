@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { Check, CheckCheck, Clock, MoreHorizontal, BadgeCheck, UserCheck, X, Handshake } from "lucide-react";
+import { Check, CheckCheck, Clock, MoreHorizontal, BadgeCheck, UserCheck, X, Handshake, Users, Heart } from "lucide-react";
 import { ReportDialog } from "./ReportDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useState } from "react";
@@ -19,6 +19,10 @@ export function ChatBubble({ message, me, senders = {}, showSenderLabel = false 
   }
   if (message.kind === "acquaintance_response") {
     return <AcquaintanceResponseCard message={message} />;
+  }
+  // Couple-invite: bilateral partner-link request card (replaces the old e-mail flow).
+  if (message.kind === "couple_invite") {
+    return <CoupleInviteCard message={message} me={me} senders={senders} />;
   }
 
   const isBroadcast = !!message.is_broadcast;
@@ -246,6 +250,114 @@ function AcquaintanceResponseCard({ message }) {
           : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] ring-[hsl(var(--border))]"
       }`}>
         {confirmed ? "✓ Als persönlich bekannt bestätigt" : "Anfrage abgelehnt"}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * CoupleInviteCard — in-chat "Als Partner verknüpfen" request.
+ * Shows Accept/Decline buttons only to the target user while the invite
+ * is still `pending`. Mirrors the AcquaintanceRequestCard pattern.
+ */
+function CoupleInviteCard({ message, me, senders }) {
+  const [status, setStatus] = useState(message.couple_invite_status || "pending");
+  const [busy, setBusy] = useState(false);
+  const selfIds = new Set([me?.id, me?.partner_user_id].filter(Boolean));
+  const isRecipient = selfIds.has(message.couple_invite_to_id);
+  const isSender = selfIds.has(message.couple_invite_from_id);
+  const senderProfile = message.sender || senders[message.sender_id] || null;
+  const requesterName = senderProfile?.display_name || message.couple_invite_from_name || "Jemand";
+
+  const respond = async (action) => {
+    // action is either "accept" or "decline"
+    setBusy(true);
+    try {
+      await api.post(`/couples/invites/${message.couple_invite_id}/${action}`);
+      setStatus(action === "accept" ? "accepted" : "declined");
+      if (action === "accept") {
+        toast.success("Partnerprofile verknüpft! Seite wird neu geladen …");
+        setTimeout(() => window.location.reload(), 700);
+      } else {
+        toast.success("Einladung abgelehnt.");
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Konnte nicht gespeichert werden");
+    } finally { setBusy(false); }
+  };
+
+  const revoke = async () => {
+    setBusy(true);
+    try {
+      await api.delete(`/couples/invites/${message.couple_invite_id}`);
+      setStatus("revoked");
+      toast.success("Einladung zurückgezogen.");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Fehlgeschlagen");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="w-full flex justify-center my-2" data-testid={`couple-invite-${message.couple_invite_id}`}>
+      <div className="max-w-[92%] rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--accent))]/30 px-4 py-3 shadow-[var(--shadow-sm)]">
+        <div className="flex items-start gap-2.5">
+          <div className="mt-0.5 inline-grid h-8 w-8 place-items-center rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] shrink-0">
+            <Users className="h-4 w-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium leading-snug">
+              {isRecipient
+                ? `${requesterName} möchte euch als Partnerprofil verknüpfen.`
+                : "Du hast eine Partner-Einladung gesendet."}
+            </div>
+            <div className="text-[11px] text-[hsl(var(--muted-foreground))] mt-0.5">
+              Beide Konten werden zu einem gemeinsamen Paarprofil zusammengeführt.
+              Die Verknüpfung kann jederzeit beidseitig aufgehoben werden.
+            </div>
+
+            {status === "pending" && isRecipient && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => respond("accept")}
+                  disabled={busy}
+                  className="rounded-full gap-1.5"
+                  data-testid={`couple-invite-accept-${message.couple_invite_id}`}
+                >
+                  <Heart className="h-3.5 w-3.5" /> Annehmen
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => respond("decline")}
+                  disabled={busy}
+                  className="rounded-full gap-1.5"
+                  data-testid={`couple-invite-decline-${message.couple_invite_id}`}
+                >
+                  <X className="h-3.5 w-3.5" /> Ablehnen
+                </Button>
+              </div>
+            )}
+            {status === "pending" && isSender && (
+              <div className="mt-3 flex items-center gap-2">
+                <div className="text-[11px] text-[hsl(var(--muted-foreground))]">Warten auf Antwort …</div>
+                <Button size="sm" variant="ghost" onClick={revoke} disabled={busy} className="rounded-full h-7 text-[11px]">
+                  Zurückziehen
+                </Button>
+              </div>
+            )}
+            {status === "accepted" && (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/30 px-2 py-0.5 text-[11px] font-medium">
+                <Heart className="h-3 w-3" /> Partnerprofile verknüpft
+              </div>
+            )}
+            {(status === "declined" || status === "revoked") && (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] ring-1 ring-[hsl(var(--border))] px-2 py-0.5 text-[11px] font-medium">
+                <X className="h-3 w-3" /> {status === "revoked" ? "Zurückgezogen" : "Abgelehnt"}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

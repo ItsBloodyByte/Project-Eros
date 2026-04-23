@@ -68,6 +68,12 @@ export default function SettingsScreen() {
           disabled={!isPremium}
           onValueChange={(v) => save({ stealth_mode: v })}
         />
+        <Row
+          label="Partner-Einladungen zulassen"
+          description="Wenn aus: andere können dich nicht als Partner:in für ein gemeinsames Paarprofil anfragen."
+          value={privacy.allow_couple_invites !== false}
+          onValueChange={(v) => save({ allow_couple_invites: v })}
+        />
       </Section>
 
       <Section title="Sicherheit">

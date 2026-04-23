@@ -99,6 +99,9 @@ class PrivacySettings(BaseModel):
     # Staff can decide whether their role badge is visible on their public profile.
     # Defaults to True so existing staff remain visible until they explicitly hide it.
     role_badge_visible: bool = True
+    # Opt-out for partner/couple invites. When False, other users cannot send
+    # this account a "link as partner" invitation from a profile page.
+    allow_couple_invites: bool = True
 
 
 class UserPreferences(BaseModel):
