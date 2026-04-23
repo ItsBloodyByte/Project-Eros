@@ -1,42 +1,42 @@
 [
   {
-    "content": "Payment Webhook Härtung: Idempotenz-Guard für _apply_successful_payment ✅",
+    "content": "Payment Webhook Härtung: Idempotenz-Guard + Dedup + Admin UI ✅",
     "status": "completed"
   },
   {
-    "content": "PayPal Webhook-Endpoint /api/webhook/paypal (inkl. Signature Verification) ✅",
+    "content": "PayPal Webhook-Endpoint /api/webhook/paypal ✅",
     "status": "completed"
   },
   {
-    "content": "Klarna Push-Endpoint /api/webhook/klarna (Order status updates) ✅",
+    "content": "Klarna Push-Endpoint /api/webhook/klarna ✅",
     "status": "completed"
   },
   {
-    "content": "Admin: Payment Transaction Viewer (Übersicht + Retry) ✅",
+    "content": "Admin: Payment Transaction Viewer + Reconcile ✅",
     "status": "completed"
   },
   {
-    "content": "Mobile It3: Filter UI (Quick Filter Bar auf Discover)",
-    "status": "in_progress"
+    "content": "Mobile It3: Filter UI (Quick Filter Bar auf Discover) ✅",
+    "status": "completed"
   },
   {
-    "content": "Mobile It3: Profilbearbeitung (EditProfileScreen)",
-    "status": "pending"
+    "content": "Mobile It3: Profilbearbeitung (EditProfileScreen) ✅",
+    "status": "completed"
   },
   {
-    "content": "Mobile It3: Foto-Upload via expo-image-picker",
-    "status": "pending"
+    "content": "Mobile It3: Foto-Upload via expo-image-picker ✅",
+    "status": "completed"
   },
   {
-    "content": "Mobile It3: Persona-B Editor für Duo-Accounts",
-    "status": "pending"
+    "content": "Mobile It3: Persona-B Editor für Duo-Accounts ✅",
+    "status": "completed"
   },
   {
-    "content": "Mobile It3: Stealth/Incognito Toggle in Settings/Account",
-    "status": "pending"
+    "content": "Mobile It3: Stealth/Incognito Toggle in Settings ✅",
+    "status": "completed"
   },
   {
-    "content": "Mobile It3: Video-Upload (Premium-Gate, max 4)",
-    "status": "pending"
+    "content": "Mobile It3: Video-Upload (Premium-Gate, max 4) ✅",
+    "status": "completed"
   }
 ]
