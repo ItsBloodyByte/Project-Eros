@@ -903,13 +903,42 @@ async def discover(
         }
         geo_applied = True
 
-    cursor = db.users.find(query).skip(skip).limit(limit * 2)
-    docs = await cursor.to_list(length=limit * 2)
-
+    # --- Boost-aware fetch --------------------------------------------------
+    # Previously we fetched `limit * 2` in DB-natural / $near order and sorted
+    # boosters in Python. That meant a booster sitting past position 40 (e.g.
+    # farther away when $near is active, or late in insertion order otherwise)
+    # would *never* float to the top of page 1. We now run two deterministic
+    # queries and stitch them — boosters that match the viewer's filters are
+    # guaranteed to appear first, across pagination too.
     now_iso = now_utc().isoformat()
-    # Boost sort: active boosts first, then original order.
-    docs.sort(key=lambda d: 0 if (d.get("boost_expires_at") or "") > now_iso else 1)
-    docs = docs[:limit]
+    boost_query = dict(query)
+    boost_query["boost_expires_at"] = {"$gt": now_iso}
+
+    # 1) All boosted matches (usually a tiny set) — same filters, up to `limit`.
+    boost_docs = await db.users.find(boost_query).limit(limit).to_list(length=limit)
+    boost_ids = {d["id"] for d in boost_docs}
+    num_boosted = len(boost_docs)
+
+    remaining = max(0, limit - max(0, num_boosted - skip))
+    # 2) Non-boosted pool with pagination shifted by the boost count so page N
+    #    continues seamlessly after the boost block.
+    non_boost_query = dict(query)
+    non_boost_query["$and"] = query.get("$and", []) + [
+        {"$or": [
+            {"boost_expires_at": {"$exists": False}},
+            {"boost_expires_at": {"$lte": now_iso}},
+        ]},
+    ]
+    if not non_boost_query["$and"]:
+        non_boost_query.pop("$and")
+    non_boost_skip = max(0, skip - num_boosted)
+    non_boost_docs: List[Dict] = []
+    if remaining > 0:
+        non_boost_docs = await db.users.find(non_boost_query).skip(non_boost_skip).limit(remaining).to_list(length=remaining)
+
+    # Slice the boost block for the current page (first N pages get the halo).
+    visible_boost = boost_docs[skip: skip + limit] if skip < num_boosted else []
+    docs = visible_boost + [d for d in non_boost_docs if d["id"] not in boost_ids][:limit - len(visible_boost)]
 
     viewer_coords = loc.get("coordinates") if loc else None
     results = []
