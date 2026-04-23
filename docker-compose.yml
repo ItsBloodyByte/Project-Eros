@@ -175,7 +175,7 @@ services:
   # Über UPDATE_ENABLED=false komplett ausschaltbar. Signaldateien liegen im
   # geteilten Volume `backend_data`, damit das Backend-API den Status lesen kann.
   updater:
-    image: docker:27-cli-alpine3.20
+    image: docker:cli
     container_name: eros-updater
     restart: unless-stopped
     depends_on:
@@ -193,7 +193,11 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command: |
       set -eu
-      apk add --no-cache git curl bash docker-cli-compose >/dev/null 2>&1 || true
+      # docker:cli is Alpine-based and ships with `docker` but not `git` or
+      # the compose plugin. We install both on first start. `apk add` is a
+      # no-op on subsequent restarts if the packages are already present.
+      apk add --no-cache git curl bash docker-cli-compose >/dev/null 2>&1 || \
+        apk add --no-cache git curl bash docker-compose >/dev/null 2>&1 || true
       STATE=/data/updater.json
       TRIGGER=/data/updater.trigger
       write_state() {
