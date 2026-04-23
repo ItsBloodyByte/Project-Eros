@@ -1,11 +1,14 @@
 # =====================================================================
-#  Eros – Full Stack Docker Compose
+#  Eros – Full Stack Docker Compose (GitHub-gestützt)
 # =====================================================================
-#  Quellcode wird DIREKT aus dem GitHub-Repository gezogen:
-#      https://github.com/itsbloodybyte/project-eros
+#  Quelle:  https://github.com/itsbloodybyte/project-eros
 #
-#  Dadurch ist ein lokales `git clone` NICHT nötig – nur diese
-#  docker-compose.yml + eine `.env` Datei reichen aus.
+#  Alle Build-Schritte sind INLINE in dieser YAML definiert. Kein
+#  lokales `git clone` nötig, und – wichtig – die Host-BuildKit-Instanz
+#  braucht kein eigenes `git` im PATH (relevant für Synology NAS
+#  Container-Manager, Docker Desktop ohne BuildKit-Git-Support, etc.).
+#  Das Klonen passiert in einem Alpine-Fetcher-Stage, der sein eigenes
+#  `git` mitbringt.
 #
 #  Services:
 #    mongo    : MongoDB 7 mit persistentem Volume.
@@ -17,13 +20,13 @@
 #      curl -O https://raw.githubusercontent.com/itsbloodybyte/project-eros/main/docker-compose.yml
 #      docker compose up --build -d
 #
-#  Ein `.env` ist optional: ohne Datei nutzt Compose die sicheren Defaults
-#  unten. JWT_SECRET wird beim ersten Start automatisch generiert und im
-#  Volume `backend_data` unter /data/jwt_secret.key persistiert, damit
-#  Sessions Restarts überleben. Für Produktionsbetrieb in einer `.env`
-#  explizit setzen (siehe .env.example).
+#  Ein `.env` ist optional: ohne Datei nutzt Compose die sicheren
+#  Defaults unten. JWT_SECRET wird beim ersten Start automatisch
+#  generiert und im Volume `backend_data` unter /data/jwt_secret.key
+#  persistiert, damit Sessions Restarts überleben. Für Produktion in
+#  einer `.env` explizit setzen (siehe .env.example).
 #
-#  App erreichbar unter:  http://localhost:8080  (anpassbar via FRONTEND_HOST_PORT)
+#  App erreichbar unter:  http://localhost:8080  (über FRONTEND_HOST_PORT anpassbar)
 # =====================================================================
 
 services:
@@ -46,23 +49,58 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
-    # Kein Host-Port exponiert – nur das Backend erreicht Mongo.
+    # Kein Host-Port – nur das Backend erreicht Mongo.
 
   backend:
-    build:
-      # Remote-Git-Kontext: <repo>#<ref>:<subdir>
-      context: ${EROS_REPO:-https://github.com/itsbloodybyte/project-eros.git}#${EROS_REF:-main}:backend
-      dockerfile: Dockerfile
     image: eros-backend:latest
     container_name: eros-backend
     restart: unless-stopped
+    build:
+      # Dummy-Kontext – das eigentliche Klonen passiert im Fetcher-Stage.
+      context: .
+      args:
+        EROS_REPO: ${EROS_REPO:-https://github.com/itsbloodybyte/project-eros.git}
+        EROS_REF: ${EROS_REF:-main}
+      dockerfile_inline: |
+        # ---- Fetcher: eigenes git, klont nur den Backend-Subpfad ----
+        FROM alpine/git:latest AS fetch
+        ARG EROS_REPO
+        ARG EROS_REF
+        RUN set -eux; \
+            git clone --depth=1 --branch "$$EROS_REF" "$$EROS_REPO" /src
+
+        # ---- Runtime: python:3.11-slim + native deps ----
+        FROM python:3.11-slim
+        ENV PYTHONDONTWRITEBYTECODE=1 \
+            PYTHONUNBUFFERED=1 \
+            PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            PIP_NO_CACHE_DIR=1
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+                build-essential \
+                libjpeg-dev zlib1g-dev libpng-dev libwebp-dev libtiff-dev \
+                libfreetype6-dev liblcms2-dev libopenjp2-7-dev \
+                libffi-dev libssl-dev \
+                curl ca-certificates tini \
+            && rm -rf /var/lib/apt/lists/*
+        WORKDIR /app
+        COPY --from=fetch /src/backend/requirements.txt /app/requirements.txt
+        RUN pip install --upgrade pip && \
+            pip install --no-cache-dir -r /app/requirements.txt
+        COPY --from=fetch /src/backend/ /app/
+        RUN useradd --create-home --uid 1001 erosapp && \
+            mkdir -p /data && chown -R erosapp:erosapp /app /data
+        USER erosapp
+        EXPOSE 8001
+        ENTRYPOINT ["/usr/bin/tini", "--"]
+        CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001", "--proxy-headers", "--forwarded-allow-ips", "*"]
+        HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
+            CMD curl -fsS http://127.0.0.1:8001/api/legal/terms >/dev/null || exit 1
     environment:
       # Mongo-Verbindung (Auth + Default-DB)
       MONGO_URL: "mongodb://${MONGO_INITDB_ROOT_USERNAME:-eros}:${MONGO_INITDB_ROOT_PASSWORD:-eros-mongo-change-me}@mongo:27017/${MONGO_DB_NAME:-eros}?authSource=admin"
       DB_NAME: "${MONGO_DB_NAME:-eros}"
-      # Optional: Wenn leer, erzeugt das Backend ein starkes Secret und legt es
-      # im Volume /data/jwt_secret.key ab – JWT-Sessions überleben Restarts.
-      # Für Multi-Instance-Deployments in .env explizit setzen.
+      # Optional: Ohne Wert erzeugt das Backend ein starkes Secret und legt es im Volume
+      # /data/jwt_secret.key ab – JWT-Sessions überleben Restarts.
       JWT_SECRET: "${JWT_SECRET:-}"
       EROS_DATA_DIR: "/data"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:8080}"
@@ -79,16 +117,42 @@ services:
     # Kein Host-Port – Traffic läuft über den Frontend-Reverse-Proxy.
 
   frontend:
-    build:
-      # Remote-Git-Kontext: <repo>#<ref>:<subdir>
-      context: ${EROS_REPO:-https://github.com/itsbloodybyte/project-eros.git}#${EROS_REF:-main}:frontend
-      dockerfile: Dockerfile
-      args:
-        # Leer = same-origin: nginx (dieser Service) proxyt /api -> backend.
-        REACT_APP_BACKEND_URL: "${REACT_APP_BACKEND_URL:-}"
     image: eros-frontend:latest
     container_name: eros-frontend
     restart: unless-stopped
+    build:
+      context: .
+      args:
+        EROS_REPO: ${EROS_REPO:-https://github.com/itsbloodybyte/project-eros.git}
+        EROS_REF: ${EROS_REF:-main}
+        REACT_APP_BACKEND_URL: "${REACT_APP_BACKEND_URL:-}"
+      dockerfile_inline: |
+        # ---- Fetcher ----
+        FROM alpine/git:latest AS fetch
+        ARG EROS_REPO
+        ARG EROS_REF
+        RUN set -eux; \
+            git clone --depth=1 --branch "$$EROS_REF" "$$EROS_REPO" /src
+
+        # ---- Builder: CRA-Bundle bauen ----
+        FROM node:20-bookworm-slim AS builder
+        WORKDIR /app
+        ARG REACT_APP_BACKEND_URL=""
+        ENV REACT_APP_BACKEND_URL=$${REACT_APP_BACKEND_URL}
+        COPY --from=fetch /src/frontend/package.json /src/frontend/yarn.lock ./
+        RUN corepack enable && yarn install --frozen-lockfile --network-timeout 120000
+        COPY --from=fetch /src/frontend/ ./
+        RUN yarn build
+
+        # ---- Runtime: nginx serviert das Bundle + proxyt /api ----
+        FROM nginx:1.27-alpine
+        RUN rm -f /etc/nginx/conf.d/default.conf
+        COPY --from=fetch /src/frontend/nginx.conf /etc/nginx/conf.d/default.conf
+        COPY --from=builder /app/build /usr/share/nginx/html
+        EXPOSE 80
+        HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+            CMD wget -qO- http://127.0.0.1/healthz >/dev/null || exit 1
+        CMD ["nginx", "-g", "daemon off;"]
     depends_on:
       - backend
     ports:

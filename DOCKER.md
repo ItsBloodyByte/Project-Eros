@@ -151,3 +151,50 @@ Healthchecks pro Service sind konfiguriert – `docker compose ps` zeigt
 * `JWT_SECRET` und Mongo-Credentials in Produktion regelmäßig rotieren.
 * `mongo_data` auf persistenten Storage mit regelmäßigen Snapshots mounten.
 * `EROS_REF` auf einen versionierten Tag pinnen, statt auf `main`, um reproduzierbare Deployments zu erhalten.
+
+## 9. Troubleshooting
+
+### `failed to load cache key … "git": executable file not found in $PATH`
+
+Tritt auf **Synology Container-Manager** und einigen anderen stripped-down
+Docker-Distributionen auf, deren BuildKit kein eingebautes `git` mitbringt.
+
+**Aktuelle YAML ist bereits darauf ausgelegt** – das Klonen läuft in
+einem separaten Alpine-Container mit eigenem `git` (über
+`dockerfile_inline` + Fetcher-Stage). Du brauchst also **kein Git auf
+dem Host**.
+
+Sollte der Fehler doch noch erscheinen, stelle sicher, dass du die
+aktuellste Version der `docker-compose.yml` aus dem Repo heruntergeladen
+hast:
+
+```bash
+curl -fsSL -o docker-compose.yml \
+  https://raw.githubusercontent.com/itsbloodybyte/project-eros/main/docker-compose.yml
+docker compose build --no-cache
+docker compose up -d
+```
+
+### `JWT_SECRET must be set`
+
+Veraltete YAML – lade die neue Version (siehe oben). Die aktuelle
+Compose-Datei macht `JWT_SECRET` optional und persistiert ein
+generiertes Secret im Volume `backend_data`.
+
+### Ports bereits belegt
+
+`FRONTEND_HOST_PORT` in `.env` oder als Umgebungsvariable überschreiben:
+
+```bash
+FRONTEND_HOST_PORT=9090 docker compose up -d
+```
+
+### Synology Container-Manager spezifisch
+
+* Unter DSM 7.2+ den "Container Manager" verwenden (nicht die alte
+  Docker-App).
+* Im Container-Manager-Projekt legt Synology die `docker-compose.yml`
+  üblicherweise unter `/volume1/docker/<projekt>/` an – `.env` muss
+  daneben liegen, sonst findet Compose sie nicht.
+* Nach Update der YAML den Stack komplett neu bauen:
+  `docker compose down && docker compose up --build -d`.
