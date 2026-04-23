@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 export function AppFooter() {
   const year = new Date().getFullYear();
   const links = [
+    { to: "/premium",            label: "Premium",             tid: "footer-premium" },
+    { to: "/blog",               label: "Blog",                tid: "footer-blog" },
     { to: "/legal/terms",        label: "Nutzungsbedingungen", tid: "footer-terms" },
     { to: "/legal/privacy",      label: "Datenschutz",         tid: "footer-privacy" },
     { to: "/legal/imprint",      label: "Impressum",           tid: "footer-imprint" },

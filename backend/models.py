@@ -320,6 +320,9 @@ class LoginMfaRequest(BaseModel):
 class VideoUploadRequest(BaseModel):
     data_url: str  # data:video/mp4;base64,...
     caption: Optional[str] = None
+    duration_seconds: Optional[float] = Field(default=None, ge=0, le=600)
+    width: Optional[int] = Field(default=None, ge=0, le=10000)
+    height: Optional[int] = Field(default=None, ge=0, le=10000)
 
 
 class PremiumUpgradeRequest(BaseModel):

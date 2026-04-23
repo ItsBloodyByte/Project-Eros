@@ -21,6 +21,7 @@ import EventsPage from "./pages/EventsPage";
 import LegalPage from "./pages/LegalPage";
 import BlogListPage from "./pages/BlogListPage";
 import BlogPostPage from "./pages/BlogPostPage";
+import PremiumPreviewPage from "./pages/PremiumPreviewPage";
 import VisitorsPage from "./pages/VisitorsPage";
 import { BroadcastBanner } from "./components/BroadcastBanner";
 import { MobileBottomNav } from "./components/MobileBottomNav";
@@ -50,6 +51,11 @@ function AppRoutes() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/legal" element={<LegalPage />} />
       <Route path="/legal/:key" element={<LegalPage />} />
+      {/* Blog is public (no auth required) */}
+      <Route path="/blog" element={<BlogListPage />} />
+      <Route path="/blog/:slug" element={<BlogPostPage />} />
+      {/* Premium feature preview – marketing page, no auth required */}
+      <Route path="/premium" element={<PremiumPreviewPage />} />
       <Route path="/onboarding" element={<Protected><OnboardingPage /></Protected>} />
       <Route path="/" element={<Protected><DiscoverPage /></Protected>} />
       <Route path="/profile/:id" element={<Protected><ProfileViewPage /></Protected>} />
@@ -61,8 +67,6 @@ function AppRoutes() {
       <Route path="/account" element={<Protected><AccountPage /></Protected>} />
       <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
-      <Route path="/blog" element={<Protected><BlogListPage /></Protected>} />
-      <Route path="/blog/:slug" element={<Protected><BlogPostPage /></Protected>} />
       <Route path="/visitors" element={<Protected><VisitorsPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

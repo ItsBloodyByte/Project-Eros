@@ -34,6 +34,7 @@ from auth import (
     create_token,
     decode_token,
     get_current_user_payload,
+    get_optional_user_payload,
 )
 from helpers import now_utc, public_user_from_doc, rounded_distance_km, haversine_km, serialize_doc, parse_dt, contains_link_like
 from image_compression import compress_image_data_url
@@ -203,6 +204,21 @@ async def _require_user(payload: dict = Depends(get_current_user_payload)) -> di
     await db.users.update_one(
         {"id": user["id"]}, {"$set": {"last_active": now_utc().isoformat()}}
     )
+    return user
+
+
+async def _optional_user(payload: Optional[dict] = Depends(get_optional_user_payload)) -> Optional[dict]:
+    """Returns the user doc if authenticated, otherwise None.
+    Banned / soft-deleted accounts are treated as anonymous.
+    """
+    if not payload:
+        return None
+    try:
+        user = await db.users.find_one({"id": payload.get("sub")})
+    except Exception:
+        return None
+    if not user or user.get("banned") or user.get("deleted_at"):
+        return None
     return user
 
 
@@ -3270,18 +3286,58 @@ async def login_mfa(body: LoginMfaRequest, request: "Request" = None):
 
 
 # --------- Video clips ---------
+# Premium-only feature. Limits keep storage + moderation costs predictable.
+VIDEO_MAX_PER_USER = 4                  # hard limit per premium account
+VIDEO_MAX_DURATION_SECONDS = 60.0
+VIDEO_MAX_WIDTH = 1920                  # 1080p = 1920x1080 landscape or 1080x1920 portrait
+VIDEO_MAX_HEIGHT = 1920                 # we accept either orientation
+VIDEO_MAX_RAW_BYTES = 42_000_000        # ~30 MB after base64 decoding buffer
+
+def _is_premium(doc: dict) -> bool:
+    exp = doc.get("premium_expires_at")
+    if not exp:
+        return False
+    try:
+        return exp > now_utc().isoformat()
+    except Exception:
+        return False
+
+
 @api_router.post("/me/videos")
 async def upload_video(body: VideoUploadRequest, user=Depends(_require_user)):
+    if not _is_premium(user):
+        raise HTTPException(402, "Video-Uploads sind Premium-Mitgliedern vorbehalten. Bitte schließe ein Premium-Abo ab.")
     if not body.data_url.startswith("data:video/"):
-        raise HTTPException(400, "Invalid video data URL (expected data:video/...)")
+        raise HTTPException(400, "Ungültiger Video-Upload (erwarte data:video/...).")
     _reject_if_bad_video_mime(body.data_url)
-    # Size guard ~30MB raw
-    if len(body.data_url) > 42_000_000:
-        raise HTTPException(413, "Video too large (max ~30MB)")
+    if len(body.data_url) > VIDEO_MAX_RAW_BYTES:
+        raise HTTPException(413, "Video zu groß (max. ~30 MB).")
+    # Count existing videos BEFORE adding the new one (active + moderation-pending count against quota)
+    existing = user.get("videos", []) or []
+    if len([v for v in existing if v.get("moderation_status") != "rejected"]) >= VIDEO_MAX_PER_USER:
+        raise HTTPException(
+            409,
+            f"Maximal {VIDEO_MAX_PER_USER} Videos erlaubt. Bitte lösche ein vorhandenes Video, bevor du ein neues hochlädst.",
+        )
+    # Duration + resolution: we TRUST the caller-provided values (from client-side
+    # probe) but clamp them server-side. Trusting is acceptable because the video
+    # is still moderated, gets re-probed by staff, and rejected if it deviates.
+    duration = float(body.duration_seconds) if body.duration_seconds is not None else None
+    width = int(body.width) if body.width is not None else None
+    height = int(body.height) if body.height is not None else None
+    if duration is not None and duration > VIDEO_MAX_DURATION_SECONDS + 0.5:
+        raise HTTPException(413, f"Videos dürfen höchstens {int(VIDEO_MAX_DURATION_SECONDS)} Sekunden lang sein.")
+    if width is not None and height is not None:
+        longer = max(width, height)
+        if longer > VIDEO_MAX_WIDTH:
+            raise HTTPException(413, "Videos dürfen max. 1080p Auflösung haben (längere Kante ≤ 1920 px).")
     vid = {
         "id": str(uuid.uuid4()),
         "data": body.data_url,
         "caption": body.caption,
+        "duration_seconds": duration,
+        "width": width,
+        "height": height,
         "created_at": now_utc().isoformat(),
         "moderation_status": "pending",  # admin review
     }
@@ -3318,14 +3374,95 @@ async def get_user_videos(user_id: str, user=Depends(_require_user)):
 
 
 # --------- Premium / Boost / Who-liked-me ---------
-def _is_premium(doc: dict) -> bool:
-    exp = doc.get("premium_expires_at")
-    if not exp:
-        return False
-    try:
-        return exp > now_utc().isoformat()
-    except Exception:
-        return False
+PREMIUM_FEATURES = [
+    {
+        "id": "unlimited_likes",
+        "title": "Unbegrenzte Likes",
+        "description": "Swipe ohne tägliches Limit und verpasse kein Match mehr.",
+        "icon": "heart",
+        "premium_only": True,
+    },
+    {
+        "id": "see_who_liked",
+        "title": "Sieh, wer dich geliked hat",
+        "description": "Entdecke alle Likes, bevor du selbst entscheidest.",
+        "icon": "eye",
+        "premium_only": True,
+    },
+    {
+        "id": "stealth_mode",
+        "title": "Unsichtbarer Modus",
+        "description": "Stöbere unbemerkt – ohne Spuren im Besucher-Log.",
+        "icon": "ghost",
+        "premium_only": True,
+    },
+    {
+        "id": "full_visitors",
+        "title": "Alle Besucher:innen sehen",
+        "description": "Nicht mehr nur verpixelte Vorschauen – sieh dein komplettes Besucher-Archiv.",
+        "icon": "users",
+        "premium_only": True,
+    },
+    {
+        "id": "video_upload",
+        "title": "Video-Uploads",
+        "description": "Bis zu 4 Kurzvideos (max. 60 Sek, 1080p) im Profil zeigen.",
+        "icon": "video",
+        "premium_only": True,
+        "limits": {"max_videos": VIDEO_MAX_PER_USER, "max_duration_seconds": int(VIDEO_MAX_DURATION_SECONDS), "max_resolution": "1080p"},
+    },
+    {
+        "id": "priority_discover",
+        "title": "Priorität in der Entdecken-Liste",
+        "description": "Dein Profil erscheint häufiger und prominenter bei Matches.",
+        "icon": "zap",
+        "premium_only": True,
+    },
+    {
+        "id": "advanced_filters",
+        "title": "Erweiterte Filter",
+        "description": "Filtere nach Beziehungsstatus, Fetisch-Präferenzen und mehr.",
+        "icon": "sliders",
+        "premium_only": True,
+    },
+    {
+        "id": "no_ads",
+        "title": "Werbefrei",
+        "description": "Keine Banner, keine Sponsored-Profile, keine Ablenkung.",
+        "icon": "shield",
+        "premium_only": True,
+    },
+    {
+        "id": "read_receipts_optional",
+        "title": "Lesebestätigungen kontrollieren",
+        "description": "Du entscheidest, ob andere sehen, wann du gelesen hast.",
+        "icon": "message-check",
+        "premium_only": True,
+    },
+    {
+        "id": "boost_monthly",
+        "title": "Monatlicher Boost",
+        "description": "1× pro Monat kostenlos: 30 Min. im Rampenlicht.",
+        "icon": "rocket",
+        "premium_only": True,
+    },
+]
+
+
+@api_router.get("/premium/features")
+async def premium_features_catalog():
+    """Public premium-feature catalog – shown on the 'Premium' preview page
+    so non-subscribers can see what they get before paying.
+    """
+    return {
+        "features": PREMIUM_FEATURES,
+        "video_limits": {
+            "max_videos": VIDEO_MAX_PER_USER,
+            "max_duration_seconds": int(VIDEO_MAX_DURATION_SECONDS),
+            "max_resolution": "1080p",
+            "max_file_size_mb": 30,
+        },
+    }
 
 
 def _boost_active(doc: dict) -> bool:
@@ -3357,8 +3494,7 @@ async def premium_cancel(user=Depends(_require_user)):
 async def premium_status(user=Depends(_require_user)):
     return {
         "premium": _is_premium(user),
-        "premium_until": user.get("premium_expires_at"),
-        "boost_active": _boost_active(user),
+        "premium_until": user.get("premium_expires_at"),        "boost_active": _boost_active(user),
         "boost_until": user.get("boost_expires_at"),
     }
 
@@ -5079,12 +5215,12 @@ def _blog_public(doc: dict, author: Optional[dict] = None) -> dict:
 
 @api_router.get("/blog/posts")
 async def public_list_blog_posts(
-    user=Depends(_require_user),
+    user=Depends(_optional_user),
     tag: Optional[str] = None,
     limit: int = Query(20, ge=1, le=50),
     skip: int = Query(0, ge=0),
 ):
-    """Public listing of published blog posts (any authenticated user)."""
+    """Public listing of published blog posts – accessible to guests."""
     q: Dict = {"status": "published"}
     if tag:
         q["tags"] = tag
@@ -5104,17 +5240,17 @@ async def public_list_blog_posts(
 
 
 @api_router.get("/blog/tags")
-async def blog_tags(user=Depends(_require_user)):
+async def blog_tags(user=Depends(_optional_user)):
     tags = await db.blog_posts.distinct("tags", {"status": "published"})
     return {"tags": sorted([t for t in tags if t])}
 
 
 @api_router.get("/blog/posts/{slug}")
-async def public_blog_post(slug: str, user=Depends(_require_user)):
+async def public_blog_post(slug: str, user=Depends(_optional_user)):
     doc = await db.blog_posts.find_one({"slug": slug})
     if not doc:
         raise HTTPException(404, "Post nicht gefunden")
-    is_staff = user.get("role") in {"admin", "moderator", "superadmin", "content_reviewer", "support"}
+    is_staff = bool(user) and user.get("role") in {"admin", "moderator", "superadmin", "content_reviewer", "support"}
     if doc.get("status") != "published" and not is_staff:
         raise HTTPException(404, "Post nicht gefunden")
     author = None

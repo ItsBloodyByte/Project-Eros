@@ -154,16 +154,62 @@ export default function MyProfilePage() {
     }
   };
 
+  const VIDEO_MAX = { files: 4, seconds: 60, px: 1920, bytes: 30 * 1024 * 1024 };
+  const isPremium = !!user?.premium_until && new Date(user.premium_until) > new Date();
+  const videoCount = (user?.videos || []).filter((v) => v.moderation_status !== "rejected").length;
+
+  const probeVideoFile = (file) =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const el = document.createElement("video");
+      el.preload = "metadata";
+      el.muted = true;
+      el.src = url;
+      const done = (meta, err) => { URL.revokeObjectURL(url); err ? reject(err) : resolve(meta); };
+      el.onloadedmetadata = () => done({
+        duration: el.duration || 0,
+        width: el.videoWidth || 0,
+        height: el.videoHeight || 0,
+      });
+      el.onerror = () => done(null, new Error("Video konnte nicht gelesen werden"));
+      // safety timeout
+      setTimeout(() => done(null, new Error("Video-Analyse überschritten")), 15000);
+    });
+
   const uploadVideo = async (file) => {
-    if (file.size > 30 * 1024 * 1024) { toast.error("Max 30MB"); return; }
+    if (!isPremium) {
+      toast.error("Video-Uploads sind Premium-Mitgliedern vorbehalten.");
+      return;
+    }
+    if (videoCount >= VIDEO_MAX.files) {
+      toast.error(`Maximal ${VIDEO_MAX.files} Videos. Lösche ein vorhandenes, um Platz zu machen.`);
+      return;
+    }
+    if (file.size > VIDEO_MAX.bytes) { toast.error("Max 30 MB."); return; }
     setUploading(true);
     try {
+      // Client-side probe – rejects early to save bandwidth.
+      const meta = await probeVideoFile(file);
+      if (meta.duration > VIDEO_MAX.seconds + 0.5) {
+        toast.error(`Video zu lang (${Math.round(meta.duration)}s). Max ${VIDEO_MAX.seconds}s.`);
+        return;
+      }
+      const longerEdge = Math.max(meta.width, meta.height);
+      if (longerEdge > VIDEO_MAX.px) {
+        toast.error(`Auflösung ${meta.width}×${meta.height} überschreitet 1080p (max ${VIDEO_MAX.px}px längere Kante).`);
+        return;
+      }
       const dataUrl = await fileToDataUrl(file);
-      await api.post("/me/videos", { data_url: dataUrl });
+      await api.post("/me/videos", {
+        data_url: dataUrl,
+        duration_seconds: meta.duration,
+        width: meta.width,
+        height: meta.height,
+      });
       toast.success(t("profile.video_pending"));
       await refresh();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Upload failed");
+      toast.error(e.response?.data?.detail || e.message || "Upload failed");
     } finally { setUploading(false); }
   };
   const deleteVideo = async (vid) => {
@@ -278,27 +324,63 @@ export default function MyProfilePage() {
             </div>
           </section>
 
-          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)] no-capture">
-            <div className="font-display text-lg flex items-center gap-2"><Video className="h-4 w-4" /> {t("profile.videos")}</div>
-            <div className="text-sm text-[hsl(var(--muted-foreground))]">{t("profile.videos_hint")}</div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {(user.videos || []).map((v) => (
-                <div key={v.id} className="relative aspect-video rounded-md overflow-hidden border bg-black">
-                  <video src={v.data} controls className="h-full w-full object-cover" />
-                  <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[11px] px-2 py-1 flex items-center justify-between">
-                    <span>{v.moderation_status}</span>
-                    <button onClick={() => deleteVideo(v.id)} className="underline"><Trash2 className="h-3 w-3" /></button>
-                  </div>
+          <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4 shadow-[var(--shadow-sm)] no-capture" data-testid="profile-videos-section">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-display text-lg flex items-center gap-2">
+                  <Video className="h-4 w-4" /> {t("profile.videos")}
+                  <span className="inline-flex items-center rounded-full bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))] ring-1 ring-[hsl(var(--primary))]/30 px-2 py-0.5 text-[10px] font-medium">PREMIUM</span>
                 </div>
-              ))}
-              <label className="aspect-video grid place-items-center rounded-md border border-dashed hover:bg-[hsl(var(--secondary))] cursor-pointer text-sm text-[hsl(var(--muted-foreground))]">
-                <div className="flex flex-col items-center gap-1">
-                  <Play className="h-5 w-5" />
-                  <span>{uploading ? t("profile.uploading") : t("profile.add_video")}</span>
+                <div className="text-sm text-[hsl(var(--muted-foreground))]">
+                  Max. {VIDEO_MAX.files} Videos, je bis 60 Sek., 1080p.
+                  {isPremium && (
+                    <span className="ml-1" data-testid="video-count-badge">
+                      {videoCount}/{VIDEO_MAX.files} verwendet
+                    </span>
+                  )}
                 </div>
-                <input type="file" accept="video/mp4,video/webm" className="hidden" onChange={(e) => e.target.files?.[0] && uploadVideo(e.target.files[0])} data-testid="me-video-input" />
-              </label>
+              </div>
+              {!isPremium && (
+                <a
+                  href="/premium"
+                  className="inline-flex items-center gap-1 rounded-md bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-3 py-1.5 text-sm font-medium hover:opacity-90"
+                  data-testid="video-premium-upsell"
+                >
+                  Premium freischalten
+                </a>
+              )}
             </div>
+            {!isPremium ? (
+              <div
+                className="rounded-md border border-dashed border-[hsl(var(--primary))]/30 bg-[hsl(var(--primary))]/5 p-5 text-sm text-[hsl(var(--muted-foreground))]"
+                data-testid="video-premium-lock"
+              >
+                Video-Uploads sind exklusiv für Premium-Mitglieder. Mit Premium darfst
+                du bis zu 4 Kurzvideos (max. 60 Sek., 1080p) im Profil zeigen. Alle
+                Uploads werden vor der Veröffentlichung manuell geprüft.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {(user.videos || []).map((v) => (
+                  <div key={v.id} className="relative aspect-video rounded-md overflow-hidden border bg-black">
+                    <video src={v.data} controls className="h-full w-full object-cover" />
+                    <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[11px] px-2 py-1 flex items-center justify-between">
+                      <span>{v.moderation_status}</span>
+                      <button onClick={() => deleteVideo(v.id)} className="underline"><Trash2 className="h-3 w-3" /></button>
+                    </div>
+                  </div>
+                ))}
+                {videoCount < VIDEO_MAX.files && (
+                  <label className="aspect-video grid place-items-center rounded-md border border-dashed hover:bg-[hsl(var(--secondary))] cursor-pointer text-sm text-[hsl(var(--muted-foreground))]">
+                    <div className="flex flex-col items-center gap-1">
+                      <Play className="h-5 w-5" />
+                      <span>{uploading ? t("profile.uploading") : t("profile.add_video")}</span>
+                    </div>
+                    <input type="file" accept="video/mp4,video/webm" className="hidden" onChange={(e) => e.target.files?.[0] && uploadVideo(e.target.files[0])} data-testid="me-video-input" />
+                  </label>
+                )}
+              </div>
+            )}
           </section>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" data-testid="profile-edit-doublerow">
