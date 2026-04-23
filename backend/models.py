@@ -422,6 +422,12 @@ class AdminUserUpdate(BaseModel):
     shadow_restricted: Optional[bool] = None
     shadow_reason: Optional[str] = None
 
+class AcquaintanceRequestBody(BaseModel):
+    target_user_id: str
+
+
+class AcquaintanceResponseBody(BaseModel):
+    action: Literal["confirm", "reject"]
 
 
 class LegalPageUpdate(BaseModel):

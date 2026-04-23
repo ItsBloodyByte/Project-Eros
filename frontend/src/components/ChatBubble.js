@@ -1,18 +1,30 @@
 import { format } from "date-fns";
-import { Check, CheckCheck, Clock, MoreHorizontal, BadgeCheck } from "lucide-react";
+import { Check, CheckCheck, Clock, MoreHorizontal, BadgeCheck, UserCheck, X, Handshake } from "lucide-react";
 import { ReportDialog } from "./ReportDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useState } from "react";
+import { api } from "../lib/api";
+import { toast } from "sonner";
+import { Button } from "./ui/button";
 
 export function ChatBubble({ message, me, senders = {}, showSenderLabel = false }) {
   // With couple-aware chats, "isMe" means either the viewing user OR their linked partner.
   const selfIds = new Set([me?.id, me?.partner_user_id].filter(Boolean));
   const isMe = selfIds.has(message.sender_id);
+  const [reportOpen, setReportOpen] = useState(false);
+
+  // Acquaintance request/response renders as a full-width centered card
+  if (message.kind === "acquaintance_request") {
+    return <AcquaintanceRequestCard message={message} me={me} isMe={isMe} senders={senders} />;
+  }
+  if (message.kind === "acquaintance_response") {
+    return <AcquaintanceResponseCard message={message} />;
+  }
+
   const isBroadcast = !!message.is_broadcast;
   const time = message.created_at ? format(new Date(message.created_at), "HH:mm") : "";
   const isNsfw = message.media_data_url && (message.nsfw_score ?? 0) >= 0.75;
   const isRead = isMe && (message.read_by?.length || 0) > 1;
-  const [reportOpen, setReportOpen] = useState(false);
   const senderProfile = message.sender || senders[message.sender_id] || null;
 
   // Split **Title**\n\nBody into title + body for broadcast
@@ -134,5 +146,107 @@ function ReportHiddenTrigger({ open, onOpenChange, targetId }) {
       _externalOpen={open}
       _externalOnOpenChange={onOpenChange}
     />
+  );
+}
+
+function AcquaintanceRequestCard({ message, me, isMe, senders }) {
+  const [status, setStatus] = useState(message.acquaintance_status || "pending");
+  const [busy, setBusy] = useState(false);
+  const selfIds = new Set([me?.id, me?.partner_user_id].filter(Boolean));
+  const isRecipient = selfIds.has(message.acquaintance_target_id);
+  const senderProfile = message.sender || senders[message.sender_id] || null;
+  const requesterName = senderProfile?.display_name || "Jemand";
+
+  const respond = async (action) => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/acquaintances/${message.acquaintance_id}/respond`, { action });
+      setStatus(data?.status || action === "confirm" ? "confirmed" : "rejected");
+      toast.success(
+        data?.status === "confirmed"
+          ? "Bestätigt – ihr seid nun als persönlich bekannt markiert."
+          : "Anfrage abgelehnt."
+      );
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Konnte nicht gespeichert werden");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="w-full flex justify-center my-2" data-testid={`acq-request-${message.acquaintance_id}`}>
+      <div className="max-w-[92%] rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--accent))]/30 px-4 py-3 shadow-[var(--shadow-sm)]">
+        <div className="flex items-start gap-2.5">
+          <div className="mt-0.5 inline-grid h-8 w-8 place-items-center rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] shrink-0">
+            <Handshake className="h-4 w-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium leading-snug">
+              {isRecipient
+                ? `${requesterName} möchte dich als persönlich bekannt markieren.`
+                : "Du hast eine Anfrage zur persönlichen Bekanntschaft gesendet."}
+            </div>
+            <div className="text-[11px] text-[hsl(var(--muted-foreground))] mt-0.5">
+              Diese Markierung wird auf beiden Profilen öffentlich sichtbar.
+            </div>
+
+            {status === "pending" && isRecipient && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => respond("confirm")}
+                  disabled={busy}
+                  className="rounded-full gap-1.5"
+                  data-testid={`acq-confirm-${message.acquaintance_id}`}
+                >
+                  <UserCheck className="h-3.5 w-3.5" /> Bestätigen
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => respond("reject")}
+                  disabled={busy}
+                  className="rounded-full gap-1.5"
+                  data-testid={`acq-reject-${message.acquaintance_id}`}
+                >
+                  <X className="h-3.5 w-3.5" /> Ablehnen
+                </Button>
+              </div>
+            )}
+            {status === "pending" && !isRecipient && (
+              <div className="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]" data-testid={`acq-pending-${message.acquaintance_id}`}>
+                Warten auf Antwort …
+              </div>
+            )}
+            {status === "confirmed" && (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/30 px-2 py-0.5 text-[11px] font-medium" data-testid={`acq-confirmed-${message.acquaintance_id}`}>
+                <UserCheck className="h-3 w-3" /> Persönlich bekannt
+              </div>
+            )}
+            {status === "rejected" && (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] ring-1 ring-[hsl(var(--border))] px-2 py-0.5 text-[11px] font-medium" data-testid={`acq-rejected-${message.acquaintance_id}`}>
+                <X className="h-3 w-3" /> Abgelehnt
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AcquaintanceResponseCard({ message }) {
+  const confirmed = message.acquaintance_status === "confirmed";
+  return (
+    <div className="w-full flex justify-center my-1" data-testid={`acq-response-${message.acquaintance_id}`}>
+      <div className={`rounded-full px-3 py-1 text-[11px] font-medium ring-1 ${
+        confirmed
+          ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] ring-[hsl(var(--accent))]/30"
+          : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] ring-[hsl(var(--border))]"
+      }`}>
+        {confirmed ? "✓ Als persönlich bekannt bestätigt" : "Anfrage abgelehnt"}
+      </div>
+    </div>
   );
 }

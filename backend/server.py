@@ -44,6 +44,8 @@ from models import (
     TokenResponse,
     ProfileUpdate,
     MoodUpdateRequest,
+    AcquaintanceRequestBody,
+    AcquaintanceResponseBody,
     PhotoUploadRequest,
     LikeRequest,
     LikeResponse,
@@ -128,6 +130,10 @@ async def startup():
             # Couples
             await db.couples.create_index("id", unique=True)
             await db.couples.create_index("user_a_id")
+            # Acquaintances (personal-known links)
+            await db.acquaintances.create_index([("requester_id", 1), ("target_id", 1)], unique=True)
+            await db.acquaintances.create_index([("target_id", 1), ("status", 1)])
+            await db.acquaintances.create_index([("requester_id", 1), ("status", 1)])
             await db.couples.create_index("user_b_id")
             await db.couple_invites.create_index("id", unique=True)
             await db.couple_invites.create_index([("to_user_id", 1), ("status", 1)])
@@ -1187,6 +1193,235 @@ async def update_chat_prefs(body: ChatPrefsUpdate, user=Depends(_require_user)):
     if upd:
         await db.users.update_one({"id": user["id"]}, {"$set": upd})
     return {"ok": True}
+
+
+# ---------- Acquaintances (personal-known graph) ----------
+async def _get_or_create_match(a_id: str, b_id: str) -> str:
+    """Ensures a match/conversation exists between two users. Returns match_id.
+    Used to host the acquaintance request chat messages even for users
+    who haven't liked each other yet.
+    """
+    existing = await db.matches.find_one({
+        "$or": [
+            {"user_a": a_id, "user_b": b_id},
+            {"user_a": b_id, "user_b": a_id},
+        ]
+    })
+    if existing:
+        return existing["id"]
+    match_id = str(uuid.uuid4())
+    await db.matches.insert_one({
+        "id": match_id,
+        "user_a": a_id,
+        "user_b": b_id,
+        "created_at": now_utc().isoformat(),
+        "last_message_at": None,
+        "auto_created": True,
+    })
+    return match_id
+
+
+async def _post_system_message(match_id: str, sender_user: dict, text: str,
+                               extra: Optional[Dict] = None) -> dict:
+    """Create a chat message and broadcast it via WS."""
+    msg = {
+        "id": str(uuid.uuid4()),
+        "match_id": match_id,
+        "sender_id": sender_user["id"],
+        "text": text,
+        "media_data_url": None,
+        "nsfw_score": None,
+        "self_destruct_at": None,
+        "read_by": [sender_user["id"]],
+        "created_at": now_utc().isoformat(),
+    }
+    if extra:
+        msg.update(extra)
+    await db.messages.insert_one(msg)
+    await db.matches.update_one({"id": match_id}, {"$set": {"last_message_at": msg["created_at"]}})
+    primary_photo = next((p.get("data") for p in (sender_user.get("photos") or []) if p.get("is_primary")), None)
+    if not primary_photo and sender_user.get("photos"):
+        primary_photo = sender_user["photos"][0].get("data")
+    sender_snapshot = {
+        "id": sender_user["id"],
+        "display_name": sender_user.get("display_name"),
+        "avatar": primary_photo,
+    }
+    try:
+        await ws_manager.broadcast(match_id, {
+            "type": "message",
+            "message": serialize_doc(msg),
+            "sender": sender_snapshot,
+        })
+    except Exception:
+        pass
+    return msg
+
+
+@api_router.post("/acquaintances/request")
+async def request_acquaintance(body: AcquaintanceRequestBody, user=Depends(_require_user)):
+    """
+    Mark another user as personally known. Creates a pending acquaintance
+    record and posts a special chat message in the pair's conversation with
+    Accept / Reject controls for the recipient.
+    """
+    target_id = body.target_user_id
+    if target_id == user["id"]:
+        raise HTTPException(400, "Du kannst dich nicht selbst markieren.")
+    target = await db.users.find_one({"id": target_id})
+    if not target or target.get("banned"):
+        raise HTTPException(404, "Profil nicht gefunden")
+    # Existing record (in either direction)?
+    existing = await db.acquaintances.find_one({
+        "$or": [
+            {"requester_id": user["id"], "target_id": target_id},
+            {"requester_id": target_id, "target_id": user["id"]},
+        ]
+    })
+    if existing and existing.get("status") == "confirmed":
+        raise HTTPException(409, "Ihr seid bereits als persönlich bekannt markiert.")
+    if existing and existing.get("status") == "pending":
+        raise HTTPException(409, "Es gibt bereits eine offene Anfrage.")
+    # Re-request after rejection: allow by creating a new pending record
+    if existing:
+        await db.acquaintances.delete_one({"id": existing["id"]})
+    acq_id = str(uuid.uuid4())
+    now_iso = now_utc().isoformat()
+    doc = {
+        "id": acq_id,
+        "requester_id": user["id"],
+        "target_id": target_id,
+        "status": "pending",
+        "created_at": now_iso,
+        "responded_at": None,
+    }
+    await db.acquaintances.insert_one(doc)
+    # Ensure a chat conversation exists between requester and target and post
+    # the system-styled acquaintance request as a chat message.
+    match_id = await _get_or_create_match(user["id"], target_id)
+    requester_name = user.get("display_name") or "Jemand"
+    text = f"{requester_name} möchte dich als persönlich bekannt markieren."
+    msg = await _post_system_message(
+        match_id, user, text,
+        extra={
+            "kind": "acquaintance_request",
+            "acquaintance_id": acq_id,
+            "acquaintance_requester_id": user["id"],
+            "acquaintance_target_id": target_id,
+            "acquaintance_status": "pending",
+        },
+    )
+    doc["message_id"] = msg["id"]
+    doc["match_id"] = match_id
+    await db.acquaintances.update_one(
+        {"id": acq_id},
+        {"$set": {"message_id": msg["id"], "match_id": match_id}},
+    )
+    await _audit(user["id"], "acquaintance_requested", target_id)
+    return serialize_doc(doc)
+
+
+@api_router.post("/acquaintances/{acq_id}/respond")
+async def respond_acquaintance(acq_id: str, body: AcquaintanceResponseBody,
+                               user=Depends(_require_user)):
+    """Accept or reject an incoming acquaintance request."""
+    doc = await db.acquaintances.find_one({"id": acq_id})
+    if not doc:
+        raise HTTPException(404, "Anfrage nicht gefunden")
+    if doc.get("target_id") != user["id"]:
+        # Allow partner of a duo account to respond as well
+        if not (user.get("partner_user_id") and doc.get("target_id") == user.get("partner_user_id")):
+            raise HTTPException(403, "Nur die adressierte Person darf antworten.")
+    if doc.get("status") != "pending":
+        raise HTTPException(409, "Anfrage wurde bereits beantwortet.")
+    new_status = "confirmed" if body.action == "confirm" else "rejected"
+    now_iso = now_utc().isoformat()
+    await db.acquaintances.update_one(
+        {"id": acq_id},
+        {"$set": {
+            "status": new_status,
+            "responded_at": now_iso,
+            "responder_id": user["id"],
+        }},
+    )
+    # Update the original chat message (for UI) and append a confirmation one.
+    match_id = doc.get("match_id")
+    if match_id:
+        try:
+            await db.messages.update_one(
+                {"id": doc.get("message_id")},
+                {"$set": {"acquaintance_status": new_status}},
+            )
+        except Exception:
+            pass
+        responder_name = user.get("display_name") or "Die andere Person"
+        follow_up = (
+            f"{responder_name} hat die Anfrage bestätigt. Ihr seid nun als persönlich bekannt markiert."
+            if new_status == "confirmed"
+            else f"{responder_name} hat die Anfrage abgelehnt."
+        )
+        await _post_system_message(
+            match_id, user, follow_up,
+            extra={"kind": "acquaintance_response", "acquaintance_id": acq_id,
+                   "acquaintance_status": new_status},
+        )
+        # Broadcast the updated status for any connected clients rendering the request card
+        try:
+            await ws_manager.broadcast(match_id, {
+                "type": "acquaintance_status",
+                "acquaintance_id": acq_id,
+                "status": new_status,
+                "message_id": doc.get("message_id"),
+            })
+        except Exception:
+            pass
+    await _audit(user["id"], f"acquaintance_{new_status}", doc.get("requester_id") or "")
+    return {"ok": True, "status": new_status}
+
+
+@api_router.get("/users/{user_id}/acquaintances")
+async def list_user_acquaintances(user_id: str, user=Depends(_require_user)):
+    """Public list of confirmed acquaintances for any profile."""
+    target = await db.users.find_one({"id": user_id})
+    if not target or target.get("banned"):
+        raise HTTPException(404, "Profil nicht gefunden")
+    cur = db.acquaintances.find({
+        "status": "confirmed",
+        "$or": [{"requester_id": user_id}, {"target_id": user_id}],
+    }).sort("responded_at", -1).limit(60)
+    ids = []
+    async for a in cur:
+        other = a["target_id"] if a["requester_id"] == user_id else a["requester_id"]
+        if other not in ids:
+            ids.append(other)
+    if not ids:
+        return {"count": 0, "users": []}
+    viewer_coords = (user.get("location") or {}).get("coordinates")
+    out: List[Dict] = []
+    async for u in db.users.find({"id": {"$in": ids}}):
+        if u.get("banned"):
+            continue
+        out.append(public_user_from_doc(u, viewer_location=viewer_coords, list_mode=True))
+    # Preserve original order
+    order = {uid: i for i, uid in enumerate(ids)}
+    out.sort(key=lambda x: order.get(x.get("id"), 9999))
+    return {"count": len(out), "users": out}
+
+
+@api_router.get("/me/acquaintances/pending")
+async def my_pending_acquaintances(user=Depends(_require_user)):
+    """Incoming pending requests for the current user (and their partner)."""
+    recipients = [user["id"]]
+    if user.get("partner_user_id"):
+        recipients.append(user["partner_user_id"])
+    cur = db.acquaintances.find({
+        "target_id": {"$in": recipients},
+        "status": "pending",
+    }).sort("created_at", -1).limit(50)
+    items: List[Dict] = []
+    async for a in cur:
+        items.append(serialize_doc(a))
+    return {"count": len(items), "items": items}
 
 
 # ---------- WebSocket Chat ----------

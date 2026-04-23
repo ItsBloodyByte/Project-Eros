@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { RoleBadge } from "../components/RoleBadge";
 import { PersonDetails } from "../components/PersonDetails";
 import { MoodBadge } from "../components/MoodBadge";
+import { AcquaintancesSection } from "../components/AcquaintancesSection";
 
 function Row({ label, value }) {
   if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
@@ -383,6 +384,14 @@ export default function ProfileViewPage() {
                 </div>
               )}
             </div>
+
+            <AcquaintancesSection
+              userId={profile.id}
+              viewerId={me?.id}
+              isOwnProfile={previewMode || profile.id === me?.id}
+              targetDisplayName={profile.display_name}
+              disableRequest={previewMode}
+            />
           </div>
         </main>
         <AppFooter />

@@ -1,26 +1,22 @@
 [
   {
-    "content": "Backend: Mood-Enum + /me/mood PATCH-Endpoint + public_user exposure + discover-Filter",
+    "content": "Backend: Acquaintance-Model, Collection + Indexes",
     "status": "completed"
   },
   {
-    "content": "Frontend: i18n Rename Besucher:innen → Views (de/en) + VisitorsPage-Labels",
+    "content": "Backend: Endpoints /acquaintances/request, /respond, /list",
     "status": "completed"
   },
   {
-    "content": "Frontend: Desktop-Header zeigt Views als Haupt-Nav-Eintrag",
+    "content": "Backend: Chat-Nachricht mit special kind=acquaintance_request posten",
     "status": "completed"
   },
   {
-    "content": "Frontend: MoodBadge-Komponente + MoodSelector für MyProfilePage",
+    "content": "Frontend: Button auf ProfileView + Akzeptieren/Ablehnen-UI in ChatBubble",
     "status": "completed"
   },
   {
-    "content": "Frontend: Mood-Badge in Discover-Grid, ProfileView und Chat-Header",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: Mood-Filter in Discover-Filter-Dialog",
+    "content": "Frontend: Neue Bekannten-Sektion auf Profilen",
     "status": "completed"
   },
   {
