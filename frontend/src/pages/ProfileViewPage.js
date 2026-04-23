@@ -32,6 +32,16 @@ function Row({ label, value }) {
   );
 }
 
+function AdminField({ label, value, mono = false }) {
+  if (value === undefined || value === null || value === "") return null;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--muted-foreground))]">{label}</span>
+      <span className={"text-[12.5px] text-[hsl(var(--foreground))] break-all " + (mono ? "font-mono" : "")}>{String(value)}</span>
+    </div>
+  );
+}
+
 export default function ProfileViewPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -207,79 +217,90 @@ export default function ProfileViewPage() {
                 </div>
               )}
 
-              <div className="rounded-[var(--radius-lg)] border bg-[hsl(var(--card))] p-6 shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-display text-3xl leading-tight">
-                      {profile.display_name}
-                      {profile.partner && <span className="text-[hsl(var(--muted-foreground))]"> &amp; {profile.partner.display_name}</span>}
-                      {!profile.partner && profile.account_type === "duo" && profile.persona_b?.display_name && (
-                        <span className="text-[hsl(var(--muted-foreground))]"> &amp; {profile.persona_b.display_name}</span>
+              <div className="rounded-[var(--radius-lg)] border bg-[hsl(var(--card))] shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
+                {/* ─── Header: name, age, pronouns, badges ─── */}
+                <div className="p-6 pb-5 border-b border-[hsl(var(--border))]/60">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-display text-3xl leading-tight tracking-tight">
+                        {profile.display_name}
+                        {profile.partner && <span className="text-[hsl(var(--muted-foreground))]"> &amp; {profile.partner.display_name}</span>}
+                        {!profile.partner && profile.account_type === "duo" && profile.persona_b?.display_name && (
+                          <span className="text-[hsl(var(--muted-foreground))]"> &amp; {profile.persona_b.display_name}</span>
+                        )}
+                        <span className="ml-2 text-xl text-[hsl(var(--muted-foreground))] font-sans">
+                          {profile.age}
+                          {profile.partner?.age && ` / ${profile.partner.age}`}
+                          {!profile.partner && profile.account_type === "duo" && profile.persona_b?.age && ` / ${profile.persona_b.age}`}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 text-sm text-[hsl(var(--muted-foreground))]">
+                        {[profile.pronouns, profile.orientation ? t(`orientations.${profile.orientation}`) : null, profile.gender_identity ? t(`genders.${profile.gender_identity}`) : null]
+                          .filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
+                      {profile.current_mood && (
+                        <MoodBadge mood={profile.current_mood} size="md" testid="profile-mood-badge" />
                       )}
-                      <span className="ml-2 text-xl text-[hsl(var(--muted-foreground))]">
-                        {profile.age}
-                        {profile.partner?.age && ` / ${profile.partner.age}`}
-                        {!profile.partner && profile.account_type === "duo" && profile.persona_b?.age && ` / ${profile.persona_b.age}`}
+                      {(profile.partner || (profile.account_type === "duo" && profile.persona_b)) && (
+                        <Badge className="gap-1 bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/40" data-testid="profile-couple-badge">
+                          Paar
+                        </Badge>
+                      )}
+                      {profile.id_verified && (
+                        <Badge className="gap-1 bg-[hsl(var(--accent))]/90 hover:bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]" data-testid="profile-id-verified-badge">
+                          <ShieldCheck className="h-3 w-3" /> ID verifiziert
+                        </Badge>
+                      )}
+                      {profile.role && profile.role !== "user" && (
+                        <RoleBadge role={profile.role} />
+                      )}
+                      {isAdminViewer && <Badge variant="outline" className="gap-1"><EyeOff className="h-3 w-3" /> {t("profile.admin_only")}</Badge>}
+                    </div>
+                  </div>
+
+                  {/* Location / distance / online — one consistent meta strip */}
+                  <div className="mt-3 flex items-center gap-x-4 gap-y-1.5 text-sm text-[hsl(var(--muted-foreground))] flex-wrap">
+                    {profile.city && (
+                      <span className="inline-flex items-center gap-1" data-testid="profile-city">
+                        <MapPin className="h-4 w-4" /> {profile.city}
                       </span>
-                    </div>
-                    <div className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
-                      {[profile.pronouns, profile.orientation ? t(`orientations.${profile.orientation}`) : null, profile.gender_identity ? t(`genders.${profile.gender_identity}`) : null]
-                        .filter(Boolean).join(" · ")}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {profile.current_mood && (
-                      <MoodBadge mood={profile.current_mood} size="md" testid="profile-mood-badge" />
                     )}
-                    {(profile.partner || (profile.account_type === "duo" && profile.persona_b)) && (
-                      <Badge className="gap-1 bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/40" data-testid="profile-couple-badge">
-                        Paar
-                      </Badge>
+                    {typeof profile.distance_km === "number" && (
+                      <span className="inline-flex items-center gap-1" data-testid="profile-distance">
+                        {!profile.city && <MapPin className="h-4 w-4" />}
+                        ~{profile.distance_km} km
+                      </span>
                     )}
-                    {profile.id_verified && (
-                      <Badge className="gap-1 bg-[hsl(var(--accent))]/90 hover:bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]" data-testid="profile-id-verified-badge">
-                        <ShieldCheck className="h-3 w-3" /> ID verifiziert
-                      </Badge>
-                    )}
-                    {profile.role && profile.role !== "user" && (
-                      <RoleBadge role={profile.role} />
-                    )}
-                    {isAdminViewer && <Badge variant="outline" className="gap-1"><EyeOff className="h-3 w-3" /> {t("profile.admin_only")}</Badge>}
+                    {profile.relationship_status && profile.relationship_status !== "not_specified" && (() => {
+                      const meta = getRelationshipStatusMeta(profile.relationship_status);
+                      const Icon = meta.icon;
+                      return (
+                        <span
+                          className="inline-flex items-center gap-1"
+                          data-testid={`profile-relationship-status-${meta.value}`}
+                        >
+                          <Icon className="h-4 w-4 text-[hsl(var(--accent))]" />
+                          <span className="text-[hsl(var(--foreground))]">{meta.label}</span>
+                        </span>
+                      );
+                    })()}
+                    {profile.is_online && <span className="inline-flex items-center gap-1"><span className="online-dot" /> {t("profile.online")}</span>}
                   </div>
                 </div>
-                <div className="mt-2 flex items-center gap-3 text-sm text-[hsl(var(--muted-foreground))] flex-wrap">
-                  {profile.city && (
-                    <span className="inline-flex items-center gap-1" data-testid="profile-city">
-                      <MapPin className="h-4 w-4" /> {profile.city}
-                    </span>
-                  )}
-                  {typeof profile.distance_km === "number" && (
-                    <span className="inline-flex items-center gap-1" data-testid="profile-distance">
-                      {!profile.city && <MapPin className="h-4 w-4" />}
-                      ~{profile.distance_km} km
-                    </span>
-                  )}
-                  {profile.is_online && <span className="inline-flex items-center gap-1"><span className="online-dot" /> {t("profile.online")}</span>}
-                </div>
 
-                {/* Beziehungsstatus als reguläres Info-Feld */}
-                {profile.relationship_status && profile.relationship_status !== "not_specified" && (() => {
-                  const meta = getRelationshipStatusMeta(profile.relationship_status);
-                  const Icon = meta.icon;
-                  return (
-                    <div
-                      className="mt-2 flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]"
-                      data-testid={`profile-relationship-status-${meta.value}`}
-                    >
-                      <Icon className="h-4 w-4 text-[hsl(var(--accent))]" />
-                      <span>Beziehungsstatus: <strong className="text-[hsl(var(--foreground))]">{meta.label}</strong></span>
-                    </div>
-                  );
-                })()}
-                {profile.bio && <p className="mt-3 text-sm leading-relaxed">{profile.bio}</p>}
+                {/* ─── Bio block ─── */}
+                {profile.bio && (
+                  <div className="px-6 py-5 border-b border-[hsl(var(--border))]/60">
+                    <p className="text-[15px] leading-relaxed text-[hsl(var(--foreground))] whitespace-pre-line">
+                      {profile.bio}
+                    </p>
+                  </div>
+                )}
 
-                {/* Körper & Life-Style + Kinks (always visible, even if empty) */}
-                <div className="mt-4 space-y-3">
+                {/* ─── Details: body / lifestyle / kinks / relationship / roles ─── */}
+                <div className="px-6 py-5 space-y-4">
                   <PersonDetails person={profile} title={profile.partner || (profile.account_type === "duo" && profile.persona_b) ? profile.display_name : null} compact />
                   {profile.partner && (
                     <PersonDetails person={profile.partner} title={profile.partner.display_name} compact />
@@ -289,14 +310,23 @@ export default function ProfileViewPage() {
                   )}
                 </div>
 
+                {/* ─── Admin-only inspection panel ─── */}
                 {profile.admin_view && !previewMode && (
-                  <div className="mt-3 border-t pt-3 text-xs font-mono">
-                    <div>email: {profile.email}</div>
-                    <div>role: {profile.role_of_target}</div>
-                    <div>hidden: {String(!!profile.hidden_mode)} · banned: {String(!!profile.banned)}</div>
-                    {profile.ban_reason && <div>ban reason: {profile.ban_reason}</div>}
-                    {profile.last_active && <div>last_active: {profile.last_active}</div>}
-                  </div>
+                  <details className="group border-t border-[hsl(var(--border))]/60 bg-[hsl(var(--muted))]/30">
+                    <summary className="flex items-center gap-2 cursor-pointer select-none px-6 py-3 text-xs font-medium uppercase tracking-[0.14em] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors">
+                      <ShieldAlert className="h-3.5 w-3.5 text-[hsl(var(--accent))]" />
+                      Admin-Ansicht
+                      <span className="ml-auto text-[10px] opacity-60 group-open:rotate-180 transition-transform inline-block">▾</span>
+                    </summary>
+                    <div className="px-6 pb-5 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                      <AdminField label="E-Mail" value={profile.email} mono />
+                      <AdminField label="Rolle" value={profile.role_of_target || "user"} />
+                      <AdminField label="Versteckt" value={profile.hidden_mode ? "ja" : "nein"} />
+                      <AdminField label="Gesperrt" value={profile.banned ? "ja" : "nein"} />
+                      {profile.ban_reason && <AdminField label="Sperrgrund" value={profile.ban_reason} />}
+                      {profile.last_active && <AdminField label="Zuletzt aktiv" value={new Date(profile.last_active).toLocaleString("de-DE")} />}
+                    </div>
+                  </details>
                 )}
               </div>
 

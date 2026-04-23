@@ -8,10 +8,16 @@ import { PENIS_RANGES } from "../lib/constants";
  * Props:
  *   person  – { height_cm, body_type, ethnicity, smoking, drinking, diet, sti_status,
  *              sti_tested_on, cup_size, penis_length_cm, penis_category, languages,
- *              relationship_types, seeking_roles, kinks, bio, pronouns, orientation,
- *              gender_identity, display_name, age }
- *   title   – optional header (e.g. partner name)
- *   compact – boolean; compact means smaller spacing / smaller labels
+ *              relationship_types, seeking_roles, kinks, pronouns, orientation,
+ *              gender_identity, display_name, age, interests }
+ *   title   – optional header (e.g. partner name). When set, the component renders
+ *             inside its own bordered card so two persons can be visually separated
+ *             (couple view). When NOT set, the component renders borderless so it
+ *             can seamlessly extend the enclosing profile card (single-person view).
+ *   compact – boolean; compact means smaller spacing / smaller labels.
+ *
+ * Note: the caller is responsible for rendering the bio — PersonDetails
+ * intentionally does NOT render `person.bio` to avoid duplication.
  *
  * The "Körper & Life-Style" and "Kinks" sections are ALWAYS rendered,
  * even when all underlying values are empty (displays "Keine Angaben").
@@ -27,12 +33,16 @@ export function PersonDetails({ person, title, compact = false }) {
     person.cup_size || person.penis_length_cm ||
     (person.languages && person.languages.length);
 
-  return (
-    <div
-      className={[
+  const wrapperClass = title
+    ? [
         "rounded-[var(--radius-md)] ring-1 ring-[hsl(var(--border))]/60 bg-[hsl(var(--card))]/60 p-4",
         compact ? "space-y-2.5" : "space-y-3.5",
-      ].join(" ")}
+      ].join(" ")
+    : compact ? "space-y-3" : "space-y-4";
+
+  return (
+    <div
+      className={wrapperClass}
       data-testid={`person-details-${person.id || title || "persona"}`}
     >
       {title && (
@@ -47,7 +57,11 @@ export function PersonDetails({ person, title, compact = false }) {
         </div>
       )}
 
-      {person.bio && <p className="text-sm leading-relaxed text-[hsl(var(--foreground))]">{person.bio}</p>}
+      {/* Bio: rendered only inside titled (couple/duo) blocks — the single-person
+          case is handled by the parent ProfileViewPage to avoid duplication. */}
+      {title && person.bio && (
+        <p className="text-sm leading-relaxed text-[hsl(var(--foreground))]">{person.bio}</p>
+      )}
 
       {/* Körper & Life-Style — always visible */}
       <section>
