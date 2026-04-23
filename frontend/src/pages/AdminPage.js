@@ -20,9 +20,30 @@ import { toast } from "sonner";
 import { RoleBadge } from "../components/RoleBadge";
 import { AdminPromosTab } from "../components/AdminPromosTab";
 import { AdminBlogTab } from "../components/AdminBlogTab";
+import { AdminNav } from "../components/AdminNav";
+
+const ADMIN_TAB_LABELS = {
+  reports: "Reports",
+  users: "User:innen",
+  photos: "Foto-Queue",
+  verifications: "Verifizierungen",
+  ai: "KI-Konfiguration",
+  payments: "Zahlungen",
+  legal: "Rechtliche Seiten",
+  broadcasts: "Broadcasts",
+  promos: "Promos & Konfiguration",
+  blog: "Blog",
+  "team-channels": "Team-Kanäle",
+  audit: "Audit-Log",
+  system: "System-Status",
+};
+function activeTabLabel(id) {
+  return ADMIN_TAB_LABELS[id] || "Übersicht";
+}
 
 export default function AdminPage() {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState("reports");
   const [reports, setReports] = useState([]);
   const [users, setUsers] = useState([]);
   const [audit, setAudit] = useState([]);
@@ -525,11 +546,21 @@ export default function AdminPage() {
     <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
       <div className="app-content flex flex-col min-h-screen">
         <AppHeader />
-        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10">
-          <div className="mb-6 flex items-start justify-between gap-4">
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10">
+          {/* Page header — professional, compact, responsive */}
+          <header className="mb-5 sm:mb-8 flex items-start justify-between gap-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-2">Admin</div>
-              <h1 className="font-display text-4xl sm:text-5xl tracking-tight leading-none">Moderation</h1>
+              <nav className="text-[11px] uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-1.5 flex items-center gap-1.5" aria-label="Breadcrumb">
+                <span>Admin</span>
+                <span aria-hidden="true">/</span>
+                <span className="text-[hsl(var(--foreground))] font-medium normal-case tracking-normal" data-testid="admin-breadcrumb-active">
+                  {activeTabLabel(activeTab, isSuper)}
+                </span>
+              </nav>
+              <h1 className="font-display text-3xl sm:text-4xl md:text-5xl tracking-tight leading-none">Moderation</h1>
+              <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))] max-w-xl hidden sm:block">
+                Zentrale für User-Reports, Content-Moderation, Verifizierungen und System-Konfiguration.
+              </p>
             </div>
             {/* Realtime moderation bell */}
             <DropdownMenu open={bellOpen} onOpenChange={setBellOpen}>
@@ -599,7 +630,7 @@ export default function AdminPage() {
                 </ul>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
+          </header>
 
           {/* Notification Channels Dialog */}
           <Dialog open={channelsOpen} onOpenChange={setChannelsOpen}>
@@ -647,25 +678,42 @@ export default function AdminPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Tabs defaultValue="reports">
-            <TabsList className="flex-wrap h-auto">
-              <TabsTrigger value="reports" data-testid="admin-tab-reports">Reports</TabsTrigger>
-              <TabsTrigger value="users" data-testid="admin-tab-users">Users</TabsTrigger>
-              <TabsTrigger value="photos" data-testid="admin-tab-photos">Foto-Queue</TabsTrigger>
-              <TabsTrigger value="verifications" data-testid="admin-tab-verifications">Verifizierungen</TabsTrigger>
-              {isSuper && <TabsTrigger value="ai" data-testid="admin-tab-ai">KI-Konfig</TabsTrigger>}
-              {isSuper && <TabsTrigger value="payments" data-testid="admin-tab-payments">Zahlungen</TabsTrigger>}
-              {isSuper && <TabsTrigger value="legal" data-testid="admin-tab-legal" onClick={() => loadLegal(legalKey)}>Rechtliches</TabsTrigger>}
-              <TabsTrigger value="broadcasts" data-testid="admin-tab-broadcasts" onClick={() => loadBroadcasts()}>Broadcasts</TabsTrigger>
-              {isSuper && <TabsTrigger value="promos" data-testid="admin-tab-promos">Promos & Konfig</TabsTrigger>}
-              <TabsTrigger value="blog" data-testid="admin-tab-blog">Blog</TabsTrigger>
-              {isSuper && <TabsTrigger value="team-channels" data-testid="admin-tab-team-channels" onClick={() => loadRoleChannels()}>Team-Kanäle</TabsTrigger>}
-              <TabsTrigger value="audit" data-testid="admin-tab-audit">Audit</TabsTrigger>
-              {isSuper && <TabsTrigger value="system" data-testid="admin-tab-system">System</TabsTrigger>}
-            </TabsList>
+          <div className="md:flex md:gap-8" data-testid="admin-layout">
+            <AdminNav
+              value={activeTab}
+              onChange={(id) => {
+                setActiveTab(id);
+                // Preserve the old tab-level side effects (lazy-load content).
+                if (id === "legal") loadLegal(legalKey);
+                if (id === "broadcasts") loadBroadcasts();
+                if (id === "team-channels" && isSuper) loadRoleChannels();
+              }}
+              isSuper={isSuper}
+              counts={{ reports: (reports || []).length, photos: (photos || []).length, verifications: (verifs || []).length }}
+            />
+
+            <div className="flex-1 min-w-0">
+              <Tabs value={activeTab} onValueChange={setActiveTab}>
+                {/* Legacy TabsList — kept as accessibility fallback (sr-only, drives
+                    Radix active state when external nav calls onValueChange). */}
+                <TabsList className="sr-only">
+                  <TabsTrigger value="reports">Reports</TabsTrigger>
+                  <TabsTrigger value="users">Users</TabsTrigger>
+                  <TabsTrigger value="photos">Foto-Queue</TabsTrigger>
+                  <TabsTrigger value="verifications">Verifizierungen</TabsTrigger>
+                  {isSuper && <TabsTrigger value="ai">KI-Konfig</TabsTrigger>}
+                  {isSuper && <TabsTrigger value="payments">Zahlungen</TabsTrigger>}
+                  {isSuper && <TabsTrigger value="legal">Rechtliches</TabsTrigger>}
+                  <TabsTrigger value="broadcasts">Broadcasts</TabsTrigger>
+                  {isSuper && <TabsTrigger value="promos">Promos &amp; Konfig</TabsTrigger>}
+                  <TabsTrigger value="blog">Blog</TabsTrigger>
+                  {isSuper && <TabsTrigger value="team-channels">Team-Kanäle</TabsTrigger>}
+                  <TabsTrigger value="audit">Audit</TabsTrigger>
+                  {isSuper && <TabsTrigger value="system">System</TabsTrigger>}
+                </TabsList>
 
             <TabsContent value="reports" className="mt-4">
-              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow>
                     <TableHead>ID</TableHead><TableHead>Ziel</TableHead><TableHead>Grund</TableHead><TableHead>Status</TableHead><TableHead>Aktionen</TableHead>
@@ -684,14 +732,16 @@ export default function AdminPage() {
                             <>{r.target_type} · <span className="font-mono text-xs">{r.target_id.slice(0,8)}</span></>
                           )}
                         </TableCell>
-                        <TableCell className="max-w-[320px] truncate" onClick={() => openReport(r.id)}>{r.reason}</TableCell>
+                        <TableCell className="max-w-[200px] sm:max-w-[320px] truncate" onClick={() => openReport(r.id)}>{r.reason}</TableCell>
                         <TableCell><Badge variant={r.status==="resolved"?"secondary":"outline"}>{r.status}</Badge></TableCell>
-                        <TableCell className="space-x-2">
-                          <Button size="sm" variant="outline" onClick={() => openReport(r.id)} data-testid={`admin-report-open-${r.id}`}>Details</Button>
-                          <Button size="sm" variant="ghost" onClick={() => updateStatus(r.id, "reviewing")}>Prüfen</Button>
-                          <Button size="sm" onClick={() => updateStatus(r.id, "resolved")} data-testid={`admin-resolve-${r.id}`}>Erledigt</Button>
-                          <Button size="sm" variant="ghost" onClick={() => updateStatus(r.id, "rejected")}>Verwerfen</Button>
-                          {r.target_type === "user" && <Button size="sm" variant="destructive" onClick={() => ban(r.target_id, r.reason)}>Bannen</Button>}
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1.5">
+                            <Button size="sm" variant="outline" onClick={() => openReport(r.id)} data-testid={`admin-report-open-${r.id}`}>Details</Button>
+                            <Button size="sm" variant="ghost" onClick={() => updateStatus(r.id, "reviewing")}>Prüfen</Button>
+                            <Button size="sm" onClick={() => updateStatus(r.id, "resolved")} data-testid={`admin-resolve-${r.id}`}>Erledigt</Button>
+                            <Button size="sm" variant="ghost" onClick={() => updateStatus(r.id, "rejected")}>Verwerfen</Button>
+                            {r.target_type === "user" && <Button size="sm" variant="destructive" onClick={() => ban(r.target_id, r.reason)}>Bannen</Button>}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -704,7 +754,7 @@ export default function AdminPage() {
             <TabsContent value="users" className="mt-4 space-y-3">
               <Input placeholder="Suche E-Mail / Name" value={search} onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={async (e) => { if (e.key === "Enter") { const { data } = await api.get("/admin/users", { params: { q: search } }); setUsers(data.users); } }} />
-              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow>
                     <TableHead>Name</TableHead><TableHead>E-Mail</TableHead><TableHead>Alter</TableHead><TableHead>Rolle</TableHead><TableHead>Status</TableHead><TableHead>Aktionen</TableHead>
@@ -772,7 +822,7 @@ export default function AdminPage() {
             </TabsContent>
 
             <TabsContent value="verifications" className="mt-4">
-              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow>
                     <TableHead>User</TableHead><TableHead>Dokument-Typ</TableHead><TableHead>Selfie</TableHead><TableHead>Dokument</TableHead><TableHead>Eingereicht</TableHead><TableHead>Aktionen</TableHead>
@@ -1161,7 +1211,7 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow>
                     <TableHead>Titel</TableHead><TableHead>Severity</TableHead><TableHead>Zielgruppe</TableHead><TableHead>Siegel</TableHead><TableHead>Erstellt</TableHead><TableHead>Aktionen</TableHead>
@@ -1252,7 +1302,7 @@ export default function AdminPage() {
             )}
 
             <TabsContent value="audit" className="mt-4">
-              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden shadow-[var(--shadow-sm)]">
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-x-auto shadow-[var(--shadow-sm)]">
                 <div className="px-5 py-3 flex items-center justify-between border-b border-[hsl(var(--border))]/60">
                   <div className="font-display text-lg tracking-tight">Audit-Log</div>
                   <div className="text-xs text-[hsl(var(--muted-foreground))]">{audit.length} Ereignisse</div>
@@ -1288,6 +1338,8 @@ export default function AdminPage() {
               <SystemUpdatesPanel />
             </TabsContent>
           </Tabs>
+            </div>
+          </div>
 
           {/* Admin Edit User Dialog */}
           <Dialog open={!!editUser} onOpenChange={(v) => { if (!v) { setEditUser(null); setEditForm(null); } }}>
