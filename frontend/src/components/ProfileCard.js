@@ -30,7 +30,11 @@ export function ProfileCard({ user, visited = false }) {
     <Link
       to={`/profile/${user.id}`}
       data-testid="profile-card"
-      className="group relative block overflow-hidden rounded-[var(--radius-lg)] bg-[hsl(var(--card))] shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60 card-hover"
+      data-boosted={user.boosted ? "true" : undefined}
+      className={
+        "group relative block overflow-hidden rounded-[var(--radius-lg)] bg-[hsl(var(--card))] shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60 card-hover" +
+        (user.boosted ? " boost-halo" : "")
+      }
     >
       <div className="aspect-[3/4] w-full relative bg-[hsl(var(--muted))]">
         {primary ? (
@@ -121,16 +125,6 @@ export function ProfileCard({ user, visited = false }) {
             data-testid="profile-card-partner-avatar"
           >
             <img src={partnerPhoto} alt={partnerName || "Partner"} className="h-full w-full object-cover" />
-          </div>
-        )}
-
-        {/* Boosted ribbon */}
-        {user.boosted && (
-          <div
-            className="absolute left-2.5 bottom-20 inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))] px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[hsl(var(--accent-foreground))] shadow-[var(--shadow-sm)]"
-            data-testid="profile-card-boosted"
-          >
-            boosted
           </div>
         )}
 

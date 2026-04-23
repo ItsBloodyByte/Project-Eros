@@ -49,7 +49,7 @@ export default function DiscoverScreen({ navigation }) {
         const name = partner ? `${item.display_name} & ${partner.display_name}` : item.display_name;
         const age = partner && partner.age ? `${item.age} & ${partner.age}` : item.age;
         return (
-          <TouchableOpacity onPress={() => navigation.navigate("Profile", { id: item.id })} style={styles.card}>
+          <TouchableOpacity onPress={() => navigation.navigate("Profile", { id: item.id })} style={[styles.card, item.boosted && styles.cardBoosted]}>
             {primary
               ? <Image source={{ uri: primary.data }} style={[styles.img, isNsfw && { opacity: 0.4 }]} blurRadius={isNsfw ? 24 : 0} />
               : <View style={[styles.img, { backgroundColor: colors.card }]} />}
@@ -78,6 +78,15 @@ export default function DiscoverScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   card: { flex: 1, margin: 6, borderRadius: radii.lg, overflow: "hidden", backgroundColor: colors.card, aspectRatio: 3 / 4, position: "relative" },
+  cardBoosted: {
+    borderWidth: 2,
+    borderColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.55,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+  },
   img: { width: "100%", height: "100%" },
   meta: { position: "absolute", left: 10, right: 10, bottom: 10 },
   name: { color: colors.text, fontSize: 15, fontWeight: "700" },

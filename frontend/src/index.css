@@ -198,6 +198,60 @@
   animation: online-pulse 2s infinite;
 }
 
+/* -------- Boost halo: soft gradient border + subtle outer glow --------
+   Works even when the card root uses `overflow: hidden` — the outer glow lives
+   on the root element's box-shadow (not clipped) and the gradient ring is an
+   INNER ::before pseudo at `inset: 0` so it hugs the rounded edges from inside. */
+@keyframes boost-halo-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 14px -2px hsla(25, 85%, 58%, 0.35),
+      0 0 0 1px hsla(25, 85%, 58%, 0.25);
+  }
+  50% {
+    box-shadow:
+      0 0 26px -2px hsla(25, 85%, 58%, 0.60),
+      0 0 0 1px hsla(25, 85%, 58%, 0.45);
+  }
+}
+@keyframes boost-halo-shift {
+  0%, 100% { background-position: 0% 0%; }
+  50%      { background-position: 100% 100%; }
+}
+.boost-halo {
+  position: relative;
+  isolation: isolate;
+  animation: boost-halo-breathe 3.6s ease-in-out infinite;
+}
+.boost-halo::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  padding: 2px;
+  /* Smooth continuous orange gradient — no harsh transparency gaps */
+  background:
+    linear-gradient(135deg,
+      hsla(28, 90%, 58%, 0.95) 0%,
+      hsla(22, 85%, 52%, 0.85) 35%,
+      hsla(32, 95%, 65%, 0.95) 70%,
+      hsla(22, 85%, 52%, 0.85) 100%);
+  background-size: 200% 200%;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: boost-halo-shift 6s ease-in-out infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .boost-halo,
+  .boost-halo::before { animation: none; }
+  .boost-halo { box-shadow: 0 0 22px -2px hsla(25, 85%, 58%, 0.50); }
+}
+
 /* -------- Scrollbar polish -------- */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 9999px; }
