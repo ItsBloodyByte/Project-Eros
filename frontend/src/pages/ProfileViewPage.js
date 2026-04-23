@@ -220,9 +220,9 @@ export default function ProfileViewPage() {
               <div className="rounded-[var(--radius-lg)] border bg-[hsl(var(--card))] shadow-[var(--shadow-sm)] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
                 {/* ─── Header: name, age, pronouns, badges ─── */}
                 <div className="p-6 pb-5 border-b border-[hsl(var(--border))]/60">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-display text-3xl leading-tight tracking-tight">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div className="min-w-0 order-2 sm:order-1">
+                      <div className="font-display text-3xl leading-tight tracking-tight break-words">
                         {profile.display_name}
                         {profile.partner && <span className="text-[hsl(var(--muted-foreground))]"> &amp; {profile.partner.display_name}</span>}
                         {!profile.partner && profile.account_type === "duo" && profile.persona_b?.display_name && (
@@ -239,7 +239,7 @@ export default function ProfileViewPage() {
                           .filter(Boolean).join(" · ")}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
+                    <div className="flex items-center gap-1.5 flex-wrap justify-start sm:justify-end sm:shrink-0 order-1 sm:order-2">
                       {profile.current_mood && (
                         <MoodBadge mood={profile.current_mood} size="md" testid="profile-mood-badge" />
                       )}
