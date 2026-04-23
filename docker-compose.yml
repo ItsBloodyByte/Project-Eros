@@ -208,9 +208,22 @@ services:
 
         rebuild() {
           PROJ="$${COMPOSE_PROJECT_NAME:-eros}"
-          echo "[updater] rebuilding project=$$PROJ"
-          docker compose -p "$$PROJ" build --no-cache backend frontend && \
-            docker compose -p "$$PROJ" up -d backend frontend
+          # Fetch the latest docker-compose.yml from the same GitHub repo/ref,
+          # so we don't depend on a host-mounted file (Synology container
+          # manager doesn't expose one). Falls back on a cached copy if the
+          # download fails.
+          COMPOSE_URL="$${COMPOSE_URL:-https://raw.githubusercontent.com/itsbloodybyte/project-eros/$${EROS_REF:-main}/docker-compose.yml}"
+          if curl -fsSL --retry 2 "$$COMPOSE_URL" -o /data/docker-compose.yml.tmp; then
+            mv /data/docker-compose.yml.tmp /data/docker-compose.yml
+          elif [ ! -f /data/docker-compose.yml ]; then
+            echo "[updater] could not download $$COMPOSE_URL and no cached copy exists"
+            return 1
+          else
+            echo "[updater] using cached /data/docker-compose.yml (download failed)"
+          fi
+          echo "[updater] rebuilding project=$$PROJ (compose=/data/docker-compose.yml)"
+          docker compose -f /data/docker-compose.yml -p "$$PROJ" build --no-cache backend frontend && \
+            docker compose -f /data/docker-compose.yml -p "$$PROJ" up -d backend frontend
         }
 
         echo "[updater] starting (interval=$${UPDATE_INTERVAL_SECONDS:-3600}s, enabled=$${UPDATE_ENABLED:-true}, repo=$$EROS_REPO, ref=$$EROS_REF)"
