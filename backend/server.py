@@ -2177,19 +2177,100 @@ def _broadcast_matches_user(doc: dict, user: dict) -> bool:
 
 
 @api_router.get("/me/broadcasts")
-async def my_broadcasts(user=Depends(_require_user), unread_only: bool = False, limit: int = 20):
+async def my_broadcasts(
+    user=Depends(_require_user),
+    unread_only: bool = False,
+    read_status: Optional[str] = None,   # 'read' | 'unread' | None
+    severity: Optional[str] = None,      # 'info' | 'warning' | 'urgent'
+    audience: Optional[str] = None,      # 'all' | 'premium' | 'verified' | 'staff' | 'segment'
+    since: Optional[str] = None,         # ISO timestamp inclusive
+    until: Optional[str] = None,         # ISO timestamp inclusive
+    include_expired: bool = False,       # default False preserves legacy banner behaviour
+    pinned_only: bool = False,
+    search: Optional[str] = None,        # case-insensitive substring in title/body
+    limit: int = 20,
+    skip: int = 0,
+):
+    """
+    Returns broadcasts visible to the current user with optional filters.
+    Defaults preserve legacy behaviour (active, latest-first) – the account
+    history view opts in via `include_expired=True` and larger page sizes.
+    """
     now_iso = now_utc().isoformat()
-    q: Dict = {"$or": [{"expires_at": None}, {"expires_at": {"$gt": now_iso}}]}
-    items = await db.broadcasts.find(q).sort([("pinned", -1), ("created_at", -1)]).limit(min(limit, 100)).to_list(length=limit)
-    result: List[Dict] = []
-    for d in items:
+    q: Dict = {}
+    if not include_expired:
+        q["$or"] = [{"expires_at": None}, {"expires_at": {"$gt": now_iso}}]
+    if severity in {"info", "warning", "urgent"}:
+        q["severity"] = severity
+    if audience in {"all", "premium", "verified", "staff", "segment"}:
+        q["audience"] = audience
+    if pinned_only:
+        q["pinned"] = True
+    if since or until:
+        rng: Dict = {}
+        if since:
+            rng["$gte"] = since
+        if until:
+            rng["$lte"] = until
+        q["created_at"] = rng
+    if search:
+        import re as _re_local
+        esc = _re_local.escape(search.strip())
+        if esc:
+            rx = {"$regex": esc, "$options": "i"}
+            q["$and"] = q.get("$and", []) + [{"$or": [{"title": rx}, {"body": rx}]}]
+
+    # Cap pool: broadcasts are platform-wide and low-volume; fetch a safe upper bound,
+    # then apply per-user visibility + read-filter in Python, paginate last.
+    pool_cap = 500
+    cursor = db.broadcasts.find(q).sort([("pinned", -1), ("created_at", -1)]).limit(pool_cap)
+    pool = await cursor.to_list(length=pool_cap)
+
+    lim = max(1, min(int(limit), 100))
+    off = max(0, int(skip))
+
+    filtered: List[Dict] = []
+    for d in pool:
         if not _broadcast_matches_user(d, user):
             continue
         pub = await _public_broadcast(d, for_user_id=user["id"])
-        if unread_only and pub.get("read"):
+        is_read = bool(pub.get("read"))
+        if unread_only and is_read:
             continue
-        result.append(pub)
-    return {"broadcasts": result}
+        if read_status == "read" and not is_read:
+            continue
+        if read_status == "unread" and is_read:
+            continue
+        filtered.append(pub)
+
+    total = len(filtered)
+    page = filtered[off:off + lim]
+    return {
+        "broadcasts": page,
+        "total": total,
+        "limit": lim,
+        "skip": off,
+        "has_more": (off + len(page)) < total,
+    }
+
+
+@api_router.post("/me/broadcasts/ack-all")
+async def ack_all_broadcasts(user=Depends(_require_user)):
+    """Marks every broadcast currently visible to the user as read."""
+    now_iso = now_utc().isoformat()
+    pool = await db.broadcasts.find({}).sort([("created_at", -1)]).limit(1000).to_list(length=1000)
+    marked = 0
+    for d in pool:
+        if not _broadcast_matches_user(d, user):
+            continue
+        res = await db.broadcast_reads.update_one(
+            {"broadcast_id": d.get("id"), "user_id": user["id"]},
+            {"$set": {"broadcast_id": d.get("id"), "user_id": user["id"], "ack_at": now_iso}},
+            upsert=True,
+        )
+        if res.upserted_id or res.modified_count:
+            marked += 1
+    return {"ok": True, "marked": marked}
 
 
 @api_router.get("/me/unread-summary")
@@ -4924,6 +5005,16 @@ def _normalize_persona_b(payload: Optional[dict]) -> Optional[dict]:
         out["photos"] = norm_photos[:5]
     # Strip Nones
     return {k: v for k, v in out.items() if v is not None and v != ""}
+
+
+def _persona_b_public(persona_b: Optional[dict]) -> Optional[dict]:
+    """Return public version of persona_b data for API responses."""
+    if not isinstance(persona_b, dict):
+        return None
+    
+    # Return the same data as it's already normalized and safe for public consumption
+    # This mirrors the public_user_from_doc pattern for consistency
+    return persona_b
 
 
 async def _get_partner_user(user_doc: dict) -> Optional[dict]:

@@ -5,6 +5,18 @@ Nginx-gehostete React-Frontend. Der Quellcode wird dabei **direkt aus
 dem GitHub-Repository** [`itsbloodybyte/project-eros`](https://github.com/itsbloodybyte/project-eros)
 gezogen – ein lokales `git clone` ist **nicht** nötig.
 
+## 0. One-Liner (empfohlen)
+
+In einem leeren Ordner – legt `docker-compose.yml` + `.env` mit
+generiertem `JWT_SECRET` und Mongo-Passwort an und startet die Stacks:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/itsbloodybyte/project-eros/main/bootstrap.sh)
+```
+
+Danach direkt `http://localhost:8080` aufrufen. Wer lieber manuell
+vorgeht, nutzt die Schritte unten.
+
 ## 1. docker-compose.yml und .env.example laden
 
 In einem leeren Ordner:

@@ -13,6 +13,7 @@ import { Link } from "react-router-dom";
 import { AppFooter } from "../components/AppFooter";
 import { PremiumExtrasSection } from "../components/PremiumExtrasSection";
 import { CoupleSection } from "../components/CoupleSection";
+import { BroadcastHistorySection } from "../components/BroadcastHistorySection";
 
 export default function AccountPage() {
   const { user, refresh } = useAuth();
@@ -241,6 +242,8 @@ export default function AccountPage() {
           </section>
 
           <CoupleSection />
+
+          <BroadcastHistorySection />
 
           <PremiumExtrasSection />
 
