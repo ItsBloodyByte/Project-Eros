@@ -188,8 +188,9 @@ services:
         FROM docker:cli
         RUN apk add --no-cache git curl bash docker-cli-compose coreutils || \
             apk add --no-cache git curl bash docker-compose coreutils
-        # Embed the updater script via BuildKit COPY heredoc – no YAML/shell
-        # escaping issues because BuildKit handles the file contents verbatim.
+        # Embed the updater script via BuildKit COPY heredoc. We use $$ for
+        # every shell variable so Docker Compose leaves them untouched while
+        # parsing this YAML (Compose otherwise warns and blanks them out).
         COPY <<'SCRIPT_EOF' /usr/local/bin/updater.sh
         #!/bin/sh
         # Eros auto-update loop. Writes status to /data/updater.json so the
@@ -199,45 +200,45 @@ services:
         mkdir -p /data
 
         write_state() {
-          now="$(date -Iseconds 2>/dev/null || date)"
+          now="$$(date -Iseconds 2>/dev/null || date)"
           printf '{"current_sha":"%s","latest_sha":"%s","last_check":"%s","last_update":"%s","enabled":%s,"message":"%s","interval":%s}\n' \
-            "$1" "$2" "$now" "$3" "${UPDATE_ENABLED:-true}" "$4" "${UPDATE_INTERVAL_SECONDS:-3600}" > "$STATE.tmp" \
-            && mv "$STATE.tmp" "$STATE"
+            "$$1" "$$2" "$$now" "$$3" "$${UPDATE_ENABLED:-true}" "$$4" "$${UPDATE_INTERVAL_SECONDS:-3600}" > "$$STATE.tmp" \
+            && mv "$$STATE.tmp" "$$STATE"
         }
 
         rebuild() {
-          PROJ="${COMPOSE_PROJECT_NAME:-eros}"
-          echo "[updater] rebuilding project=$PROJ"
-          docker compose -p "$PROJ" build --no-cache backend frontend && \
-            docker compose -p "$PROJ" up -d backend frontend
+          PROJ="$${COMPOSE_PROJECT_NAME:-eros}"
+          echo "[updater] rebuilding project=$$PROJ"
+          docker compose -p "$$PROJ" build --no-cache backend frontend && \
+            docker compose -p "$$PROJ" up -d backend frontend
         }
 
-        echo "[updater] starting (interval=${UPDATE_INTERVAL_SECONDS:-3600}s, enabled=${UPDATE_ENABLED:-true}, repo=$EROS_REPO, ref=$EROS_REF)"
-        CURR="$(cat /data/deployed_sha 2>/dev/null || echo '')"
+        echo "[updater] starting (interval=$${UPDATE_INTERVAL_SECONDS:-3600}s, enabled=$${UPDATE_ENABLED:-true}, repo=$$EROS_REPO, ref=$$EROS_REF)"
+        CURR="$$(cat /data/deployed_sha 2>/dev/null || echo '')"
 
         while :; do
           force=0
-          if [ -f "$TRIGGER" ]; then force=1; rm -f "$TRIGGER"; fi
-          if [ "${UPDATE_ENABLED:-true}" = "true" ] || [ $force -eq 1 ]; then
-            LATEST="$(git ls-remote "$EROS_REPO" "$EROS_REF" 2>/dev/null | head -n1 | awk '{print $1}')"
-            if [ -z "$LATEST" ]; then
-              write_state "$CURR" "" "" "Konnte GitHub nicht erreichen"
-            elif [ "$LATEST" != "$CURR" ] || [ $force -eq 1 ]; then
-              write_state "$CURR" "$LATEST" "" "Update wird angewendet"
+          if [ -f "$$TRIGGER" ]; then force=1; rm -f "$$TRIGGER"; fi
+          if [ "$${UPDATE_ENABLED:-true}" = "true" ] || [ $$force -eq 1 ]; then
+            LATEST="$$(git ls-remote "$$EROS_REPO" "$$EROS_REF" 2>/dev/null | head -n1 | awk '{print $$1}')"
+            if [ -z "$$LATEST" ]; then
+              write_state "$$CURR" "" "" "Konnte GitHub nicht erreichen"
+            elif [ "$$LATEST" != "$$CURR" ] || [ $$force -eq 1 ]; then
+              write_state "$$CURR" "$$LATEST" "" "Update wird angewendet"
               if rebuild; then
-                CURR="$LATEST"
-                echo "$LATEST" > /data/deployed_sha
-                write_state "$CURR" "$LATEST" "$(date -Iseconds)" "Erfolgreich aktualisiert"
+                CURR="$$LATEST"
+                echo "$$LATEST" > /data/deployed_sha
+                write_state "$$CURR" "$$LATEST" "$$(date -Iseconds)" "Erfolgreich aktualisiert"
               else
-                write_state "$CURR" "$LATEST" "" "Rebuild fehlgeschlagen"
+                write_state "$$CURR" "$$LATEST" "" "Rebuild fehlgeschlagen"
               fi
             else
-              write_state "$CURR" "$LATEST" "" "Aktuell"
+              write_state "$$CURR" "$$LATEST" "" "Aktuell"
             fi
           else
-            write_state "$CURR" "" "" "Auto-Update deaktiviert"
+            write_state "$$CURR" "" "" "Auto-Update deaktiviert"
           fi
-          sleep "${UPDATE_INTERVAL_SECONDS:-3600}"
+          sleep "$${UPDATE_INTERVAL_SECONDS:-3600}"
         done
         SCRIPT_EOF
         RUN chmod +x /usr/local/bin/updater.sh
