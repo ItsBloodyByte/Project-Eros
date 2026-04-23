@@ -1,22 +1,22 @@
 [
   {
     "content": "Compose: Updater-Sidecar Service mit Docker-Socket + Git-Check",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Backend: /api/admin/system/updates (current SHA, latest SHA, last check)",
-    "status": "pending"
+    "status": "completed"
   },
   {
-    "content": "Backend: /api/admin/system/updates/check (force check now) + /trigger (force rebuild)",
-    "status": "pending"
+    "content": "Backend: /api/admin/system/updates/trigger (force rebuild)",
+    "status": "completed"
   },
   {
     "content": "Frontend: Admin-UI Karte 'System-Updates' mit Status + Button",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": ".env.example + DOCKER.md um Update-Variablen ergänzen",
-    "status": "pending"
+    "status": "completed"
   }
 ]

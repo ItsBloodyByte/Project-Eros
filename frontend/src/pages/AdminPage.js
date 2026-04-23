@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { AppHeader } from "../components/AppHeader";
 import { AppFooter } from "../components/AppFooter";
+import { SystemUpdatesPanel } from "../components/SystemUpdatesPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { Button } from "../components/ui/button";
@@ -660,6 +661,7 @@ export default function AdminPage() {
               <TabsTrigger value="blog" data-testid="admin-tab-blog">Blog</TabsTrigger>
               {isSuper && <TabsTrigger value="team-channels" data-testid="admin-tab-team-channels" onClick={() => loadRoleChannels()}>Team-Kanäle</TabsTrigger>}
               <TabsTrigger value="audit" data-testid="admin-tab-audit">Audit</TabsTrigger>
+              {isSuper && <TabsTrigger value="system" data-testid="admin-tab-system">System</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="reports" className="mt-4">
@@ -1281,6 +1283,9 @@ export default function AdminPage() {
                   </ul>
                 )}
               </div>
+            </TabsContent>
+            <TabsContent value="system" className="mt-4">
+              <SystemUpdatesPanel />
             </TabsContent>
           </Tabs>
 

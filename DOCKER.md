@@ -144,7 +144,73 @@ Healthchecks pro Service sind konfiguriert – `docker compose ps` zeigt
 * Das Backend läuft standardmäßig mit **einem** uvicorn-Worker. Rate-Limiter und WebSocket-Broadcast-Register leben im Prozessspeicher. Horizontales Skalieren erfordert einen Redis-backed Limiter + Sticky Ingress.
 * Nginx liefert statische Assets bereits komprimiert; Backend liefert JSON über GZip-Middleware aus.
 
-## 8. Produktions-Tipps
+## 8. Auto-Updates
+
+Der Compose-Stack enthält einen **Updater-Sidecar** (`eros-updater`), der
+stündlich das konfigurierte GitHub-Repository auf neue Commits prüft.
+Bei Änderungen baut er Backend und Frontend automatisch neu und startet
+die Container neu. Der Fortschritt ist im Admin-Panel unter
+**Admin → System** sichtbar (nur für Superadmins).
+
+### Funktionsweise
+
+1. Sidecar liest alle `$UPDATE_INTERVAL_SECONDS` (Standard: 3600) den
+   letzten Commit-SHA via `git ls-remote` – keine lokale Checkout nötig.
+2. Bei Abweichung zum deployten SHA: `docker compose build --no-cache
+   backend frontend && docker compose up -d backend frontend`.
+3. Der neue SHA wird in `/data/deployed_sha` (Volume `backend_data`)
+   persistiert – Sessions und Daten bleiben erhalten.
+4. Das Backend liest den Zustand aus `/data/updater.json` und stellt ihn
+   unter `/api/admin/system/updates` bereit.
+
+### Konfigurations-Variablen
+
+| Variable | Zweck | Default |
+|---|---|---|
+| `UPDATE_ENABLED` | Auto-Update-Schleife an/aus | `true` |
+| `UPDATE_INTERVAL_SECONDS` | Check-Intervall in Sekunden | `3600` |
+| `COMPOSE_PROJECT_NAME` | Muss zum Ordnernamen passen, aus dem `docker compose` startet | `eros` |
+| `EROS_REPO` | Git-URL | `https://github.com/itsbloodybyte/project-eros.git` |
+| `EROS_REF` | Branch/Tag/Commit | `main` |
+
+### Manuelle Auslösung
+
+Im Admin-Panel unter **System → Rebuild erzwingen**. Alternativ per API:
+
+```bash
+curl -X POST https://<deine-domain>/api/admin/system/updates/trigger \
+  -H "Authorization: Bearer <ADMIN_JWT>"
+```
+
+Oder direkt am Updater-Container:
+
+```bash
+docker exec eros-updater touch /data/updater.trigger
+```
+
+Der nächste Loop-Durchlauf führt dann sofort einen Rebuild aus.
+
+### Deaktivieren
+
+Wenn du Auto-Updates nicht möchtest, in `.env`:
+
+```env
+UPDATE_ENABLED=false
+```
+
+Der Sidecar läuft dann zwar weiter (schreibt nur Status), führt aber
+keine Rebuilds aus. Manuelle Rebuilds via „Rebuild erzwingen" sind
+weiterhin möglich.
+
+### Sicherheitshinweis
+
+Der Updater hat Zugriff auf den Docker-Socket und kann damit beliebige
+Container auf dem Host steuern. In einem multi-tenant Setup (mehrere
+unabhängige Apps auf derselben Synology) den Updater deaktivieren oder
+sein Scope über `COMPOSE_PROJECT_NAME` auf genau dieses Projekt
+begrenzen.
+
+## 9. Produktions-Tipps
 
 * TLS-terminierenden Reverse-Proxy (Caddy, Traefik) vor den `frontend`-Service stellen.
 * `CORS_ORIGINS` auf die echte HTTPS-Origin setzen.
@@ -152,7 +218,7 @@ Healthchecks pro Service sind konfiguriert – `docker compose ps` zeigt
 * `mongo_data` auf persistenten Storage mit regelmäßigen Snapshots mounten.
 * `EROS_REF` auf einen versionierten Tag pinnen, statt auf `main`, um reproduzierbare Deployments zu erhalten.
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 ### `No matching distribution found for emergentintegrations`
 
