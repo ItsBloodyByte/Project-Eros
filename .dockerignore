@@ -1,0 +1,11 @@
+# Top-level compose/build artefacts to ignore when images inline /app
+backend/.env
+frontend/.env
+frontend/node_modules
+frontend/build
+**/__pycache__
+**/.pytest_cache
+**/.venv
+venv
+*.log
+tests

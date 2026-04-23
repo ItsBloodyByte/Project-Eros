@@ -1,0 +1,12 @@
+.env
+.env.*
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.bandit*
+docs/
+tests/
+seed_*.py
