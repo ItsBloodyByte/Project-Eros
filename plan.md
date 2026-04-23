@@ -98,7 +98,7 @@ E2E: Auth → Profile/Photo/AI → Discover mutual-filter → Like/Match → Cha
 - Backend- und Frontendtests überwiegend grün; Restpunkt: Session-Persistence UX leicht holprig (Frontend-Rehydration/Flicker) → siehe Issue.
 
 ### Native mobile
-- Expo Scaffold vorhanden (`/app/mobile`), Feature-Parität nicht umgesetzt (zu diesem Zeitpunkt).
+- Expo Scaffold vorhanden (`/app/mobile`).
 
 **Status:** Abgeschlossen.
 
@@ -282,18 +282,88 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 
 ---
 
+## Phase 8 — Produktion/Deployment, Legal Pages, Payments (PayPal/Klarna) & Mobile Iteration 2
+Diese Phase bündelt die zuletzt in Session 7 umgesetzten produktionsnahen Arbeiten (Docker/Synology, Auto-Updater, Legal, Payment UI) und den nächsten Mobile-Paritätsschritt.
+
+### Phase 8.1 — Robuster Docker-Compose Prod-Setup (Synology)
+**Ziel (erfüllt):**
+- Deployment muss in restriktiven Umgebungen (Synology NAS) zuverlässig builden und laufen.
+
+**Umsetzung (Delivered):**
+- `docker-compose.yml` mit `dockerfile_inline` und `alpine/git` Fetcher-Stages.
+- `$$`-Escapes für compose-variable Shell-Auswertung.
+- `eros-updater` Sidecar mit automatischem GitHub-Pull/Build.
+- Persistent `JWT_SECRET` Auto-Generation + Volume-Backing.
+- Dokumentation: `DOCKER.md`, `bootstrap.sh`.
+
+**Status:** Abgeschlossen.
+
+### Phase 8.2 — Legal Pages: Default-Inhalte, Seeding, UI-Verifikation
+**Ziel (erfüllt):**
+- Realistische deutsche Texte für: Nutzungsbedingungen, Datenschutz, Impressum, Community, Cookies, Widerruf.
+- Robust gegen bereits bestehende Platzhalter in DB.
+
+**Umsetzung (Delivered):**
+- Korrektur typografischer Anführungszeichen, die einen `SyntaxError` verursachten.
+- `_ensure_default_legal_pages` erweitert:
+  - Insert bei fehlendem Eintrag.
+  - **Auto-Refresh** nur für nicht-edited Einträge (`updated_by is None`) wenn DB-Content kürzer als Default (Placeholder-Erkennung).
+- Impressum-Stub zurückgesetzt, sodass Default wieder ausgespielt wird.
+- UI-Screenshot-Verifikation: `/legal/terms` rendert korrekt.
+
+**Status:** Abgeschlossen.
+
+### Phase 8.3 — Payments: PayPal/Klarna Frontend-Integration + Klarna Finalisierung
+**Ziel (erfüllt):**
+- Nutzer:innen können im Konto-Bereich den Checkout Provider auswählen.
+- PayPal redirect + capture Return Flow.
+- Klarna Checkout Page mit Widget + Place-Order Finalisierung.
+
+**Umsetzung (Delivered):**
+- Backend:
+  - Neues Model `KlarnaPlaceOrderRequest`.
+  - Neuer Endpoint `POST /api/payments/klarna/place-order`.
+- Frontend:
+  - Neue Komponente `PaymentProviderDialog` (Stripe/PayPal/Klarna Auswahl, Allowlist-Redirect-Safety).
+  - Neue Seiten:
+    - `/payments/paypal/return` (Capture)
+    - `/payments/klarna/checkout` (Widget)
+- UI-Verifikation per Screenshot: Dialog erscheint, Provider-Status wird aus `providers_live` abgeleitet.
+
+**Status:** Abgeschlossen (funktional). Hinweis: echte PayPal/Klarna Zahlungen hängen von Admin-Credentials ab.
+
+### Phase 8.4 — Mobile: Feature-Parität erweitern (Iteration 2 — Additive Screens)
+**Ziel (erfüllt):**
+- Mobile App bekommt zentrale Web-Features als read-only / light-interaction Parität, ohne Upload-/Editor-Komplexität.
+
+**Umsetzung (Delivered):**
+- Neue Screens in `/app/mobile/src/screens`:
+  - `AlbumsScreen` + `AlbumDetailScreen` (inkl. Unlock-Request via `POST /albums/unlock-request`)
+  - `EventsScreen` + `EventDetailScreen` (RSVP via `POST /events/{id}/rsvp` mit Status `going|interested|not_going`)
+  - `BlogScreen` + `BlogPostScreen` (Markdown als Plaintext; Web bleibt rich)
+  - `VisitorsScreen` (Premium-aware, berücksichtigt `blurred_visitors` und flaches Response-Shape)
+  - `MenuScreen` (Hub für Navigation)
+- Navigation:
+  - Tabs erweitert: Discover, Matches, Events, Mehr, Konto
+  - Stack-Routes ergänzt: Albums, AlbumDetail, EventDetail, Blog, BlogPost, Visitors
+
+**Status:** Abgeschlossen.
+
+---
+
 ## Offene Issues / Risiken
 ### Issue 1: Session persistence UX issue (Recurring)
 - Status: behoben/abgemildert.
 
 ### Issue 2: Backend Test-Report Flakes (niedrige Priorität)
-- Status: funktional; Stripe abhängig von Provider config.
+- Status: funktional; Provider abhängig von Credentials.
 
 ### Issue 3: Blockliste nicht im `/api/me` Response sichtbar (niedrige Priorität)
 - Empfehlung: `/api/me` Serializer um `blocked_user_ids` erweitern oder `GET /api/me/blocks`.
 
-### Issue 4: Promo Auto-Register Kampagnen beeinflussen Free-Limit Tests
-- Expected behavior; für QA deaktivieren.
+### Issue 4: server.py Monolith (~6000+ Zeilen)
+- Risiko: Wartbarkeit.
+- Empfehlung: Router-Split (`routers/auth.py`, `routers/payments.py`, `routers/legal.py`, `routers/admin.py`, `routers/blog.py` …).
 
 ---
 
@@ -301,9 +371,19 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 ### Task 1 (P1): Broadcast-Historie für Nutzer:innen im Konto-Bereich
 **Ziel:** Nutzer:innen können offizielle System-Broadcasts („Eros“) im Konto-Bereich nachträglich einsehen und filtern.
 
-**Status:** Offen.
+**Status:** Bereits geliefert (BroadcastHistory im Web). Mobile-Parität noch optional.
 
-### Task 2 (P2): Mobile Voll-Parität (Option C) — Re-sync `/app/mobile`
+### Task 2 (P1): Payments – Admin-Konfig & Production Hardening
+**Ziel:** Payment Provider Credentials & Webhooks sauber produktionsreif betreiben.
+
+**ToDos:**
+- Admin UI: Klarna/PayPal Felder validieren, Sandbox/Live Toggle sichtbar.
+- Webhook/Return Härtung: Retry/Idempotenz auf Transaktionen.
+- Klarna: Echte Confirmation/Return URLs (konfiguriertes `EROS_PUBLIC_URL`) und ggf. Order-Management.
+
+**Status:** Offen (Produktions-Härtung).
+
+### Task 3 (P2): Mobile Voll-Parität (Option C) — Re-sync `/app/mobile`
 **Ziel:** Vollständige Feature- und UX-Parität mit Web.
 
 **Leitplanken:**
@@ -322,36 +402,39 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 
    **Status:** Abgeschlossen.
 
-2. **Iteration 2 — Filters + Media Uploads + Profile Editing**
+2. **Iteration 2 — Content + Utility Screens (DONE)**
+   - Events (List/Detail/RSVP)
+   - Albums (List/Detail + Unlock Request)
+   - Blog (List/Post)
+   - Visitors (Premium-aware, blurred visitor handling)
+   - Mehr/Hub Navigation
+
+   **Status:** Abgeschlossen.
+
+3. **Iteration 3 — Filters + Media Uploads + Profile Editing (OPEN)**
    - Filter UI (Quick Filter Bar / Drawer) + Premium-gated advanced filters
    - Foto-Upload (inkl. Moderation/Blur Handling) + Profilbearbeitung
    - Persona-B Editing (mobile) für Duo Accounts
-   - Stealth Toggle, Visitors Liste (Premium)
+   - Stealth Toggle, Visitors/Views parity (inkl. Incognito)
+   - Video Upload UI (Premium gate: max 4, 60s, 1080p)
 
    **Status:** Offen.
 
-3. **Iteration 3 — Broadcast Inbox + Notifications + Settings**
-   - Broadcast-Historie im Konto (P1) + mobile parity
-   - Chat Broadcast Threads parity
+4. **Iteration 4 — Broadcast Inbox + Notifications + Settings (OPEN)**
+   - Broadcast-Historie im Konto + mobile parity
    - Settings (Privacy, Screenshot-Deterrence handling, Language)
 
    **Status:** Offen.
 
-4. **Iteration 4 — Albums + Events**
-   - Albums (Create, Share, Unlock)
-   - Events (List/Detail/RSVP)
-
-   **Status:** Offen.
-
-5. **Iteration 5 — Reports (User Side) + Moderation Entry Points**
+5. **Iteration 5 — Reports (User Side) + Moderation Entry Points (OPEN)**
    - Report flows aus Mobile
    - Minimal moderation surfaces (optional)
 
    **Status:** Offen.
 
-6. **Iteration 6 — Optional: Admin Panel auf Mobile**
+6. **Iteration 6 — Optional: Admin Panel auf Mobile (Optional)**
 
-**Status:** In Umsetzung (Iteration 1 fertig; weitere Iterationen offen).
+**Status:** In Umsetzung (Iteration 1–2 fertig; weitere Iterationen offen).
 
 ---
 
@@ -360,6 +443,7 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 - Phase 5.0–5.6: **fertig (Backend + Frontend)** inkl. Broadcast-System.
 - Phase 6.0–6.4: **fertig** (City, RoleBadge Tooltips, Bulk Actions, Premium/Promos, Blog).
 - Phase 7.0–7.4: **fertig** (Always-visible Körper/Kinks, Couples in 2 Modi, Couple-aware Chat, Persona-B Editor im Web).
+- Phase 8.1–8.4: **fertig** (Prod Deployment Hardening, Legal Pages Seeding/Verifikation, PayPal/Klarna Frontend-Flows + Klarna place-order, Mobile additive Screens).
 
 ### Final delivery (aktualisiert)
 - Voll funktionsfähige Web-App mit:
@@ -372,9 +456,18 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
     - Duo (1 Konto) mit `persona_b`.
     - Discover/Profile zeigt beide Personen; Chat zeigt Sender pro Nachricht.
     - Web: Voller Person-B Editor (Fotos/Körper/Kinks).
-- Mobile App (`/app/mobile`):
-  - **Iteration 1 abgeschlossen**: Auth/Register (inkl. Duo), Discover/Profile (Couple-aware), Matches/Chat (Couple-aware), Account (Promos + Couples).
-  - Weitere Iterationen offen (Filters, Uploads, Blog, Events, Alben, Stealth/Visitors, Video).
-- Keine Tracker (Posthog/Emergent) im Frontend.
+  - **Payments**:
+    - Stripe Checkout (bestehend)
+    - PayPal Redirect + Capture Return
+    - Klarna Widget Checkout + Place-Order Endpoint
+    - Provider-Auswahl im Konto via Dialog.
+  - **Legal Pages**:
+    - Vollständige deutsche Standardtexte + robustes Seeding/Placeholder-Refresh.
+  - **Deployment**:
+    - Synology-tauglicher Compose, Auto-Updater Sidecar, persistenter JWT Secret.
 
-**Status:** COMPLETED (Web). Mobile Voll-Parität: IN PROGRESS (Iteration 1 DONE).
+- Mobile App (`/app/mobile`):
+  - **Iteration 1–2 abgeschlossen**: Core (Auth/Discover/Profile/Matches/Chat/Account) + Content Screens (Events/Albums/Blog/Visitors) + Mehr-Hub.
+  - Weitere Iterationen offen (Filters, Uploads, Settings, Broadcast Inbox, Reports, Video, Admin optional).
+
+**Status:** COMPLETED (Web). Mobile Voll-Parität: IN PROGRESS (Iteration 1–2 DONE).
