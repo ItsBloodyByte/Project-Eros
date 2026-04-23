@@ -23,6 +23,8 @@ import BlogListPage from "./pages/BlogListPage";
 import BlogPostPage from "./pages/BlogPostPage";
 import PremiumPreviewPage from "./pages/PremiumPreviewPage";
 import VisitorsPage from "./pages/VisitorsPage";
+import PaypalReturnPage from "./pages/PaypalReturnPage";
+import KlarnaCheckoutPage from "./pages/KlarnaCheckoutPage";
 import { BroadcastBanner } from "./components/BroadcastBanner";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import "./App.css";
@@ -68,6 +70,10 @@ function AppRoutes() {
       <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
       <Route path="/visitors" element={<Protected><VisitorsPage /></Protected>} />
+      <Route path="/payments/paypal/return" element={<Protected><PaypalReturnPage /></Protected>} />
+      <Route path="/payments/paypal/cancel" element={<Protected><PaypalReturnPage /></Protected>} />
+      <Route path="/payments/klarna/checkout" element={<Protected><KlarnaCheckoutPage /></Protected>} />
+      <Route path="/payments/klarna/return" element={<Protected><KlarnaCheckoutPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

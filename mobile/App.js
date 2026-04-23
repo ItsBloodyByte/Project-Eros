@@ -13,6 +13,14 @@ import MatchesScreen from "./src/screens/MatchesScreen";
 import AccountScreen from "./src/screens/AccountScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import ChatScreen from "./src/screens/ChatScreen";
+import AlbumsScreen from "./src/screens/AlbumsScreen";
+import AlbumDetailScreen from "./src/screens/AlbumDetailScreen";
+import EventsScreen from "./src/screens/EventsScreen";
+import EventDetailScreen from "./src/screens/EventDetailScreen";
+import BlogScreen from "./src/screens/BlogScreen";
+import BlogPostScreen from "./src/screens/BlogPostScreen";
+import VisitorsScreen from "./src/screens/VisitorsScreen";
+import MenuScreen from "./src/screens/MenuScreen";
 import { AuthProvider, useAuth } from "./src/AuthContext";
 import { colors } from "./src/theme";
 
@@ -34,7 +42,7 @@ const NavTheme = {
 };
 
 const tabIcon = (label) => ({ color }) => (
-  <Text style={{ color, fontSize: 11, letterSpacing: 1, fontWeight: "700" }}>{label}</Text>
+  <Text style={{ color, fontSize: 10, letterSpacing: 1, fontWeight: "700" }}>{label}</Text>
 );
 
 function MainTabs() {
@@ -50,6 +58,8 @@ function MainTabs() {
     >
       <Tab.Screen name="Discover" component={DiscoverScreen} options={{ tabBarIcon: tabIcon("ENTDECKEN"), title: "Eros · Discover" }} />
       <Tab.Screen name="Matches" component={MatchesScreen} options={{ tabBarIcon: tabIcon("MATCHES") }} />
+      <Tab.Screen name="Events" component={EventsScreen} options={{ tabBarIcon: tabIcon("EVENTS") }} />
+      <Tab.Screen name="Menu" component={MenuScreen} options={{ tabBarIcon: tabIcon("MEHR"), title: "Mehr" }} />
       <Tab.Screen name="Account" component={AccountScreen} options={{ tabBarIcon: tabIcon("KONTO") }} />
     </Tab.Navigator>
   );
@@ -75,6 +85,12 @@ function Root() {
             <Stack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />
             <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: "Profil" }} />
             <Stack.Screen name="Chat" component={ChatScreen} options={{ title: "Chat" }} />
+            <Stack.Screen name="Albums" component={AlbumsScreen} options={{ title: "Alben" }} />
+            <Stack.Screen name="AlbumDetail" component={AlbumDetailScreen} options={({ route }) => ({ title: route.params?.title || "Album" })} />
+            <Stack.Screen name="EventDetail" component={EventDetailScreen} options={({ route }) => ({ title: route.params?.title || "Event" })} />
+            <Stack.Screen name="Blog" component={BlogScreen} options={{ title: "Blog" }} />
+            <Stack.Screen name="BlogPost" component={BlogPostScreen} options={({ route }) => ({ title: route.params?.title || "Beitrag" })} />
+            <Stack.Screen name="Visitors" component={VisitorsScreen} options={{ title: "Besucher:innen" }} />
           </>
         )}
       </Stack.Navigator>

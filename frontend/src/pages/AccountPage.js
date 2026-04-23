@@ -14,6 +14,7 @@ import { AppFooter } from "../components/AppFooter";
 import { PremiumExtrasSection } from "../components/PremiumExtrasSection";
 import { CoupleSection } from "../components/CoupleSection";
 import { BroadcastHistorySection } from "../components/BroadcastHistorySection";
+import { PaymentProviderDialog } from "../components/PaymentProviderDialog";
 
 export default function AccountPage() {
   const { user, refresh } = useAuth();
@@ -23,10 +24,12 @@ export default function AccountPage() {
   const [mfaCode, setMfaCode] = useState("");
   const [likedMe, setLikedMe] = useState(null);
   const [premium, setPremium] = useState(null);
-  const [packages, setPackages] = useState({ enabled: false, packages: [] });
+  const [packages, setPackages] = useState({ enabled: false, packages: [], providers_live: {} });
   const [travel, setTravel] = useState([]);
   const [newTrip, setNewTrip] = useState({ destination: "", starts_at: "", ends_at: "", lng: "", lat: "" });
   const [verif, setVerif] = useState({ document_type: "passport", selfie: "", document: "" });
+  const [payDialogOpen, setPayDialogOpen] = useState(false);
+  const [payDialogPkg, setPayDialogPkg] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -74,37 +77,16 @@ export default function AccountPage() {
     catch (e) { toast.error(e.response?.data?.detail || "Premium erforderlich"); }
   };
 
-  const checkout = async (pkg_id) => {
-    try {
-      const origin = window.location.origin;
-      const { data } = await api.post("/payments/checkout", { package_id: pkg_id, origin_url: origin });
-      // Validate the returned URL against a strict allowlist so a tampered
-      // response cannot turn this into an open-redirect on an attacker domain.
-      if (data.url) {
-        let ok = false;
-        try {
-          const u = new URL(data.url);
-          const allowedHosts = [
-            "checkout.stripe.com",
-            "pay.stripe.com",
-            "billing.stripe.com",
-            "www.paypal.com",
-            "checkout.paypal.com",
-            "pay.mollie.com",
-            "checkout.klarna.com",
-            "buy.paddle.com",
-          ];
-          ok = u.protocol === "https:" && allowedHosts.includes(u.host);
-        } catch {
-          ok = false;
-        }
-        if (!ok) {
-          toast.error("Ungültige Checkout-URL empfangen.");
-          return;
-        }
-        window.location.href = data.url;
-      }
-    } catch (e) { toast.error(e.response?.data?.detail || "Checkout fehlgeschlagen"); }
+  const checkout = (pkg_id) => {
+    const pkg = (packages.packages || []).find((p) => p.id === pkg_id);
+    if (!pkg) { toast.error("Paket nicht gefunden."); return; }
+    const live = packages.providers_live || {};
+    if (!live.stripe && !live.paypal && !live.klarna) {
+      toast.error("Aktuell ist keine Zahlungsart konfiguriert.");
+      return;
+    }
+    setPayDialogPkg(pkg);
+    setPayDialogOpen(true);
   };
 
   const addTrip = async () => {
@@ -337,6 +319,12 @@ export default function AccountPage() {
         </main>
         <AppFooter />
       </div>
+      <PaymentProviderDialog
+        open={payDialogOpen}
+        onOpenChange={setPayDialogOpen}
+        pkg={payDialogPkg}
+        providersLive={packages.providers_live || {}}
+      />
     </div>
   );
 }

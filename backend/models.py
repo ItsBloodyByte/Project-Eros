@@ -460,3 +460,9 @@ class PayPalOrderRequest(BaseModel):
 class KlarnaSessionRequest(BaseModel):
     package_id: str
     country: str = "DE"
+
+
+class KlarnaPlaceOrderRequest(BaseModel):
+    package_id: str
+    authorization_token: str
+    country: str = "DE"

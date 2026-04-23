@@ -1,34 +1,14 @@
 [
   {
-    "content": "Bestehende Video-Upload-Logik erkunden (Backend + Frontend)",
+    "content": "Phase 1: Legal Pages verifizieren (Seeding + UI-Darstellung) ✅",
     "status": "completed"
   },
   {
-    "content": "Blog-Seite und aktuelle Auth-Anforderungen erkunden",
+    "content": "Phase 2: PayPal/Klarna Checkout-Buttons im Frontend einbauen ✅",
     "status": "completed"
   },
   {
-    "content": "Backend: Video-Upload als Premium-Feature + Limits (4 Videos, 60s, 1080p)",
-    "status": "completed"
-  },
-  {
-    "content": "Backend: Blog-Endpoints für Gastzugriff freigeben + /premium/features public",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: Premium-Preview-Seite (/premium, keine Auth)",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: Video-Upload mit Pre-Check (Dauer/Auflösung) + Premium-Gate",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: Blog-Routes öffentlich + Premium-Link im Footer",
-    "status": "completed"
-  },
-  {
-    "content": "Tests + Screenshots",
-    "status": "completed"
+    "content": "Phase 3: Mobile App (React Native) Feature-Parity fortsetzen",
+    "status": "in_progress"
   }
 ]

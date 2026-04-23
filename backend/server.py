@@ -87,6 +87,7 @@ from models import (
     LocationHeartbeatRequest,
     PayPalOrderRequest,
     KlarnaSessionRequest,
+    KlarnaPlaceOrderRequest,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -4499,6 +4500,75 @@ async def klarna_create_session(body: KlarnaSessionRequest, user=Depends(_requir
     }
 
 
+@api_router.post("/payments/klarna/place-order")
+async def klarna_place_order(body: KlarnaPlaceOrderRequest, user=Depends(_require_user)):
+    """Finalise a Klarna order after widget authorization. Activates premium on success."""
+    cfg = await _get_payment_config()
+    pkg = _find_package(cfg, body.package_id)
+    if not pkg:
+        raise HTTPException(400, "Paket nicht verfügbar")
+    auth_header, api_base = await _klarna_api_base(cfg)
+    amount_cents = int(round(float(pkg["amount"]) * 100))
+    currency = (pkg.get("currency") or "eur").upper()
+    country = (body.country or "DE").upper()
+    payload = {
+        "purchase_country": country,
+        "purchase_currency": currency,
+        "locale": "de-DE" if country in {"DE", "AT", "CH"} else "en-GB",
+        "order_amount": amount_cents,
+        "order_tax_amount": 0,
+        "order_lines": [{
+            "type": "digital",
+            "reference": pkg["id"],
+            "name": pkg.get("desc") or pkg["id"],
+            "quantity": 1,
+            "unit_price": amount_cents,
+            "tax_rate": 0,
+            "total_amount": amount_cents,
+            "total_tax_amount": 0,
+        }],
+        "merchant_reference1": f"{user['id']}|{pkg['id']}",
+        "merchant_urls": {
+            "confirmation": f"{os.environ.get('EROS_PUBLIC_URL', '').rstrip('/')}/payments/klarna/return",
+        },
+    }
+    import httpx as _httpx
+    async with _httpx.AsyncClient(timeout=20) as http:
+        r = await http.post(
+            f"{api_base}/payments/v1/authorizations/{body.authorization_token}/order",
+            json=payload,
+            headers={"Authorization": auth_header, "Content-Type": "application/json"},
+        )
+        if r.status_code >= 400:
+            logger.error("Klarna place order error: %s %s", r.status_code, r.text[:500])
+            raise HTTPException(502, "Klarna-Zahlung konnte nicht abgeschlossen werden")
+        data = r.json()
+    order_id = data.get("order_id")
+    fraud_status = data.get("fraud_status") or ""
+    ok = bool(order_id) and fraud_status.upper() in {"ACCEPTED", "PENDING"}
+    # Persist transaction
+    await db.payment_transactions.insert_one({
+        "id": str(__import__("uuid").uuid4()),
+        "provider": "klarna",
+        "order_id": order_id,
+        "user_id": user["id"],
+        "package_id": pkg["id"],
+        "amount": float(pkg["amount"]),
+        "currency": currency,
+        "status": "paid" if ok else "failed",
+        "created_at": now_utc().isoformat(),
+        "paid_at": now_utc().isoformat() if ok else None,
+    })
+    if ok:
+        meta = {"user_id": user["id"], "package_id": pkg["id"], "kind": pkg.get("kind", "premium"),
+                "days": pkg.get("days"), "minutes": pkg.get("minutes")}
+        try:
+            await _apply_successful_payment(order_id or body.authorization_token, meta)
+        except Exception as ex:
+            logger.warning("Klarna apply failed: %s", ex)
+    return {"order_id": order_id, "fraud_status": fraud_status, "paid": ok, "redirect_url": data.get("redirect_url")}
+
+
 # ---------- Legal / Info Pages (CMS-light) ----------
 LEGAL_PAGE_KEYS = {
     "terms": "Nutzungsbedingungen",
@@ -4514,7 +4584,7 @@ _DEFAULT_LEGAL_CONTENT = {
         "# Nutzungsbedingungen\n\n"
         "_Stand: 23. April 2026_\n\n"
         "Willkommen auf **Eros**, der inklusiven Dating-Plattform für Erwachsene. "
-        "Diese Nutzungsbedingungen (nachfolgend „AGB") regeln die Beziehung "
+        "Diese Nutzungsbedingungen (nachfolgend „AGB“) regeln die Beziehung "
         "zwischen dir und dem Betreiber der Plattform (siehe Impressum). "
         "Mit der Registrierung erklärst du dich mit diesen AGB einverstanden.\n\n"
         "## 1. Zugangsvoraussetzungen\n"
@@ -4525,7 +4595,7 @@ _DEFAULT_LEGAL_CONTENT = {
         "## 2. Leistungsumfang\n"
         "Eros bietet folgende Funktionen:\n"
         "- Erstellen und Pflegen eines persönlichen Dating-Profils inklusive Fotos und – für Premium-Mitglieder – Kurzvideos (max. 4 Videos à 60 Sek., 1080p).\n"
-        "- Matching, Chat, Aktivitätsübersicht („Views") und Statusindikatoren (Stimmungen).\n"
+        "- Matching, Chat, Aktivitätsübersicht („Views“) und Statusindikatoren (Stimmungen).\n"
         "- Alben und Events, Blog-Inhalte sowie die Paare-Funktion.\n"
         "- Kostenpflichtige Premium-Funktionen (Abonnements, Boosts) – Details siehe Premium-Seite.\n\n"
         "## 3. Nutzerpflichten & verbotene Handlungen\n"
@@ -4547,7 +4617,7 @@ _DEFAULT_LEGAL_CONTENT = {
         "zu transcodieren und anderen Mitgliedern gemäß deinen Sichtbarkeits-Einstellungen zugänglich zu machen. "
         "Mit Löschung deines Accounts erlischt dieses Recht, soweit keine gesetzlichen Aufbewahrungspflichten bestehen.\n\n"
         "## 6. Premium-Abonnements, Boosts, Promo-Codes\n"
-        "- Premium-Abos verlängern sich automatisch, sofern nicht rechtzeitig gekündigt. Die aktuelle Laufzeit und Verlängerung siehst du im Bereich „Konto → Abo".\n"
+        "- Premium-Abos verlängern sich automatisch, sofern nicht rechtzeitig gekündigt. Die aktuelle Laufzeit und Verlängerung siehst du im Bereich „Konto → Abo“.\n"
         "- Kündigung ist jederzeit möglich; die Premium-Funktionen bleiben bis zum Ende der laufenden Periode aktiv.\n"
         "- Promo-Codes können nur einmal pro Konto eingelöst werden, sind nicht mit anderen Aktionen kombinierbar und nicht auszahlbar.\n"
         "- Boosts verfallen nach Ablauf der Boost-Dauer.\n\n"
@@ -4656,7 +4726,7 @@ _DEFAULT_LEGAL_CONTENT = {
         "- **Einvernehmen** ist Pflicht – in Chats, bei Bild-Austausch und bei der Darstellung anderer Personen.\n"
         "- **Nicht-einvernehmlich** geteilte intime Medien (Revenge Porn / NCII) werden sofort gelöscht, der Account gesperrt und Strafanzeige erstattet.\n"
         "- Explizite Inhalte sind nur in **privaten Alben** oder **privaten Chats mit Einwilligung** zulässig – niemals im öffentlichen Profilbild.\n"
-        "- Unverlangte „Dickpics" oder andere unaufgeforderte explizite Medien sind verboten.\n\n"
+        "- Unverlangte „Dickpics“ oder andere unaufgeforderte explizite Medien sind verboten.\n\n"
         "## 4. Minderjährige & CSAM\n"
         "Inhalte, die Minderjährige in sexualisierter Form zeigen, werden sofort entfernt, der Account dauerhaft gesperrt "
         "und die Inhalte an die zuständigen Behörden und den NCMEC-Partnerdienst gemeldet. "
@@ -4695,7 +4765,7 @@ _DEFAULT_LEGAL_CONTENT = {
         "## Keine Third-Party-Integrationen im Frontend\n"
         "- Keine Google Analytics / GA4, kein Facebook-Pixel, kein Hotjar, kein TikTok-Pixel.\n"
         "- Keine Werbung.\n"
-        "- Stripe / PayPal / Klarna laden ihre Skripte ausschließlich im Checkout-Flow (erst wenn du auf „Bezahlen" klickst).\n\n"
+        "- Stripe / PayPal / Klarna laden ihre Skripte ausschließlich im Checkout-Flow (erst wenn du auf „Bezahlen“ klickst).\n\n"
         "## Rechtsgrundlage\n"
         "Die technisch notwendigen Speichereinträge basieren auf Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung) und "
         "§ 25 Abs. 2 Nr. 2 TTDSG (unbedingt erforderlich).\n\n"
@@ -4745,15 +4815,31 @@ _DEFAULT_LEGAL_CONTENT = {
 
 async def _ensure_default_legal_pages():
     for key, title in LEGAL_PAGE_KEYS.items():
+        default_content = _DEFAULT_LEGAL_CONTENT.get(key, "")
         doc = await db.legal_pages.find_one({"key": key})
         if not doc:
             await db.legal_pages.insert_one({
                 "key": key,
                 "title": title,
-                "content_markdown": _DEFAULT_LEGAL_CONTENT.get(key, ""),
+                "content_markdown": default_content,
                 "updated_at": now_utc().isoformat(),
                 "updated_by": None,
             })
+            continue
+        # Refresh placeholders that were never edited by an admin.
+        # Safe: only overwrite entries where `updated_by` is still None AND
+        # the existing content is shorter than our default (i.e. a stub/placeholder).
+        existing = doc.get("content_markdown", "") or ""
+        updated_by = doc.get("updated_by")
+        if updated_by is None and len(existing) < len(default_content):
+            await db.legal_pages.update_one(
+                {"key": key},
+                {"$set": {
+                    "title": title,
+                    "content_markdown": default_content,
+                    "updated_at": now_utc().isoformat(),
+                }},
+            )
 
 
 @api_router.get("/legal")

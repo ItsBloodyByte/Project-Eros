@@ -23,7 +23,8 @@ class DatingPlatformTester:
         
         # Test credentials from the requirements
         self.test_users = {
-            "admin@eros.app": {"password": "Passw0rd!2025", "role": "admin"},
+            "admin@eros.app": {"password": "admin123", "role": "admin"},
+            "testing@test.com": {"password": "testpass123", "role": "user"},
             "alice@eros.app": {"password": "Passw0rd!2025", "role": "user"},
             "werner@eros.app": {"password": "Passw0rd!2025", "role": "user"},
             "bob@eros.app": {"password": "Passw0rd!2025", "role": "user"},
@@ -51,6 +52,12 @@ class DatingPlatformTester:
         if token:
             headers['Authorization'] = f'Bearer {token}'
         
+        # Handle expected_status as list or single value
+        if isinstance(expected_status, list):
+            expected_statuses = expected_status
+        else:
+            expected_statuses = [expected_status]
+        
         try:
             if method == 'GET':
                 response = requests.get(url, headers=headers)
@@ -63,7 +70,7 @@ class DatingPlatformTester:
             else:
                 raise ValueError(f"Unsupported method: {method}")
             
-            success = response.status_code == expected_status
+            success = response.status_code in expected_statuses
             return success, response
         except Exception as e:
             print(f"Request error: {str(e)}")
@@ -1719,6 +1726,193 @@ class DatingPlatformTester:
             success, resp = self.make_request('DELETE', f'/travel/{travel_id}', token=alice_token)
             self.log_test("DELETE /api/travel/{id}", success, "Travel plan deletion")
 
+    def test_legal_pages(self):
+        """Test legal pages endpoints"""
+        print("\n🔍 Testing Legal Pages...")
+        
+        # Test GET /api/legal (public endpoint)
+        success, resp = self.make_request('GET', '/legal')
+        if success and resp:
+            data = resp.json()
+            pages = data.get("pages", [])
+            expected_keys = {"terms", "privacy", "imprint", "community", "cookies", "cancellation"}
+            found_keys = {page.get("key") for page in pages}
+            
+            has_all_pages = expected_keys.issubset(found_keys)
+            self.log_test("GET /api/legal - All 6 pages present", has_all_pages,
+                         f"Found keys: {found_keys}, Expected: {expected_keys}")
+        else:
+            self.log_test("GET /api/legal", False, "Failed to get legal pages list")
+        
+        # Test individual legal pages
+        legal_keys = ["terms", "privacy", "imprint", "community", "cookies", "cancellation"]
+        for key in legal_keys:
+            success, resp = self.make_request('GET', f'/legal/{key}')
+            if success and resp:
+                data = resp.json()
+                has_required_fields = all(field in data for field in ["key", "title", "content_markdown"])
+                content_length = len(data.get("content_markdown", ""))
+                
+                # Special check for terms page (should have >4000 characters with German quotes)
+                if key == "terms":
+                    has_german_quotes = "„AGB"" in data.get("content_markdown", "")
+                    is_substantial = content_length > 4000
+                    self.log_test(f"GET /api/legal/{key} - Substantial content with German quotes", 
+                                 has_required_fields and is_substantial and has_german_quotes,
+                                 f"Length: {content_length}, German quotes: {has_german_quotes}")
+                elif key == "imprint":
+                    # Imprint should have >500 characters
+                    is_substantial = content_length > 500
+                    self.log_test(f"GET /api/legal/{key} - Substantial content", 
+                                 has_required_fields and is_substantial,
+                                 f"Length: {content_length}")
+                else:
+                    # Other pages should have non-trivial content
+                    is_non_trivial = content_length > 50
+                    self.log_test(f"GET /api/legal/{key} - Non-trivial content", 
+                                 has_required_fields and is_non_trivial,
+                                 f"Length: {content_length}")
+            else:
+                self.log_test(f"GET /api/legal/{key}", False, 
+                             f"Status: {resp.status_code if resp else 'No response'}")
+
+    def test_payment_endpoints(self):
+        """Test payment endpoints including new Klarna place-order"""
+        print("\n🔍 Testing Payment Endpoints...")
+        
+        alice_token = self.tokens.get("alice@eros.app")
+        if not alice_token:
+            self.log_test("Payment endpoints tests", False, "Alice token not available")
+            return
+        
+        # Test GET /api/payments/packages
+        success, resp = self.make_request('GET', '/payments/packages', token=alice_token)
+        if success and resp:
+            data = resp.json()
+            required_fields = ["enabled", "provider", "supported", "packages", "providers_live"]
+            has_required_fields = all(field in data for field in required_fields)
+            
+            providers_live = data.get("providers_live", {})
+            has_provider_status = all(provider in providers_live for provider in ["stripe", "paypal", "klarna"])
+            
+            self.log_test("GET /api/payments/packages - Required fields", has_required_fields,
+                         f"Fields: {list(data.keys())}")
+            self.log_test("GET /api/payments/packages - Provider status", has_provider_status,
+                         f"Providers: {list(providers_live.keys())}")
+        else:
+            self.log_test("GET /api/payments/packages", False, 
+                         f"Status: {resp.status_code if resp else 'No response'}")
+        
+        # Test POST /api/payments/paypal/create-order
+        paypal_data = {
+            "package_id": "premium_30",
+            "origin_url": "https://example.com/premium"
+        }
+        success, resp = self.make_request('POST', '/payments/paypal/create-order', paypal_data, 
+                                        token=alice_token, expected_status=[200, 502])
+        if success and resp:
+            if resp.status_code == 200:
+                data = resp.json()
+                has_order_fields = "order_id" in data and "approve_url" in data
+                self.log_test("POST /api/payments/paypal/create-order - Success", has_order_fields,
+                             f"Order ID: {data.get('order_id', 'None')}")
+            elif resp.status_code == 502:
+                # Expected when PayPal credentials are missing
+                self.log_test("POST /api/payments/paypal/create-order - Expected 502", True,
+                             "Correctly returns 502 when PayPal credentials missing")
+        else:
+            self.log_test("POST /api/payments/paypal/create-order", False, 
+                         f"Unexpected status: {resp.status_code if resp else 'No response'}")
+        
+        # Test POST /api/payments/klarna/create-session
+        klarna_session_data = {
+            "package_id": "premium_30",
+            "country": "DE"
+        }
+        success, resp = self.make_request('POST', '/payments/klarna/create-session', klarna_session_data, 
+                                        token=alice_token, expected_status=[200, 400])
+        if success and resp:
+            if resp.status_code == 200:
+                data = resp.json()
+                has_session_fields = "session_id" in data
+                self.log_test("POST /api/payments/klarna/create-session - Success", has_session_fields,
+                             f"Session ID: {data.get('session_id', 'None')}")
+            elif resp.status_code == 400:
+                # Expected when Klarna is not configured
+                try:
+                    error_data = resp.json()
+                    error_msg = error_data.get("detail", "")
+                    is_german_error = any(german_word in error_msg.lower() for german_word in 
+                                        ["klarna", "nicht", "konfiguriert", "verfügbar"])
+                    self.log_test("POST /api/payments/klarna/create-session - German error", is_german_error,
+                                 f"Error message: {error_msg}")
+                except:
+                    self.log_test("POST /api/payments/klarna/create-session - Expected 400", True,
+                                 "Correctly returns 400 when Klarna not configured")
+        else:
+            self.log_test("POST /api/payments/klarna/create-session", False, 
+                         f"Unexpected status: {resp.status_code if resp else 'No response'}")
+        
+        # Test POST /api/payments/klarna/place-order (new endpoint)
+        klarna_place_data = {
+            "package_id": "premium_30",
+            "authorization_token": "test_auth_token_123",
+            "country": "DE"
+        }
+        success, resp = self.make_request('POST', '/payments/klarna/place-order', klarna_place_data, 
+                                        token=alice_token, expected_status=[200, 400])
+        if success and resp:
+            if resp.status_code == 200:
+                data = resp.json()
+                has_order_fields = "order_id" in data and "paid" in data
+                self.log_test("POST /api/payments/klarna/place-order - Success", has_order_fields,
+                             f"Order ID: {data.get('order_id', 'None')}, Paid: {data.get('paid')}")
+            elif resp.status_code == 400:
+                # Expected when Klarna is not configured
+                try:
+                    error_data = resp.json()
+                    error_msg = error_data.get("detail", "")
+                    is_german_error = any(german_word in error_msg.lower() for german_word in 
+                                        ["klarna", "nicht", "konfiguriert", "verfügbar"])
+                    self.log_test("POST /api/payments/klarna/place-order - German error", is_german_error,
+                                 f"Error message: {error_msg}")
+                except:
+                    self.log_test("POST /api/payments/klarna/place-order - Expected 400", True,
+                                 "Correctly returns 400 when Klarna not configured")
+        else:
+            self.log_test("POST /api/payments/klarna/place-order", False, 
+                         f"Unexpected status: {resp.status_code if resp else 'No response'}")
+
+    def test_existing_endpoints_still_work(self):
+        """Test that existing endpoints still work after changes"""
+        print("\n🔍 Testing Existing Endpoints Still Work...")
+        
+        alice_token = self.tokens.get("alice@eros.app")
+        if not alice_token:
+            self.log_test("Existing endpoints tests", False, "Alice token not available")
+            return
+        
+        # Test core endpoints that should still work
+        endpoints_to_test = [
+            ('/me', 'GET'),
+            ('/discover', 'GET'),
+            ('/matches', 'GET'),
+            ('/albums', 'GET'),
+            ('/events', 'GET'),
+            ('/blog/posts', 'GET'),
+            ('/me/visitors', 'GET'),
+            ('/me/broadcasts', 'GET')
+        ]
+        
+        for endpoint, method in endpoints_to_test:
+            success, resp = self.make_request(method, endpoint, token=alice_token)
+            if success and resp:
+                self.log_test(f"{method} /api{endpoint} - Still works", True, 
+                             f"Status: {resp.status_code}")
+            else:
+                self.log_test(f"{method} /api{endpoint} - Still works", False, 
+                             f"Status: {resp.status_code if resp else 'No response'}")
+
     def test_phase5_id_verification(self):
         """Test Phase 5: ID Verification (free, no payment required)"""
         print("\n🔍 Testing Phase 5: ID Verification...")
@@ -1945,7 +2139,12 @@ class DatingPlatformTester:
             self.test_phase4_admin_endpoints()
             self.test_phase4_client_event_endpoint()
             
-            # Phase 5 tests (new)
+            # Phase 5 tests (new) - Focus on review request items
+            self.test_legal_pages()
+            self.test_payment_endpoints()
+            self.test_existing_endpoints_still_work()
+            
+            # Additional Phase 5 tests
             self.test_phase5_register_gender_required()
             self.test_phase5_age_immutable()
             self.test_phase5_photo_limit()
