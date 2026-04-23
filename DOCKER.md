@@ -154,6 +154,20 @@ Healthchecks pro Service sind konfiguriert – `docker compose ps` zeigt
 
 ## 9. Troubleshooting
 
+### `No matching distribution found for emergentintegrations`
+
+Das Paket `emergentintegrations` ist **nicht auf pypi.org**, sondern
+auf einem öffentlichen Extra-Index
+(`https://d33sy5i8bnduwe.cloudfront.net/simple/`). Die aktuelle YAML
+übergibt diesen Index bereits an `pip install` – solltest du eine
+veraltete YAML verwenden, lade die neueste Version:
+
+```bash
+curl -fsSL -o docker-compose.yml \
+  https://raw.githubusercontent.com/itsbloodybyte/project-eros/main/docker-compose.yml
+docker compose build --no-cache backend
+```
+
 ### `failed to load cache key … "git": executable file not found in $PATH`
 
 Tritt auf **Synology Container-Manager** und einigen anderen stripped-down

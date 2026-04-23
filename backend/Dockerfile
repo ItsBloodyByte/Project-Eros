@@ -20,9 +20,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Install Python deps first so the large dependency layer caches aggressively.
+# emergentintegrations is hosted on a public extra index (not on pypi.org).
 COPY requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r /app/requirements.txt
+    pip install --no-cache-dir \
+        --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
+        -r /app/requirements.txt
 
 # Copy the application source
 COPY . /app
