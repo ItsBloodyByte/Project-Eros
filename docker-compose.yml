@@ -175,12 +175,73 @@ services:
   # Über UPDATE_ENABLED=false komplett ausschaltbar. Signaldateien liegen im
   # geteilten Volume `backend_data`, damit das Backend-API den Status lesen kann.
   updater:
-    image: docker:cli
+    image: eros-updater:latest
     container_name: eros-updater
     restart: unless-stopped
     depends_on:
       - backend
       - frontend
+    build:
+      context: .
+      dockerfile_inline: |
+        # syntax=docker/dockerfile:1.6
+        FROM docker:cli
+        RUN apk add --no-cache git curl bash docker-cli-compose coreutils || \
+            apk add --no-cache git curl bash docker-compose coreutils
+        # Embed the updater script via BuildKit COPY heredoc – no YAML/shell
+        # escaping issues because BuildKit handles the file contents verbatim.
+        COPY <<'SCRIPT_EOF' /usr/local/bin/updater.sh
+        #!/bin/sh
+        # Eros auto-update loop. Writes status to /data/updater.json so the
+        # backend can surface it under /api/admin/system/updates.
+        STATE=/data/updater.json
+        TRIGGER=/data/updater.trigger
+        mkdir -p /data
+
+        write_state() {
+          now="$(date -Iseconds 2>/dev/null || date)"
+          printf '{"current_sha":"%s","latest_sha":"%s","last_check":"%s","last_update":"%s","enabled":%s,"message":"%s","interval":%s}\n' \
+            "$1" "$2" "$now" "$3" "${UPDATE_ENABLED:-true}" "$4" "${UPDATE_INTERVAL_SECONDS:-3600}" > "$STATE.tmp" \
+            && mv "$STATE.tmp" "$STATE"
+        }
+
+        rebuild() {
+          PROJ="${COMPOSE_PROJECT_NAME:-eros}"
+          echo "[updater] rebuilding project=$PROJ"
+          docker compose -p "$PROJ" build --no-cache backend frontend && \
+            docker compose -p "$PROJ" up -d backend frontend
+        }
+
+        echo "[updater] starting (interval=${UPDATE_INTERVAL_SECONDS:-3600}s, enabled=${UPDATE_ENABLED:-true}, repo=$EROS_REPO, ref=$EROS_REF)"
+        CURR="$(cat /data/deployed_sha 2>/dev/null || echo '')"
+
+        while :; do
+          force=0
+          if [ -f "$TRIGGER" ]; then force=1; rm -f "$TRIGGER"; fi
+          if [ "${UPDATE_ENABLED:-true}" = "true" ] || [ $force -eq 1 ]; then
+            LATEST="$(git ls-remote "$EROS_REPO" "$EROS_REF" 2>/dev/null | head -n1 | awk '{print $1}')"
+            if [ -z "$LATEST" ]; then
+              write_state "$CURR" "" "" "Konnte GitHub nicht erreichen"
+            elif [ "$LATEST" != "$CURR" ] || [ $force -eq 1 ]; then
+              write_state "$CURR" "$LATEST" "" "Update wird angewendet"
+              if rebuild; then
+                CURR="$LATEST"
+                echo "$LATEST" > /data/deployed_sha
+                write_state "$CURR" "$LATEST" "$(date -Iseconds)" "Erfolgreich aktualisiert"
+              else
+                write_state "$CURR" "$LATEST" "" "Rebuild fehlgeschlagen"
+              fi
+            else
+              write_state "$CURR" "$LATEST" "" "Aktuell"
+            fi
+          else
+            write_state "$CURR" "" "" "Auto-Update deaktiviert"
+          fi
+          sleep "${UPDATE_INTERVAL_SECONDS:-3600}"
+        done
+        SCRIPT_EOF
+        RUN chmod +x /usr/local/bin/updater.sh
+        ENTRYPOINT ["/usr/local/bin/updater.sh"]
     environment:
       EROS_REPO: ${EROS_REPO:-https://github.com/itsbloodybyte/project-eros.git}
       EROS_REF: ${EROS_REF:-main}
@@ -190,58 +251,6 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - backend_data:/data
-    entrypoint: ["/bin/sh", "-c"]
-    command: |
-      set -eu
-      # docker:cli is Alpine-based and ships with `docker` but not `git` or
-      # the compose plugin. We install both on first start. `apk add` is a
-      # no-op on subsequent restarts if the packages are already present.
-      apk add --no-cache git curl bash docker-cli-compose >/dev/null 2>&1 || \
-        apk add --no-cache git curl bash docker-compose >/dev/null 2>&1 || true
-      STATE=/data/updater.json
-      TRIGGER=/data/updater.trigger
-      write_state() {
-        cat > "$$STATE" <<EOF
-      {"current_sha":"$$1","latest_sha":"$$2","last_check":"$$(date -Iseconds)","last_update":"$$3","enabled":$${UPDATE_ENABLED:-true},"message":"$$4","interval":$${UPDATE_INTERVAL_SECONDS:-3600}}
-      EOF
-      }
-      rebuild() {
-        PROJ="$$COMPOSE_PROJECT_NAME"
-        echo "[updater] rebuilding project=$$PROJ"
-        # Build images with fresh git context. --no-cache forces the alpine/git
-        # fetch stage to run again, picking up the new commit.
-        docker compose -p "$$PROJ" build --no-cache backend frontend && \
-          docker compose -p "$$PROJ" up -d backend frontend
-      }
-      echo "[updater] starting (interval=$${UPDATE_INTERVAL_SECONDS:-3600}s, enabled=$${UPDATE_ENABLED:-true})"
-      CURR="$$(cat /data/deployed_sha 2>/dev/null || echo '')"
-      while true; do
-        force=false
-        if [ -f "$$TRIGGER" ]; then force=true; rm -f "$$TRIGGER"; fi
-        if [ "$${UPDATE_ENABLED:-true}" = "true" ] || [ "$$force" = "true" ]; then
-          LATEST="$$(git ls-remote "$$EROS_REPO" "$$EROS_REF" 2>/dev/null | head -n1 | awk '{print $$1}')"
-          if [ -z "$$LATEST" ]; then
-            write_state "$$CURR" "" "" "Konnte GitHub nicht erreichen"
-          else
-            if [ "$$LATEST" != "$$CURR" ] || [ "$$force" = "true" ]; then
-              write_state "$$CURR" "$$LATEST" "" "Update wird angewendet"
-              if rebuild; then
-                CURR="$$LATEST"
-                echo "$$LATEST" > /data/deployed_sha
-                write_state "$$CURR" "$$LATEST" "$$(date -Iseconds)" "Erfolgreich aktualisiert"
-              else
-                write_state "$$CURR" "$$LATEST" "" "Rebuild fehlgeschlagen"
-              fi
-            else
-              write_state "$$CURR" "$$LATEST" "" "Aktuell"
-            fi
-          fi
-        else
-          write_state "$$CURR" "" "" "Auto-Update deaktiviert"
-        fi
-        sleep "$${UPDATE_INTERVAL_SECONDS:-3600}" &
-        wait $$!
-      done
     networks:
       - eros_net
 
