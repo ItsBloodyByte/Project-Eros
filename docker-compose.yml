@@ -169,6 +169,78 @@ services:
     networks:
       - eros_net
 
+  # ---------- Auto-Updater ----------
+  # Prüft periodisch GitHub auf neue Commits im konfigurierten Branch.
+  # Bei Änderung: Rebuild + Neustart von backend + frontend via Docker-Socket.
+  # Über UPDATE_ENABLED=false komplett ausschaltbar. Signaldateien liegen im
+  # geteilten Volume `backend_data`, damit das Backend-API den Status lesen kann.
+  updater:
+    image: docker:27-cli-alpine3.20
+    container_name: eros-updater
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    environment:
+      EROS_REPO: ${EROS_REPO:-https://github.com/itsbloodybyte/project-eros.git}
+      EROS_REF: ${EROS_REF:-main}
+      UPDATE_INTERVAL_SECONDS: ${UPDATE_INTERVAL_SECONDS:-3600}
+      UPDATE_ENABLED: ${UPDATE_ENABLED:-true}
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-eros}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - backend_data:/data
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      set -eu
+      apk add --no-cache git curl bash docker-cli-compose >/dev/null 2>&1 || true
+      STATE=/data/updater.json
+      TRIGGER=/data/updater.trigger
+      write_state() {
+        cat > "$$STATE" <<EOF
+      {"current_sha":"$$1","latest_sha":"$$2","last_check":"$$(date -Iseconds)","last_update":"$$3","enabled":$${UPDATE_ENABLED:-true},"message":"$$4","interval":$${UPDATE_INTERVAL_SECONDS:-3600}}
+      EOF
+      }
+      rebuild() {
+        PROJ="$$COMPOSE_PROJECT_NAME"
+        echo "[updater] rebuilding project=$$PROJ"
+        # Build images with fresh git context. --no-cache forces the alpine/git
+        # fetch stage to run again, picking up the new commit.
+        docker compose -p "$$PROJ" build --no-cache backend frontend && \
+          docker compose -p "$$PROJ" up -d backend frontend
+      }
+      echo "[updater] starting (interval=$${UPDATE_INTERVAL_SECONDS:-3600}s, enabled=$${UPDATE_ENABLED:-true})"
+      CURR="$$(cat /data/deployed_sha 2>/dev/null || echo '')"
+      while true; do
+        force=false
+        if [ -f "$$TRIGGER" ]; then force=true; rm -f "$$TRIGGER"; fi
+        if [ "$${UPDATE_ENABLED:-true}" = "true" ] || [ "$$force" = "true" ]; then
+          LATEST="$$(git ls-remote "$$EROS_REPO" "$$EROS_REF" 2>/dev/null | head -n1 | awk '{print $$1}')"
+          if [ -z "$$LATEST" ]; then
+            write_state "$$CURR" "" "" "Konnte GitHub nicht erreichen"
+          else
+            if [ "$$LATEST" != "$$CURR" ] || [ "$$force" = "true" ]; then
+              write_state "$$CURR" "$$LATEST" "" "Update wird angewendet"
+              if rebuild; then
+                CURR="$$LATEST"
+                echo "$$LATEST" > /data/deployed_sha
+                write_state "$$CURR" "$$LATEST" "$$(date -Iseconds)" "Erfolgreich aktualisiert"
+              else
+                write_state "$$CURR" "$$LATEST" "" "Rebuild fehlgeschlagen"
+              fi
+            else
+              write_state "$$CURR" "$$LATEST" "" "Aktuell"
+            fi
+          fi
+        else
+          write_state "$$CURR" "" "" "Auto-Update deaktiviert"
+        fi
+        sleep "$${UPDATE_INTERVAL_SECONDS:-3600}" &
+        wait $$!
+      done
+    networks:
+      - eros_net
+
 networks:
   eros_net:
     driver: bridge

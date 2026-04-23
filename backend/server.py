@@ -3952,6 +3952,54 @@ async def list_packages(user=Depends(_require_user)):
     }
 
 
+@api_router.get("/admin/system/updates")
+async def admin_system_updates(user=Depends(_require_user)):
+    """
+    Returns the updater state written by the updater sidecar container.
+    Fields: current_sha, latest_sha, last_check, last_update, enabled,
+    message, interval.
+    """
+    await _require_role(user, ["admin", "superadmin"])
+    state_path = os.environ.get("EROS_DATA_DIR", "/data") + "/updater.json"
+    try:
+        import json as _json
+        with open(state_path, "r", encoding="utf-8") as fh:
+            state = _json.load(fh)
+    except FileNotFoundError:
+        state = {
+            "current_sha": "",
+            "latest_sha": "",
+            "last_check": None,
+            "last_update": None,
+            "enabled": False,
+            "message": "Updater läuft nicht oder hat noch keinen Check durchgeführt.",
+            "interval": None,
+        }
+    except Exception as ex:
+        state = {"error": f"Updater-State konnte nicht gelesen werden: {ex}"}
+    state["update_available"] = bool(
+        state.get("latest_sha") and state.get("latest_sha") != state.get("current_sha")
+    )
+    return state
+
+
+@api_router.post("/admin/system/updates/trigger")
+async def admin_trigger_update(user=Depends(_require_user)):
+    """
+    Forces the updater sidecar to run a check+rebuild on its next loop tick
+    by creating a trigger file in the shared volume. Rebuild happens
+    asynchronously; progress is visible via /admin/system/updates.
+    """
+    await _require_role(user, ["admin", "superadmin"])
+    trigger_path = os.environ.get("EROS_DATA_DIR", "/data") + "/updater.trigger"
+    try:
+        with open(trigger_path, "w", encoding="utf-8") as fh:
+            fh.write(now_utc().isoformat())
+        return {"ok": True, "message": "Update-Trigger gesetzt. Der Updater übernimmt den Rebuild."}
+    except Exception as ex:
+        raise HTTPException(500, f"Trigger konnte nicht gesetzt werden: {ex}")
+
+
 @api_router.get("/admin/payment-config")
 async def admin_get_payment_config(user=Depends(_require_user)):
     await _require_role(user, ["admin", "superadmin"])

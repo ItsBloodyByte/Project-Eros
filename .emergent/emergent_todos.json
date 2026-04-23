@@ -1,46 +1,22 @@
 [
   {
-    "content": "Integration-Playbook für Payment-Provider (PayPal + Klarna + SEPA/Apple/GPay via Stripe + Crypto) anfordern",
-    "status": "completed"
+    "content": "Compose: Updater-Sidecar Service mit Docker-Socket + Git-Check",
+    "status": "in_progress"
   },
   {
-    "content": "Backend: User-Modell um role_badge_visible und relationship_status erweitern",
-    "status": "completed"
-  },
-  {
-    "content": "Backend: PATCH /me/privacy erweitert (role_badge_visible)",
-    "status": "completed"
-  },
-  {
-    "content": "Backend: public_user_from_doc respektiert role_badge_visible",
-    "status": "completed"
-  },
-  {
-    "content": "Backend: POST /api/me/location (GPS-Heartbeat) + /me returns own role for owner",
-    "status": "completed"
-  },
-  {
-    "content": "Backend: PayPal + Klarna Echtintegration via httpx (create-order / capture / create-session)",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: Toggle 'Rolle als Badge anzeigen' im SettingsPage (nur für Staff)",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: RelationshipStatus-Select in Settings + Badge-Komponente für ProfileView",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: useLocationHeartbeat Hook (15 min, nur sichtbarer Tab, respektiert stealth_mode)",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: PayPal-Button / Klarna-Widget im Checkout-Flow (offen - braucht Admin-Keys)",
+    "content": "Backend: /api/admin/system/updates (current SHA, latest SHA, last check)",
     "status": "pending"
   },
   {
-    "content": "Apple/Google Pay via Stripe PR-Button + BTCPay-Option (optional, Folge-Iteration)",
+    "content": "Backend: /api/admin/system/updates/check (force check now) + /trigger (force rebuild)",
+    "status": "pending"
+  },
+  {
+    "content": "Frontend: Admin-UI Karte 'System-Updates' mit Status + Button",
+    "status": "pending"
+  },
+  {
+    "content": ".env.example + DOCKER.md um Update-Variablen ergänzen",
     "status": "pending"
   }
 ]
