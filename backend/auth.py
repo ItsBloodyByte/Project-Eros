@@ -12,24 +12,66 @@ _INSECURE_DEFAULT_SECRETS = {
     "change-me-in-prod-supersecret-abcdef123456",
     "changeme",
     "secret",
+    "CHANGE_ME_TO_A_64_BYTE_RANDOM_STRING",
     "",
 }
 _JWT_SECRET_ENV = os.environ.get("JWT_SECRET", "").strip()
 
+# Where to persist an auto-generated secret when JWT_SECRET is not provided.
+# Prefers a mounted volume (/data) inside containers; falls back to CWD.
+_SECRET_DIRS = [
+    os.environ.get("EROS_DATA_DIR", "").strip() or None,
+    "/data",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".secrets"),
+]
+
+
+def _load_or_create_persistent_secret() -> str:
+    import logging as _logging
+    log = _logging.getLogger("uvicorn.error")
+    for base in _SECRET_DIRS:
+        if not base:
+            continue
+        try:
+            os.makedirs(base, exist_ok=True)
+            path = os.path.join(base, "jwt_secret.key")
+            if os.path.isfile(path):
+                with open(path, "r", encoding="utf-8") as fh:
+                    val = fh.read().strip()
+                if val and val not in _INSECURE_DEFAULT_SECRETS:
+                    log.info("JWT_SECRET loaded from persistent file: %s", path)
+                    return val
+            # create new
+            new_val = secrets.token_urlsafe(64)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(new_val)
+            try:
+                os.chmod(path, 0o600)
+            except Exception:
+                pass
+            log.warning(
+                "JWT_SECRET was not set. Generated a fresh 64-byte secret "
+                "and persisted it to %s so existing sessions survive restarts. "
+                "For multi-instance deployments set JWT_SECRET explicitly in .env.",
+                path,
+            )
+            return new_val
+        except Exception as exc:
+            log.debug("Could not use secret dir %s: %s", base, exc)
+            continue
+    # Last-resort: ephemeral (invalidates tokens on restart)
+    log.warning(
+        "JWT_SECRET is unset and no writable persistent directory was found. "
+        "Generated an EPHEMERAL 64-byte secret – every restart will log users out. "
+        "Set JWT_SECRET in .env for production."
+    )
+    return secrets.token_urlsafe(64)
+
+
 if _JWT_SECRET_ENV and _JWT_SECRET_ENV not in _INSECURE_DEFAULT_SECRETS:
     JWT_SECRET = _JWT_SECRET_ENV
 else:
-    # No secure secret configured – generate a strong ephemeral one so the
-    # server still boots in dev, but refuse to persist an insecure default.
-    # IMPORTANT: set JWT_SECRET in .env in production to a stable value,
-    # otherwise every restart invalidates existing tokens.
-    JWT_SECRET = secrets.token_urlsafe(64)
-    import logging as _logging
-    _logging.getLogger("uvicorn.error").warning(
-        "JWT_SECRET is unset or uses an insecure default. Generated an "
-        "ephemeral 64-byte secret for this process. Set JWT_SECRET in .env "
-        "to a strong stable value in production."
-    )
+    JWT_SECRET = _load_or_create_persistent_secret()
 
 JWT_ALG = "HS256"
 JWT_EXP_DAYS = 30

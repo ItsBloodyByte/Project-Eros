@@ -15,9 +15,13 @@
 #
 #  One-Command Start (in einem leeren Ordner):
 #      curl -O https://raw.githubusercontent.com/itsbloodybyte/project-eros/main/docker-compose.yml
-#      curl -O https://raw.githubusercontent.com/itsbloodybyte/project-eros/main/.env.example
-#      cp .env.example .env        # dann Secrets eintragen
 #      docker compose up --build -d
+#
+#  Ein `.env` ist optional: ohne Datei nutzt Compose die sicheren Defaults
+#  unten. JWT_SECRET wird beim ersten Start automatisch generiert und im
+#  Volume `backend_data` unter /data/jwt_secret.key persistiert, damit
+#  Sessions Restarts überleben. Für Produktionsbetrieb in einer `.env`
+#  explizit setzen (siehe .env.example).
 #
 #  App erreichbar unter:  http://localhost:8080  (anpassbar via FRONTEND_HOST_PORT)
 # =====================================================================
@@ -56,12 +60,17 @@ services:
       # Mongo-Verbindung (Auth + Default-DB)
       MONGO_URL: "mongodb://${MONGO_INITDB_ROOT_USERNAME:-eros}:${MONGO_INITDB_ROOT_PASSWORD:-eros-mongo-change-me}@mongo:27017/${MONGO_DB_NAME:-eros}?authSource=admin"
       DB_NAME: "${MONGO_DB_NAME:-eros}"
-      # App-Secrets – zwingend in der .env Datei setzen.
-      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set – generate one with: python -c 'import secrets;print(secrets.token_urlsafe(64))'}"
+      # Optional: Wenn leer, erzeugt das Backend ein starkes Secret und legt es
+      # im Volume /data/jwt_secret.key ab – JWT-Sessions überleben Restarts.
+      # Für Multi-Instance-Deployments in .env explizit setzen.
+      JWT_SECRET: "${JWT_SECRET:-}"
+      EROS_DATA_DIR: "/data"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:8080}"
       EMERGENT_LLM_KEY: "${EMERGENT_LLM_KEY:-}"
       STRIPE_API_KEY: "${STRIPE_API_KEY:-}"
       PYTHONUNBUFFERED: "1"
+    volumes:
+      - backend_data:/data
     depends_on:
       mongo:
         condition: service_healthy
@@ -94,3 +103,4 @@ networks:
 volumes:
   mongo_data:
   mongo_config:
+  backend_data:

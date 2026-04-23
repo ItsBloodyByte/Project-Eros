@@ -5,7 +5,26 @@ Nginx-gehostete React-Frontend. Der Quellcode wird dabei **direkt aus
 dem GitHub-Repository** [`itsbloodybyte/project-eros`](https://github.com/itsbloodybyte/project-eros)
 gezogen – ein lokales `git clone` ist **nicht** nötig.
 
-## 0. One-Liner (empfohlen)
+## 0. Absolute Minimalvariante (ohne .env)
+
+In einem leeren Ordner genügt jetzt ein einziger Befehl:
+
+```bash
+curl -O https://raw.githubusercontent.com/itsbloodybyte/project-eros/main/docker-compose.yml
+docker compose up --build -d
+```
+
+Das Backend erzeugt beim ersten Start automatisch ein starkes `JWT_SECRET`
+und persistiert es im Docker-Volume `backend_data` unter
+`/data/jwt_secret.key` – Sessions überleben damit Restarts. Mongo läuft
+mit den Default-Credentials aus der YAML. Danach direkt
+`http://localhost:8080` aufrufen.
+
+> Für Produktion solltest du trotzdem `.env` mit eigenen Secrets anlegen
+> (siehe Abschnitt 2). Die Default-Credentials sind **nur für lokales
+> Testen** gedacht.
+
+## 0b. One-Liner (empfohlen, mit automatischer .env)
 
 In einem leeren Ordner – legt `docker-compose.yml` + `.env` mit
 generiertem `JWT_SECRET` und Mongo-Passwort an und startet die Stacks:
@@ -41,13 +60,13 @@ sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${JWT}|" .env
 $EDITOR .env
 ```
 
-Pflicht-Variablen:
+Pflicht-Variablen (nur für Produktion nötig – bei lokalem Testen werden sie automatisch ersetzt):
 
 | Variable | Zweck | Default |
 |---|---|---|
-| `JWT_SECRET` | Signiert Session-Tokens. Muss einzigartig und lang sein. | verweigert Start |
+| `JWT_SECRET` | Signiert Session-Tokens. Wenn leer, erzeugt das Backend automatisch ein starkes Secret im Volume `backend_data`. | auto-generiert |
 | `MONGO_INITDB_ROOT_USERNAME` | Mongo Root-User | `eros` |
-| `MONGO_INITDB_ROOT_PASSWORD` | Mongo Root-Passwort | change-me |
+| `MONGO_INITDB_ROOT_PASSWORD` | Mongo Root-Passwort | `eros-mongo-change-me` |
 | `MONGO_DB_NAME` | App-Datenbank | `eros` |
 | `CORS_ORIGINS` | Browser-Origins, die die API aufrufen dürfen | `http://localhost:8080` |
 | `FRONTEND_HOST_PORT` | Port auf dem Host | `8080` |
