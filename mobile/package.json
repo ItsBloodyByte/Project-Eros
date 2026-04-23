@@ -17,6 +17,7 @@
     "expo": "~50.0.17",
     "expo-localization": "~14.8.4",
     "expo-screen-capture": "~5.8.1",
+    "expo-image-picker": "~14.7.1",
     "expo-status-bar": "~1.11.1",
     "i18next": "^23.11.5",
     "react": "18.2.0",

@@ -21,6 +21,10 @@ import BlogScreen from "./src/screens/BlogScreen";
 import BlogPostScreen from "./src/screens/BlogPostScreen";
 import VisitorsScreen from "./src/screens/VisitorsScreen";
 import MenuScreen from "./src/screens/MenuScreen";
+import EditProfileScreen from "./src/screens/EditProfileScreen";
+import PersonaBScreen from "./src/screens/PersonaBScreen";
+import SettingsScreen from "./src/screens/SettingsScreen";
+import VideosScreen from "./src/screens/VideosScreen";
 import { AuthProvider, useAuth } from "./src/AuthContext";
 import { colors } from "./src/theme";
 
@@ -91,6 +95,10 @@ function Root() {
             <Stack.Screen name="Blog" component={BlogScreen} options={{ title: "Blog" }} />
             <Stack.Screen name="BlogPost" component={BlogPostScreen} options={({ route }) => ({ title: route.params?.title || "Beitrag" })} />
             <Stack.Screen name="Visitors" component={VisitorsScreen} options={{ title: "Besucher:innen" }} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: "Profil bearbeiten" }} />
+            <Stack.Screen name="PersonaB" component={PersonaBScreen} options={{ title: "Person B" }} />
+            <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: "Einstellungen" }} />
+            <Stack.Screen name="Videos" component={VideosScreen} options={{ title: "Meine Videos" }} />
           </>
         )}
       </Stack.Navigator>

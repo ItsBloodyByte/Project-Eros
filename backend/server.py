@@ -144,6 +144,14 @@ async def startup():
             await db.couple_invites.create_index("id", unique=True)
             await db.couple_invites.create_index([("to_user_id", 1), ("status", 1)])
             await db.couple_invites.create_index([("from_user_id", 1), ("status", 1)])
+            # Payment webhook events — unique per provider+event_id to prevent double-processing
+            await db.payment_webhook_events.create_index([("provider", 1), ("event_id", 1)], unique=True)
+            await db.payment_webhook_events.create_index("received_at")
+            # Payment transactions lookup paths (Stripe uses session_id, PayPal/Klarna use order_id)
+            await db.payment_transactions.create_index("session_id", sparse=True)
+            await db.payment_transactions.create_index("order_id", sparse=True)
+            await db.payment_transactions.create_index([("provider", 1), ("created_at", -1)])
+            await db.payment_transactions.create_index("user_id")
         except Exception as ex:
             logger.warning("Phase-6 index setup issue: %s", ex)
         # IP flagging with automatic expiry (minor-attempt protection)
@@ -4193,6 +4201,125 @@ async def admin_set_payment_config(body: PaymentConfigUpdate, user=Depends(_requ
     return {"ok": True}
 
 
+@api_router.get("/admin/payments/transactions")
+async def admin_list_transactions(
+    user=Depends(_require_user),
+    provider: Optional[str] = None,
+    status: Optional[str] = None,
+    user_id: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=500),
+):
+    """Admin-only list of payment transactions with filters."""
+    await _require_role(user, ["admin", "superadmin"])
+    q: Dict = {}
+    if provider:
+        q["provider"] = provider
+    if user_id:
+        q["user_id"] = user_id
+    if status:
+        # unify: match either legacy `payment_status` or new `status`
+        q["$or"] = [{"status": status}, {"payment_status": status}]
+    cursor = db.payment_transactions.find(q).sort("created_at", -1).limit(limit)
+    items = await cursor.to_list(length=limit)
+    # Attach short user display for convenience
+    uids = list({t.get("user_id") for t in items if t.get("user_id")})
+    umap: Dict = {}
+    if uids:
+        async for u in db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "display_name": 1, "email": 1}):
+            umap[u["id"]] = u
+    out = []
+    for t in items:
+        d = serialize_doc(t)
+        u = umap.get(t.get("user_id"))
+        if u:
+            d["user_display_name"] = u.get("display_name")
+            d["user_email"] = u.get("email")
+        out.append(d)
+    return {"transactions": out, "count": len(out)}
+
+
+@api_router.get("/admin/payments/webhook-events")
+async def admin_list_webhook_events(
+    user=Depends(_require_user),
+    provider: Optional[str] = None,
+    only_errors: bool = False,
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Admin-only view of raw webhook deliveries for debugging."""
+    await _require_role(user, ["admin", "superadmin"])
+    q: Dict = {}
+    if provider:
+        q["provider"] = provider
+    if only_errors:
+        q["error"] = {"$ne": None}
+    cursor = db.payment_webhook_events.find(q).sort("received_at", -1).limit(limit)
+    items = await cursor.to_list(length=limit)
+    return {"events": serialize_doc(items), "count": len(items)}
+
+
+@api_router.post("/admin/payments/transactions/{txn_id}/reconcile")
+async def admin_reconcile_transaction(txn_id: str, user=Depends(_require_user)):
+    """Force a reconciliation for a single transaction.
+
+    - Stripe: queries the session status via StripeCheckout.
+    - PayPal: queries the PayPal order status via REST API.
+    - Klarna: re-applies entitlement if order is in a paid-like state.
+
+    The entitlement grant is idempotent via transaction status flag.
+    """
+    await _require_role(user, ["admin", "superadmin"])
+    txn = await db.payment_transactions.find_one({"id": txn_id})
+    if not txn:
+        raise HTTPException(404, "Transaktion nicht gefunden")
+    provider = txn.get("provider")
+    cfg = await _get_payment_config()
+    status_before = txn.get("status") or txn.get("payment_status")
+    result: Dict = {"id": txn_id, "provider": provider, "before": status_before}
+    if provider == "stripe" and txn.get("session_id"):
+        api_key = cfg.get("stripe_api_key") or os.environ.get("STRIPE_API_KEY", "")
+        if not api_key:
+            raise HTTPException(400, "Stripe nicht konfiguriert")
+        host_url = os.environ.get("EROS_PUBLIC_URL", "").rstrip("/") or ""
+        webhook_url = f"{host_url}/api/webhook/stripe"
+        sc = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+        st = await sc.get_checkout_status(txn["session_id"])
+        result["stripe_status"] = {"status": st.status, "payment_status": st.payment_status}
+        if st.payment_status == "paid" and status_before != "paid":
+            await _apply_successful_payment(txn["session_id"], st.metadata or {})
+    elif provider == "paypal" and txn.get("order_id"):
+        try:
+            token, api_base = await _paypal_access_token(cfg)
+        except HTTPException as ex:
+            raise ex
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=15) as http:
+            r = await http.get(
+                f"{api_base}/v2/checkout/orders/{txn['order_id']}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if r.status_code >= 400:
+                raise HTTPException(502, f"PayPal Order Lookup fehlgeschlagen: {r.status_code}")
+            data = r.json()
+        result["paypal_status"] = data.get("status")
+        if data.get("status") == "COMPLETED" and status_before != "paid":
+            await db.payment_transactions.update_one(
+                {"_id": txn["_id"]},
+                {"$set": {"status": "paid", "paid_at": now_utc().isoformat(),
+                          "reconciled_by": user["id"]}},
+            )
+            await _apply_entitlement(txn.get("user_id"), txn.get("package_id"))
+    elif provider == "klarna":
+        # Klarna has no cheap "look up by order id" without the merchant plugin id;
+        # rely on manual confirmation — mark paid if the admin requests it explicitly.
+        raise HTTPException(400, "Klarna-Reconcile bitte via Push-Webhook. Manueller Abgleich nicht unterst\u00fctzt.")
+    else:
+        raise HTTPException(400, f"Provider {provider} nicht reconcilable")
+    txn_after = await db.payment_transactions.find_one({"id": txn_id})
+    result["after"] = (txn_after or {}).get("status") or (txn_after or {}).get("payment_status")
+    await _audit(user["id"], "payment_reconcile", txn_id, meta=result)
+    return result
+
+
 @api_router.post("/payments/checkout")
 async def create_checkout(body: CheckoutRequest, request: Request, user=Depends(_require_user)):
     cfg = await _get_payment_config()
@@ -4241,36 +4368,83 @@ async def create_checkout(body: CheckoutRequest, request: Request, user=Depends(
     return {"url": session.url, "session_id": session.session_id, "provider": provider}
 
 
-async def _apply_successful_payment(session_id: str, metadata: Dict):
-    """Idempotent: apply entitlement based on package_id once."""
-    txn = await db.payment_transactions.find_one({"session_id": session_id})
-    if not txn:
-        return
-    if txn.get("payment_status") == "paid":
-        return  # already applied
-    pkg_id = metadata.get("package_id") or txn.get("package_id")
-    uid = metadata.get("user_id") or txn.get("user_id")
-    upd = {"payment_status": "paid", "paid_at": now_utc().isoformat()}
-    await db.payment_transactions.update_one({"session_id": session_id}, {"$set": upd})
-    if not uid or not pkg_id:
+async def _apply_entitlement(user_id: str, package_id: str):
+    """Grant the feature entitlement (premium / boost) for a package to a user.
+
+    Safe to call multiple times: premium extends existing expiry forward, which is
+    why the caller MUST first check the transaction idempotency flag before invoking
+    this function to avoid stacking entitlements on duplicate webhooks.
+    """
+    if not user_id or not package_id:
         return
     cfg = await _get_payment_config()
-    pkg = next((p for p in (cfg.get("packages") or []) if p.get("id") == pkg_id), None)
+    pkg = next((p for p in (cfg.get("packages") or []) if p.get("id") == package_id), None)
     if not pkg:
+        logger.warning("Entitlement skipped: unknown package_id=%s for user=%s", package_id, user_id)
         return
     kind = pkg.get("kind")
     if kind == "premium":
         days = int(pkg.get("days") or 30)
-        new_exp = now_utc() + timedelta(days=days)
-        existing = await db.users.find_one({"id": uid})
+        existing = await db.users.find_one({"id": user_id})
         base = parse_dt((existing or {}).get("premium_expires_at")) or now_utc()
-        if base > now_utc():
-            new_exp = base + timedelta(days=days)
-        await db.users.update_one({"id": uid}, {"$set": {"premium_expires_at": new_exp.isoformat()}})
+        if base < now_utc():
+            base = now_utc()
+        new_exp = base + timedelta(days=days)
+        await db.users.update_one({"id": user_id}, {"$set": {"premium_expires_at": new_exp.isoformat()}})
     elif kind == "boost":
         minutes = int(pkg.get("minutes") or 30)
         new_exp = now_utc() + timedelta(minutes=minutes)
-        await db.users.update_one({"id": uid}, {"$set": {"boost_expires_at": new_exp.isoformat()}})
+        await db.users.update_one({"id": user_id}, {"$set": {"boost_expires_at": new_exp.isoformat()}})
+
+
+async def _record_webhook_event(provider: str, event_id: str, payload: Dict) -> bool:
+    """Insert a webhook event record; returns True if this is the first time we see it.
+
+    Uses the unique index on (provider, event_id) so duplicate deliveries are rejected
+    by MongoDB. Callers MUST early-return on False to avoid double-processing.
+    """
+    try:
+        await db.payment_webhook_events.insert_one({
+            "id": str(uuid.uuid4()),
+            "provider": provider,
+            "event_id": event_id,
+            "payload_excerpt": {k: payload.get(k) for k in list(payload.keys())[:10]},
+            "received_at": now_utc().isoformat(),
+            "processed": False,
+        })
+        return True
+    except Exception as ex:
+        # Duplicate key → we have already seen this event.
+        logger.info("Duplicate webhook event %s/%s (ignored): %s", provider, event_id, ex)
+        return False
+
+
+async def _mark_webhook_processed(provider: str, event_id: str, error: Optional[str] = None):
+    await db.payment_webhook_events.update_one(
+        {"provider": provider, "event_id": event_id},
+        {"$set": {
+            "processed": error is None,
+            "processed_at": now_utc().isoformat(),
+            "error": error,
+        }},
+    )
+
+
+async def _apply_successful_payment(session_id: str, metadata: Dict):
+    """Stripe-path idempotent entitlement grant (keyed on session_id)."""
+    txn = await db.payment_transactions.find_one({"session_id": session_id})
+    if not txn:
+        logger.warning("apply_successful_payment: no transaction for session_id=%s", session_id)
+        return
+    if txn.get("payment_status") == "paid" or txn.get("status") == "paid":
+        return  # already applied
+    pkg_id = metadata.get("package_id") or txn.get("package_id")
+    uid = metadata.get("user_id") or txn.get("user_id")
+    await db.payment_transactions.update_one(
+        {"session_id": session_id},
+        {"$set": {"payment_status": "paid", "status": "paid", "paid_at": now_utc().isoformat()}},
+    )
+    await _apply_entitlement(uid, pkg_id)
 
 
 @api_router.get("/payments/status/{session_id}")
@@ -4305,8 +4479,178 @@ async def stripe_webhook(request: Request):
     except Exception as e:
         logger.exception("Webhook handling error: %s", e)
         raise HTTPException(400, "Invalid webhook")
-    if evt.payment_status == "paid":
-        await _apply_successful_payment(evt.session_id, evt.metadata or {})
+    # Deduplicate on Stripe event id (falls back to session_id if missing).
+    event_id = getattr(evt, "event_id", None) or getattr(evt, "id", None) or evt.session_id
+    is_new = await _record_webhook_event("stripe", str(event_id), {"session_id": evt.session_id, "payment_status": evt.payment_status})
+    if not is_new:
+        return {"ok": True, "duplicate": True}
+    try:
+        if evt.payment_status == "paid":
+            await _apply_successful_payment(evt.session_id, evt.metadata or {})
+        await _mark_webhook_processed("stripe", str(event_id))
+    except Exception as ex:
+        await _mark_webhook_processed("stripe", str(event_id), error=str(ex)[:500])
+        logger.exception("Stripe webhook processing failed: %s", ex)
+        raise HTTPException(500, "Webhook processing failed")
+    return {"ok": True}
+
+
+# ---------- PayPal Webhook (IPN-style) ----------
+async def _verify_paypal_webhook(cfg: Dict, headers: Dict[str, str], raw_body: bytes, event: Dict) -> bool:
+    """Verify PayPal webhook via /v1/notifications/verify-webhook-signature.
+
+    Requires `paypal.webhook_id` in provider_keys. If missing, returns False (reject).
+    """
+    keys = (cfg.get("provider_keys") or {}).get("paypal") or {}
+    webhook_id = keys.get("webhook_id")
+    if not webhook_id:
+        return False
+    try:
+        token, api_base = await _paypal_access_token(cfg)
+    except Exception as ex:
+        logger.warning("PayPal webhook verification failed to get token: %s", ex)
+        return False
+    import httpx as _httpx
+    verify_payload = {
+        "auth_algo": headers.get("paypal-auth-algo") or headers.get("PAYPAL-AUTH-ALGO"),
+        "cert_url": headers.get("paypal-cert-url") or headers.get("PAYPAL-CERT-URL"),
+        "transmission_id": headers.get("paypal-transmission-id") or headers.get("PAYPAL-TRANSMISSION-ID"),
+        "transmission_sig": headers.get("paypal-transmission-sig") or headers.get("PAYPAL-TRANSMISSION-SIG"),
+        "transmission_time": headers.get("paypal-transmission-time") or headers.get("PAYPAL-TRANSMISSION-TIME"),
+        "webhook_id": webhook_id,
+        "webhook_event": event,
+    }
+    async with _httpx.AsyncClient(timeout=15) as http:
+        r = await http.post(
+            f"{api_base}/v1/notifications/verify-webhook-signature",
+            json=verify_payload,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        if r.status_code >= 400:
+            logger.warning("PayPal verify failed %s: %s", r.status_code, r.text[:300])
+            return False
+        return (r.json().get("verification_status") == "SUCCESS")
+
+
+@app.post("/api/webhook/paypal")
+async def paypal_webhook(request: Request):
+    """Handle PayPal webhook events (PAYMENT.CAPTURE.COMPLETED etc.)."""
+    raw = await request.body()
+    try:
+        event = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+    event_id = event.get("id") or event.get("event_id")
+    event_type = event.get("event_type") or ""
+    if not event_id:
+        raise HTTPException(400, "Missing event id")
+    # In strict mode require signature verification; otherwise log a warning.
+    cfg = await _get_payment_config()
+    strict = bool(cfg.get("strict_webhook_verification", False))
+    headers_lc = {k.lower(): v for k, v in request.headers.items()}
+    verified = await _verify_paypal_webhook(cfg, headers_lc, raw, event)
+    if strict and not verified:
+        raise HTTPException(401, "Webhook signature invalid")
+    if not verified:
+        logger.warning("PayPal webhook %s accepted without verification (strict mode OFF).", event_id)
+    is_new = await _record_webhook_event("paypal", str(event_id), {"event_type": event_type})
+    if not is_new:
+        return {"ok": True, "duplicate": True}
+    try:
+        resource = event.get("resource") or {}
+        # Typical flow: PAYMENT.CAPTURE.COMPLETED → resource has supplementary_data.related_ids.order_id
+        order_id = None
+        supp = resource.get("supplementary_data") or {}
+        rel = supp.get("related_ids") or {}
+        order_id = rel.get("order_id") or resource.get("id")
+        # CHECKOUT.ORDER.APPROVED / .COMPLETED → resource.id is the order_id itself
+        if event_type.startswith("CHECKOUT.ORDER."):
+            order_id = resource.get("id") or order_id
+        if not order_id:
+            await _mark_webhook_processed("paypal", str(event_id), error="No order_id resolvable")
+            return {"ok": True, "noop": True}
+        txn = await db.payment_transactions.find_one({"provider": "paypal", "order_id": order_id})
+        if not txn:
+            await _mark_webhook_processed("paypal", str(event_id), error=f"Unknown order_id {order_id}")
+            return {"ok": True, "noop": True}
+        if txn.get("status") == "paid":
+            await _mark_webhook_processed("paypal", str(event_id))
+            return {"ok": True, "already_paid": True}
+        # Only COMPLETED events grant entitlement.
+        if event_type in {"PAYMENT.CAPTURE.COMPLETED", "CHECKOUT.ORDER.COMPLETED"}:
+            await db.payment_transactions.update_one(
+                {"_id": txn["_id"]},
+                {"$set": {"status": "paid", "paid_at": now_utc().isoformat(),
+                          "webhook_event_id": event_id}},
+            )
+            await _apply_entitlement(txn.get("user_id"), txn.get("package_id"))
+        elif event_type in {"PAYMENT.CAPTURE.DENIED", "PAYMENT.CAPTURE.REFUNDED", "CHECKOUT.ORDER.VOIDED"}:
+            await db.payment_transactions.update_one(
+                {"_id": txn["_id"]},
+                {"$set": {"status": "failed" if "DENIED" in event_type else "refunded",
+                          "webhook_event_id": event_id}},
+            )
+        await _mark_webhook_processed("paypal", str(event_id))
+    except Exception as ex:
+        await _mark_webhook_processed("paypal", str(event_id), error=str(ex)[:500])
+        logger.exception("PayPal webhook processing failed: %s", ex)
+        raise HTTPException(500, "Webhook processing failed")
+    return {"ok": True}
+
+
+# ---------- Klarna Push ----------
+@app.post("/api/webhook/klarna")
+async def klarna_push(request: Request):
+    """Handle Klarna Order Management push notifications.
+
+    Klarna POSTs JSON to this URL after order status changes. We use the `order_id`
+    to reconcile our transaction. An optional shared secret can be validated via
+    the `Eros-Klarna-Token` header when configured.
+    """
+    raw = await request.body()
+    try:
+        event = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+    cfg = await _get_payment_config()
+    keys = (cfg.get("provider_keys") or {}).get("klarna") or {}
+    shared = keys.get("push_secret")
+    if shared:
+        incoming = request.headers.get("eros-klarna-token") or request.headers.get("Eros-Klarna-Token")
+        if incoming != shared:
+            raise HTTPException(401, "Invalid shared token")
+    order_id = event.get("order_id") or event.get("orderId") or event.get("id")
+    event_id = event.get("event_id") or f"klarna:{order_id}:{event.get('status') or event.get('fraud_status')}"
+    if not order_id:
+        raise HTTPException(400, "Missing order_id")
+    is_new = await _record_webhook_event("klarna", str(event_id), {"order_id": order_id, "status": event.get("status")})
+    if not is_new:
+        return {"ok": True, "duplicate": True}
+    try:
+        txn = await db.payment_transactions.find_one({"provider": "klarna", "order_id": order_id})
+        if not txn:
+            await _mark_webhook_processed("klarna", str(event_id), error=f"Unknown order_id {order_id}")
+            return {"ok": True, "noop": True}
+        status = (event.get("status") or event.get("fraud_status") or "").upper()
+        if status in {"AUTHORIZED", "CAPTURED", "ACCEPTED", "PAID"}:
+            if txn.get("status") != "paid":
+                await db.payment_transactions.update_one(
+                    {"_id": txn["_id"]},
+                    {"$set": {"status": "paid", "paid_at": now_utc().isoformat(),
+                              "webhook_event_id": event_id}},
+                )
+                await _apply_entitlement(txn.get("user_id"), txn.get("package_id"))
+        elif status in {"CANCELLED", "REJECTED", "FAILED", "REFUNDED"}:
+            await db.payment_transactions.update_one(
+                {"_id": txn["_id"]},
+                {"$set": {"status": "refunded" if status == "REFUNDED" else "failed",
+                          "webhook_event_id": event_id}},
+            )
+        await _mark_webhook_processed("klarna", str(event_id))
+    except Exception as ex:
+        await _mark_webhook_processed("klarna", str(event_id), error=str(ex)[:500])
+        logger.exception("Klarna push processing failed: %s", ex)
+        raise HTTPException(500, "Webhook processing failed")
     return {"ok": True}
 
 

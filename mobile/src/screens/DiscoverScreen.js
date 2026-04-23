@@ -4,11 +4,13 @@ import {
 } from "react-native";
 import { api } from "../api";
 import { colors, radii, spacing } from "../theme";
+import DiscoverFilterDrawer from "../components/DiscoverFilterDrawer";
 
 export default function DiscoverScreen({ navigation }) {
   const [users, setUsers] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -20,15 +22,22 @@ export default function DiscoverScreen({ navigation }) {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <FlatList
-      style={{ backgroundColor: colors.bg }}
-      data={users}
-      keyExtractor={(u) => u.id}
-      contentContainerStyle={{ padding: 10 }}
-      numColumns={2}
-      refreshControl={<RefreshControl tintColor={colors.text} refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
-      ListEmptyComponent={!loading ? <Text style={styles.empty}>Keine Profile gefunden</Text> : null}
-      renderItem={({ item }) => {
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View style={styles.filterBar}>
+        <TouchableOpacity style={styles.filterBtn} onPress={() => setFilterOpen(true)}>
+          <Text style={styles.filterBtnText}>Filter</Text>
+        </TouchableOpacity>
+        <Text style={styles.countText}>{users.length} Profile</Text>
+      </View>
+      <FlatList
+        style={{ backgroundColor: colors.bg }}
+        data={users}
+        keyExtractor={(u) => u.id}
+        contentContainerStyle={{ padding: 10 }}
+        numColumns={2}
+        refreshControl={<RefreshControl tintColor={colors.text} refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
+        ListEmptyComponent={!loading ? <Text style={styles.empty}>Keine Profile gefunden</Text> : null}
+        renderItem={({ item }) => {
         const primary = (item.photos || []).find((p) => p.is_primary) || (item.photos || [])[0];
         const isNsfw = primary && (primary.nsfw_score || 0) >= 0.75;
         const partner =
@@ -58,6 +67,12 @@ export default function DiscoverScreen({ navigation }) {
         );
       }}
     />
+      <DiscoverFilterDrawer
+        visible={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        onApplied={load}
+      />
+    </View>
   );
 }
 
@@ -79,4 +94,8 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: 22,
     borderWidth: 2, borderColor: "rgba(255,255,255,0.9)",
   },
+  filterBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 10, paddingBottom: 0 },
+  filterBtn: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, paddingHorizontal: 14, paddingVertical: 6 },
+  filterBtnText: { color: colors.text, fontWeight: "700", fontSize: 12, letterSpacing: 1 },
+  countText: { color: colors.textMuted, fontSize: 11 },
 });

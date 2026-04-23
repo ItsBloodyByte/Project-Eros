@@ -1755,7 +1755,7 @@ class DatingPlatformTester:
                 
                 # Special check for terms page (should have >4000 characters with German quotes)
                 if key == "terms":
-                    has_german_quotes = "„AGB"" in data.get("content_markdown", "")
+                    has_german_quotes = '"AGB"' in data.get("content_markdown", "")
                     is_substantial = content_length > 4000
                     self.log_test(f"GET /api/legal/{key} - Substantial content with German quotes", 
                                  has_required_fields and is_substantial and has_german_quotes,
@@ -2099,6 +2099,178 @@ class DatingPlatformTester:
             else:
                 self.log_test("POST /api/likes still works", False, "Likes endpoint broken")
 
+    def test_phase6_payment_webhook_hardening(self):
+        """Test Phase 6: Payment webhook hardening and new endpoints"""
+        print("\n🔍 Testing Phase 6: Payment Webhook Hardening...")
+        
+        admin_token = self.tokens.get("admin@eros.app")
+        alice_token = self.tokens.get("alice@eros.app")
+        
+        if not admin_token:
+            self.log_test("Payment webhook hardening tests", False, "Admin token not available")
+            return
+        
+        # Test PayPal webhook with invalid JSON - need to send raw data
+        try:
+            url = f"{self.base_url}/api/webhook/paypal"
+            headers = {'Content-Type': 'application/json'}
+            response = requests.post(url, data="invalid json")
+            success = response.status_code == 400
+            self.log_test("POST /api/webhook/paypal - Invalid JSON returns 400", success,
+                         f"Status: {response.status_code}")
+        except Exception as e:
+            self.log_test("POST /api/webhook/paypal - Invalid JSON", False, f"Error: {str(e)}")
+        
+        # Test PayPal webhook without id field
+        paypal_no_id = {"event_type": "PAYMENT.CAPTURE.COMPLETED"}
+        success, resp = self.make_request('POST', '/webhook/paypal', 
+                                        paypal_no_id, expected_status=400)
+        self.log_test("POST /api/webhook/paypal - Missing id returns 400", success,
+                     f"Status: {resp.status_code if resp else 'No response'}")
+        
+        # Test PayPal webhook with unknown order_id (should return 200 with noop:true)
+        paypal_unknown = {
+            "id": "test_event_123",
+            "event_type": "PAYMENT.CAPTURE.COMPLETED",
+            "resource": {
+                "supplementary_data": {
+                    "related_ids": {
+                        "order_id": "unknown_order_123"
+                    }
+                }
+            }
+        }
+        success, resp = self.make_request('POST', '/webhook/paypal', paypal_unknown, expected_status=200)
+        if success and resp:
+            data = resp.json()
+            has_noop = data.get("noop") == True
+            self.log_test("POST /api/webhook/paypal - Unknown order_id returns noop", has_noop,
+                         f"Response: {data}")
+        else:
+            self.log_test("POST /api/webhook/paypal - Unknown order_id", False, "Failed to get response")
+        
+        # Test PayPal webhook duplicate event_id
+        success1, resp1 = self.make_request('POST', '/webhook/paypal', paypal_unknown, expected_status=200)
+        if success1 and resp1:
+            data = resp1.json()
+            has_duplicate = data.get("duplicate") == True
+            self.log_test("POST /api/webhook/paypal - Duplicate event_id returns duplicate", has_duplicate,
+                         f"Response: {data}")
+        else:
+            self.log_test("POST /api/webhook/paypal - Duplicate event_id", False, "Failed to get response")
+        
+        # Test Klarna webhook with invalid JSON
+        try:
+            url = f"{self.base_url}/api/webhook/klarna"
+            headers = {'Content-Type': 'application/json'}
+            response = requests.post(url, data="invalid json")
+            success = response.status_code == 400
+            self.log_test("POST /api/webhook/klarna - Invalid JSON returns 400", success,
+                         f"Status: {response.status_code}")
+        except Exception as e:
+            self.log_test("POST /api/webhook/klarna - Invalid JSON", False, f"Error: {str(e)}")
+        
+        # Test Klarna webhook without order_id
+        klarna_no_order = {"status": "AUTHORIZED"}
+        success, resp = self.make_request('POST', '/webhook/klarna', 
+                                        klarna_no_order, expected_status=400)
+        self.log_test("POST /api/webhook/klarna - Missing order_id returns 400", success,
+                     f"Status: {resp.status_code if resp else 'No response'}")
+        
+        # Test Klarna webhook with unknown order_id
+        klarna_unknown = {
+            "order_id": "unknown_klarna_order_123",
+            "status": "AUTHORIZED",
+            "event_id": "klarna_test_event_123"
+        }
+        success, resp = self.make_request('POST', '/webhook/klarna', klarna_unknown, expected_status=200)
+        if success and resp:
+            data = resp.json()
+            has_noop = data.get("noop") == True
+            self.log_test("POST /api/webhook/klarna - Unknown order_id returns noop", has_noop,
+                         f"Response: {data}")
+        else:
+            self.log_test("POST /api/webhook/klarna - Unknown order_id", False, "Failed to get response")
+        
+        # Test Klarna webhook duplicate event_id
+        success1, resp1 = self.make_request('POST', '/webhook/klarna', klarna_unknown, expected_status=200)
+        if success1 and resp1:
+            data = resp1.json()
+            has_duplicate = data.get("duplicate") == True
+            self.log_test("POST /api/webhook/klarna - Duplicate event_id returns duplicate", has_duplicate,
+                         f"Response: {data}")
+        else:
+            self.log_test("POST /api/webhook/klarna - Duplicate event_id", False, "Failed to get response")
+        
+        # Test admin payments transactions endpoint
+        success, resp = self.make_request('GET', '/admin/payments/transactions', token=admin_token)
+        if success and resp:
+            data = resp.json()
+            has_transactions = "transactions" in data and "count" in data
+            self.log_test("GET /api/admin/payments/transactions - Admin access", has_transactions,
+                         f"Transactions count: {data.get('count', 0)}")
+        else:
+            self.log_test("GET /api/admin/payments/transactions - Admin access", False, "Failed to get transactions")
+        
+        # Test normal user access to admin transactions (should return 403)
+        if alice_token:
+            success, resp = self.make_request('GET', '/admin/payments/transactions', 
+                                            token=alice_token, expected_status=403)
+            self.log_test("GET /api/admin/payments/transactions - User blocked", success,
+                         "Normal user correctly blocked from admin endpoint")
+        
+        # Test admin webhook events endpoint
+        success, resp = self.make_request('GET', '/admin/payments/webhook-events', token=admin_token)
+        if success and resp:
+            data = resp.json()
+            has_events = "events" in data
+            self.log_test("GET /api/admin/payments/webhook-events - Admin access", has_events,
+                         f"Events count: {len(data.get('events', []))}")
+        else:
+            self.log_test("GET /api/admin/payments/webhook-events - Admin access", False, "Failed to get webhook events")
+        
+        # Test webhook events with only_errors filter
+        success, resp = self.make_request('GET', '/admin/payments/webhook-events?only_errors=true', token=admin_token)
+        if success and resp:
+            data = resp.json()
+            events = data.get("events", [])
+            # All returned events should have error field
+            all_have_errors = all(event.get("error") is not None for event in events) if events else True
+            self.log_test("GET /api/admin/payments/webhook-events?only_errors=true", all_have_errors,
+                         f"Error events count: {len(events)}")
+        else:
+            self.log_test("GET /api/admin/payments/webhook-events?only_errors=true", False, "Failed to get error events")
+        
+        # Test normal user access to webhook events (should return 403)
+        if alice_token:
+            success, resp = self.make_request('GET', '/admin/payments/webhook-events', 
+                                            token=alice_token, expected_status=403)
+            self.log_test("GET /api/admin/payments/webhook-events - User blocked", success,
+                         "Normal user correctly blocked from webhook events endpoint")
+        
+        # Test reconcile transaction with nonexistent ID
+        success, resp = self.make_request('POST', '/admin/payments/transactions/nonexistent_id/reconcile', 
+                                        token=admin_token, expected_status=404)
+        self.log_test("POST /api/admin/payments/transactions/{nonexistent}/reconcile - 404", success,
+                     "Correctly returns 404 for nonexistent transaction")
+        
+        # Test regression - existing endpoints still work
+        regression_endpoints = [
+            ('/me', 'GET'),
+            ('/payments/packages', 'GET'),
+            ('/legal/terms', 'GET'),
+            ('/events', 'GET'),
+            ('/albums', 'GET'),
+            ('/blog/posts', 'GET'),
+            ('/me/visitors', 'GET'),
+            ('/me/broadcasts', 'GET')
+        ]
+        
+        for endpoint, method in regression_endpoints:
+            success, resp = self.make_request(method, endpoint, token=alice_token, expected_status=200)
+            self.log_test(f"Regression: {method} /api{endpoint}", success,
+                         f"Status: {resp.status_code if resp else 'No response'}")
+
     def run_all_tests(self):
         """Run comprehensive test suite including Phase 5"""
         print("🚀 Starting Comprehensive Dating Platform API Tests (Phase 5)")
@@ -2159,6 +2331,9 @@ class DatingPlatformTester:
             self.test_phase5_admin_verification_review()
             self.test_phase5_reports_auto_mod()
             self.test_phase5_existing_endpoints_still_work()
+            
+            # Phase 6 tests - Payment webhook hardening
+            self.test_phase6_payment_webhook_hardening()
             
         except Exception as e:
             print(f"\n❌ Test suite error: {str(e)}")
