@@ -1,5 +1,6 @@
 """JWT auth utilities."""
 import os
+import secrets
 import bcrypt
 import jwt
 from datetime import datetime, timedelta, timezone
@@ -7,7 +8,29 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-prod-supersecret-abcdef123456")
+_INSECURE_DEFAULT_SECRETS = {
+    "change-me-in-prod-supersecret-abcdef123456",
+    "changeme",
+    "secret",
+    "",
+}
+_JWT_SECRET_ENV = os.environ.get("JWT_SECRET", "").strip()
+
+if _JWT_SECRET_ENV and _JWT_SECRET_ENV not in _INSECURE_DEFAULT_SECRETS:
+    JWT_SECRET = _JWT_SECRET_ENV
+else:
+    # No secure secret configured – generate a strong ephemeral one so the
+    # server still boots in dev, but refuse to persist an insecure default.
+    # IMPORTANT: set JWT_SECRET in .env in production to a stable value,
+    # otherwise every restart invalidates existing tokens.
+    JWT_SECRET = secrets.token_urlsafe(64)
+    import logging as _logging
+    _logging.getLogger("uvicorn.error").warning(
+        "JWT_SECRET is unset or uses an insecure default. Generated an "
+        "ephemeral 64-byte secret for this process. Set JWT_SECRET in .env "
+        "to a strong stable value in production."
+    )
+
 JWT_ALG = "HS256"
 JWT_EXP_DAYS = 30
 

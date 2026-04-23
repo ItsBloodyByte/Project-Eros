@@ -77,7 +77,32 @@ export default function AccountPage() {
     try {
       const origin = window.location.origin;
       const { data } = await api.post("/payments/checkout", { package_id: pkg_id, origin_url: origin });
-      if (data.url) window.location.href = data.url;
+      // Validate the returned URL against a strict allowlist so a tampered
+      // response cannot turn this into an open-redirect on an attacker domain.
+      if (data.url) {
+        let ok = false;
+        try {
+          const u = new URL(data.url);
+          const allowedHosts = [
+            "checkout.stripe.com",
+            "pay.stripe.com",
+            "billing.stripe.com",
+            "www.paypal.com",
+            "checkout.paypal.com",
+            "pay.mollie.com",
+            "checkout.klarna.com",
+            "buy.paddle.com",
+          ];
+          ok = u.protocol === "https:" && allowedHosts.includes(u.host);
+        } catch {
+          ok = false;
+        }
+        if (!ok) {
+          toast.error("Ungültige Checkout-URL empfangen.");
+          return;
+        }
+        window.location.href = data.url;
+      }
     } catch (e) { toast.error(e.response?.data?.detail || "Checkout fehlgeschlagen"); }
   };
 

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import DOMPurify from "dompurify";
 import { api } from "../lib/api";
 import { AppHeader } from "../components/AppHeader";
 import { AppFooter } from "../components/AppFooter";
@@ -8,6 +9,32 @@ import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { ArrowLeft, Clock, Calendar } from "lucide-react";
 import { toast } from "sonner";
+
+// Configure DOMPurify once: allow only safe presentational tags/attrs and
+// strip anything that could execute or navigate to javascript: URIs.
+// Defense-in-depth — backend also sanitises with bleach.
+const SANITIZE_CONFIG = {
+  ALLOWED_TAGS: [
+    "p","br","strong","em","u","s","blockquote","code","pre",
+    "h1","h2","h3","h4","h5","h6",
+    "ul","ol","li",
+    "a","img","figure","figcaption",
+    "table","thead","tbody","tr","th","td",
+    "hr","span","div"
+  ],
+  ALLOWED_ATTR: ["href","title","rel","target","src","alt","class","width","height"],
+  ALLOW_DATA_ATTR: false,
+  FORBID_TAGS: ["style","script","iframe","object","embed"],
+  FORBID_ATTR: ["onerror","onload","onclick","onmouseover","onfocus","formaction","style"],
+};
+// Ensure external links always open with noopener + no tab-nabbing
+if (typeof DOMPurify.addHook === "function") {
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if (node.tagName === "A" && node.getAttribute("target") === "_blank") {
+      node.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+}
 
 export default function BlogPostPage() {
   const { slug } = useParams();
@@ -27,6 +54,11 @@ export default function BlogPostPage() {
       } finally { setLoading(false); }
     })();
   }, [slug, nav]);
+
+  const safeHtml = useMemo(() => {
+    if (!post?.content_html) return "";
+    return DOMPurify.sanitize(post.content_html, SANITIZE_CONFIG);
+  }, [post?.content_html]);
 
   return (
     <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
@@ -82,7 +114,7 @@ export default function BlogPostPage() {
               )}
               <div
                 className="prose prose-lg dark:prose-invert max-w-none mt-8 prose-headings:font-display prose-headings:tracking-tight prose-a:text-[hsl(var(--accent))] prose-a:no-underline hover:prose-a:underline"
-                dangerouslySetInnerHTML={{ __html: post.content_html || "" }}
+                dangerouslySetInnerHTML={{ __html: safeHtml }}
                 data-testid="blog-post-content"
               />
             </article>

@@ -1,26 +1,30 @@
 [
   {
-    "content": "Backend: Acquaintance-Model, Collection + Indexes",
+    "content": "Phase 1: Backend - Automatische Scans (bandit, pip-audit, semgrep)",
     "status": "completed"
   },
   {
-    "content": "Backend: Endpoints /acquaintances/request, /respond, /list",
+    "content": "Phase 2: Frontend - Automatische Scans (yarn audit, ESLint security rules)",
     "status": "completed"
   },
   {
-    "content": "Backend: Chat-Nachricht mit special kind=acquaintance_request posten",
+    "content": "Phase 3: Manuelle Backend-Review (IDOR, AuthZ, Secrets, Upload, Rate-Limit, CSRF/CORS, XSS-sink)",
     "status": "completed"
   },
   {
-    "content": "Frontend: Button auf ProfileView + Akzeptieren/Ablehnen-UI in ChatBubble",
+    "content": "Phase 4: Manuelle Frontend-Review (dangerouslySetInnerHTML, Token-Storage, Unvalidated Redirects, Link-Safety)",
     "status": "completed"
   },
   {
-    "content": "Frontend: Neue Bekannten-Sektion auf Profilen",
+    "content": "Phase 5: Alle Findings protokollieren in /app/security_audit.md",
     "status": "completed"
   },
   {
-    "content": "Tests & Screenshots",
+    "content": "Phase 6: Alle Findings fixen",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 7: Verifikation + Regressionstest",
     "status": "completed"
   }
 ]

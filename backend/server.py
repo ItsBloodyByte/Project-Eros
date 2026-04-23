@@ -38,6 +38,7 @@ from auth import (
 from helpers import now_utc, public_user_from_doc, rounded_distance_km, haversine_km, serialize_doc, parse_dt, contains_link_like
 from image_compression import compress_image_data_url
 from moderation import moderate_image
+from rate_limit import rate_limiter, client_ip as _ratelimit_client_ip
 from models import (
     RegisterRequest,
     LoginRequest,
@@ -192,6 +193,9 @@ async def _require_user(payload: dict = Depends(get_current_user_payload)) -> di
         raise HTTPException(401, "User no longer exists")
     if user.get("banned"):
         raise HTTPException(403, "Account banned")
+    if user.get("deleted_at"):
+        # Soft-deleted / scheduled for deletion – refuse further use
+        raise HTTPException(403, "Account has been deleted")
     # Update last_active
     await db.users.update_one(
         {"id": user["id"]}, {"$set": {"last_active": now_utc().isoformat()}}
@@ -302,6 +306,10 @@ async def _flag_ip_minor(ip: Optional[str], hours: int = 48) -> None:
 
 @api_router.post("/auth/register", response_model=TokenResponse)
 async def register(body: RegisterRequest, request: "Request" = None):
+    # Rate-limit: 6 registrations per IP per hour, 3 per email/hour
+    _ip = _ratelimit_client_ip(request)
+    await rate_limiter.check(f"register:ip:{_ip}", capacity=6, window_seconds=3600)
+    await rate_limiter.check(f"register:email:{(body.email or '').lower()}", capacity=3, window_seconds=3600)
     # Age handling: birth_date is preferred; fall back to legacy `age`
     computed_age = _compute_age(body.birth_date) if body.birth_date else None
     effective_age = computed_age if computed_age is not None else body.age
@@ -424,7 +432,12 @@ async def register(body: RegisterRequest, request: "Request" = None):
 
 
 @api_router.post("/auth/login", response_model=TokenResponse)
-async def login(body: LoginRequest):
+async def login(body: LoginRequest, request: "Request" = None):
+    ip = _ratelimit_client_ip(request)
+    # IP-level: 10 attempts per 5 minutes
+    await rate_limiter.check(f"login:ip:{ip}", capacity=10, window_seconds=300)
+    # Email-level: 6 attempts per 5 minutes (slows targeted attacks even behind NATs)
+    await rate_limiter.check(f"login:email:{body.email.lower()}", capacity=6, window_seconds=300)
     doc = await db.users.find_one({"email": body.email.lower()})
     if not doc or not verify_password(body.password, doc["password_hash"]):
         raise HTTPException(401, "Invalid credentials")
@@ -432,7 +445,7 @@ async def login(body: LoginRequest):
         raise HTTPException(403, "Account banned")
     token = create_token(doc["id"], doc.get("role", "user"))
     await db.users.update_one({"id": doc["id"]}, {"$set": {"last_active": now_utc().isoformat()}})
-    await _audit(doc["id"], "login")
+    await _audit(doc["id"], "login", meta={"ip": ip})
     return TokenResponse(access_token=token, user=UserPublic(**public_user_from_doc(doc)))
 
 
@@ -510,10 +523,49 @@ async def update_mood(body: MoodUpdateRequest, user=Depends(_require_user)):
 
 
 # ---------- Photos ----------
+# ---------- Upload MIME allowlist ----------
+ALLOWED_IMAGE_MIMES = {
+    "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif",
+}
+ALLOWED_VIDEO_MIMES = {
+    "video/mp4", "video/webm", "video/ogg", "video/quicktime",
+}
+
+
+def _data_url_mime(data_url: str) -> Optional[str]:
+    """Extract the declared MIME type from a data URL header. None if malformed."""
+    if not data_url or not data_url.startswith("data:"):
+        return None
+    try:
+        head, _ = data_url.split(",", 1)
+        # e.g. 'data:image/jpeg;base64'
+        meta = head[5:]  # strip 'data:'
+        mime = meta.split(";", 1)[0].strip().lower()
+        return mime or None
+    except Exception:
+        return None
+
+
+def _reject_if_bad_image_mime(data_url: str) -> str:
+    mime = _data_url_mime(data_url) or ""
+    if mime not in ALLOWED_IMAGE_MIMES:
+        # Explicitly block SVG (XSS) and other non-raster content
+        raise HTTPException(400, f"Unerlaubter Bildtyp: {mime or 'unbekannt'}. Erlaubt: JPEG, PNG, WebP, HEIC, HEIF, GIF.")
+    return mime
+
+
+def _reject_if_bad_video_mime(data_url: str) -> str:
+    mime = _data_url_mime(data_url) or ""
+    if mime not in ALLOWED_VIDEO_MIMES:
+        raise HTTPException(400, f"Unerlaubter Videotyp: {mime or 'unbekannt'}. Erlaubt: MP4, WebM, OGG, MOV.")
+    return mime
+
+
 @api_router.post("/me/photos")
 async def upload_photo(body: PhotoUploadRequest, user=Depends(_require_user)):
     if not body.data_url.startswith("data:image/"):
         raise HTTPException(400, "Invalid image data URL")
+    _reject_if_bad_image_mime(body.data_url)
     # Basic size guard: base64 chars. ~1.37x raw. Limit ~8MB raw.
     if len(body.data_url) > 11_000_000:
         raise HTTPException(413, "Image too large (max ~8MB)")
@@ -1134,6 +1186,7 @@ async def send_message(body: SendMessageRequest, user=Depends(_require_user)):
     if body.media_data_url:
         if not body.media_data_url.startswith("data:image/"):
             raise HTTPException(400, "Only image media supported in MVP")
+        _reject_if_bad_image_mime(body.media_data_url)
         mod = await moderate_image(body.media_data_url, session_tag="msg-media")
         nsfw_score = mod["nsfw_score"]
     msg = {
@@ -1259,7 +1312,12 @@ async def _post_system_message(match_id: str, sender_user: dict, text: str,
 
 
 @api_router.post("/acquaintances/request")
-async def request_acquaintance(body: AcquaintanceRequestBody, user=Depends(_require_user)):
+async def request_acquaintance(body: AcquaintanceRequestBody,
+                               request: "Request" = None,
+                               user=Depends(_require_user)):
+    # Anti-spam: 20 requests per user per day, 5 per minute
+    await rate_limiter.check(f"acq:user:{user['id']}:min", capacity=5, window_seconds=60)
+    await rate_limiter.check(f"acq:user:{user['id']}:day", capacity=20, window_seconds=86400)
     """
     Mark another user as personally known. Creates a pending acquaintance
     record and posts a special chat message in the pair's conversation with
@@ -1463,8 +1521,22 @@ async def ws_chat(websocket: WebSocket, match_id: str, token: str = Query(...)):
         await websocket.close(code=4401)
         return
     user_id = payload["sub"]
+    # Re-check user is alive + not banned / deleted (JWT alone is insufficient)
+    user_doc = await db.users.find_one({"id": user_id})
+    if not user_doc or user_doc.get("banned") or user_doc.get("deleted_at"):
+        await websocket.close(code=4403)
+        return
     m = await db.matches.find_one({"id": match_id})
-    if not m or user_id not in (m["user_a"], m["user_b"]):
+    if not m:
+        await websocket.close(code=4403)
+        return
+    # Allow the user themselves OR their linked duo-partner to join
+    participants = {m.get("user_a"), m.get("user_b")}
+    allowed_ids = {user_id}
+    partner_id = user_doc.get("partner_user_id")
+    if partner_id:
+        allowed_ids.add(partner_id)
+    if not (allowed_ids & participants):
         await websocket.close(code=4403)
         return
     await ws_manager.connect(match_id, user_id, websocket)
@@ -2254,10 +2326,12 @@ async def add_album_photo(album_id: str, body: PhotoUploadRequest, user=Depends(
         raise HTTPException(404, "Album not found")
     if not body.data_url.startswith("data:image/"):
         raise HTTPException(400, "Invalid image data URL")
-    mod = await moderate_image(body.data_url, session_tag=f"album-{album_id}")
+    _reject_if_bad_image_mime(body.data_url)
+    compressed, _ = compress_image_data_url(body.data_url)
+    mod = await moderate_image(compressed, session_tag=f"album-{album_id}")
     photo = {
         "id": str(uuid.uuid4()),
-        "data": body.data_url,
+        "data": compressed,
         "nsfw_score": mod["nsfw_score"],
         "has_face": mod["has_face"],
         "category": mod["category"],
@@ -2968,14 +3042,15 @@ async def gdpr_delete(user=Depends(_require_user)):
 # =====================================================================
 # Phase 3: Email verification, MFA, Videos, Premium+Boost, Events, Roles
 # =====================================================================
-import random
+import secrets as _secrets_module
 import pyotp  # noqa: E402
 
 
 # --------- Email verification (in-app code) ---------
 @api_router.post("/auth/email/send-code")
 async def send_email_code(user=Depends(_require_user)):
-    code = f"{random.randint(0, 999999):06d}"
+    # Cryptographically secure 6-digit code (uniform distribution)
+    code = f"{_secrets_module.randbelow(1_000_000):06d}"
     await db.users.update_one(
         {"id": user["id"]},
         {"$set": {
@@ -3055,7 +3130,10 @@ async def mfa_disable(body: MfaDisableRequest, user=Depends(_require_user)):
 
 
 @api_router.post("/auth/login-mfa", response_model=TokenResponse)
-async def login_mfa(body: LoginMfaRequest):
+async def login_mfa(body: LoginMfaRequest, request: "Request" = None):
+    ip = _ratelimit_client_ip(request)
+    await rate_limiter.check(f"login-mfa:ip:{ip}", capacity=10, window_seconds=300)
+    await rate_limiter.check(f"login-mfa:email:{body.email.lower()}", capacity=6, window_seconds=300)
     doc = await db.users.find_one({"email": body.email.lower()})
     if not doc or not verify_password(body.password, doc["password_hash"]):
         raise HTTPException(401, "Invalid credentials")
@@ -3077,6 +3155,7 @@ async def login_mfa(body: LoginMfaRequest):
 async def upload_video(body: VideoUploadRequest, user=Depends(_require_user)):
     if not body.data_url.startswith("data:video/"):
         raise HTTPException(400, "Invalid video data URL (expected data:video/...)")
+    _reject_if_bad_video_mime(body.data_url)
     # Size guard ~30MB raw
     if len(body.data_url) > 42_000_000:
         raise HTTPException(413, "Video too large (max ~30MB)")
@@ -4553,6 +4632,46 @@ import re as _re_blog
 
 BLOG_ALLOWED_STATUSES = {"draft", "published", "archived"}
 
+# --- Blog HTML sanitization (prevents stored XSS via admin-authored content) ---
+import bleach as _bleach  # runtime optional – installed via requirements
+
+_BLOG_ALLOWED_TAGS = [
+    "p", "br", "strong", "em", "u", "s", "blockquote", "code", "pre",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "ul", "ol", "li",
+    "a", "img", "figure", "figcaption",
+    "table", "thead", "tbody", "tr", "th", "td",
+    "hr",
+]
+_BLOG_ALLOWED_ATTRS = {
+    "a": ["href", "title", "rel", "target"],
+    "img": ["src", "alt", "title", "width", "height"],
+    "*": ["class"],
+}
+_BLOG_ALLOWED_PROTOCOLS = ["http", "https", "mailto", "data"]
+
+
+def _sanitize_blog_html(html: str) -> str:
+    """Strip all script / event-handler / javascript: content from editor
+    HTML. Allowlist based, so novel vectors are blocked by default. Images
+    may still be data-URLs (used by the TipTap image upload flow)."""
+    if not html:
+        return ""
+    cleaned = _bleach.clean(
+        html,
+        tags=_BLOG_ALLOWED_TAGS,
+        attributes=_BLOG_ALLOWED_ATTRS,
+        protocols=_BLOG_ALLOWED_PROTOCOLS,
+        strip=True,
+        strip_comments=True,
+    )
+    # Force rel="noopener noreferrer" on external links to prevent tabnabbing
+    cleaned = _bleach.linkifier.Linker(
+        callbacks=[_bleach.callbacks.nofollow, _bleach.callbacks.target_blank],
+        skip_tags=["pre", "code"],
+    ).linkify(cleaned)
+    return cleaned
+
 
 def _slugify(s: str) -> str:
     s = (s or "").strip().lower()
@@ -4659,6 +4778,7 @@ async def admin_create_blog_post(payload: dict, user=Depends(_require_user)):
     content_html = payload.get("content_html") or ""
     if len(content_html) > 200000:
         raise HTTPException(400, "Inhalt zu groß (max. 200KB)")
+    content_html = _sanitize_blog_html(content_html)
     slug = _slugify(payload.get("slug") or title)
     # Ensure unique slug
     base = slug
@@ -4708,6 +4828,7 @@ async def admin_update_blog_post(post_id: str, payload: dict, user=Depends(_requ
         html = payload["content_html"] or ""
         if len(html) > 200000:
             raise HTTPException(400, "Inhalt zu groß")
+        html = _sanitize_blog_html(html)
         updates["content_html"] = html
         updates["reading_minutes"] = _blog_reading_time(html)
     if "cover_image" in payload:
@@ -5018,15 +5139,48 @@ async def update_persona_b(payload: dict, user=Depends(_require_user)):
 # ---------- Wire ----------
 app.include_router(api_router)
 
+# CORS: if credentials are allowed, wildcard origins are insecure. Require
+# an explicit allowlist (comma-separated) via the CORS_ORIGINS env var.
+_cors_raw = os.environ.get("CORS_ORIGINS", "*").strip()
+_cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+_cors_wildcard = (len(_cors_origins) == 1 and _cors_origins[0] == "*")
+# When wildcard is requested with credentials, browsers will reject anyway.
+# We default to credentials=False on wildcard to eliminate the config smell.
+_cors_allow_credentials = not _cors_wildcard
+
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=_cors_allow_credentials,
+    allow_origins=_cors_origins,
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept"],
+    expose_headers=["Content-Encoding", "Content-Length"],
+    max_age=600,
 )
 
 # Transparent response compression: negotiates gzip with clients that send
 # Accept-Encoding: gzip. Huge wire-size reduction on JSON payloads that embed
 # base64 image data (discover, matches, /me, etc.).
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """
+    Adds baseline security response headers on every request:
+    - nosniff: stop MIME sniffing that enables XSS via bad Content-Type
+    - frame-deny: stops clickjacking embedding
+    - referrer-policy: limits leakage to external sites
+    - permissions-policy: disables unused device APIs by default
+    Left CSP intentionally loose for now (CRA + data: photos) — hardening
+    later via report-only first.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "geolocation=(self), camera=(self), microphone=(self), payment=(), usb=()",
+    )
+    return response
