@@ -8,6 +8,7 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Slider } from "../components/ui/slider";
+import { RELATIONSHIP_STATUSES } from "../components/RelationshipStatusBadge";
 import { toast } from "sonner";
 import {
   GENDERS, ORIENTATIONS, RELATIONSHIP_TYPES, SEEKING_ROLES,
@@ -63,6 +64,7 @@ export default function MyProfilePage() {
       cup_size: user.cup_size || "",
       penis_length_cm: user.penis_length_cm || "",
       penis_girth_cm: user.penis_girth_cm || "",
+      relationship_status: user.relationship_status || "not_specified",
     });
   }, [user]);
 
@@ -105,6 +107,10 @@ export default function MyProfilePage() {
         cup_size: form.cup_size || undefined,
         penis_length_cm: form.penis_length_cm ? Number(form.penis_length_cm) : undefined,
         penis_girth_cm: form.penis_girth_cm ? Number(form.penis_girth_cm) : undefined,
+        // Beziehungsstatus – null räumt das Feld wieder ab
+        relationship_status: form.relationship_status && form.relationship_status !== "not_specified"
+          ? form.relationship_status
+          : null,
       };
       await api.patch("/me", payload);
       await refresh();
@@ -407,6 +413,25 @@ export default function MyProfilePage() {
                   <SelectTrigger><SelectValue placeholder={t("profile.select")} /></SelectTrigger>
                   <SelectContent>{ORIENTATIONS.map((o) => <SelectItem key={o} value={o}>{t(`orientations.${o}`)}</SelectItem>)}</SelectContent>
                 </Select>
+              </div>
+              <div className="col-span-2">
+                <Label>Beziehungsstatus</Label>
+                <Select
+                  value={form.relationship_status || "not_specified"}
+                  onValueChange={(v) => setForm({ ...form, relationship_status: v })}
+                >
+                  <SelectTrigger data-testid="profile-relationship-status-select">
+                    <SelectValue placeholder="Beziehungsstatus wählen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RELATIONSHIP_STATUSES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
+                  Wird im Profil als normales Info-Feld angezeigt. „Keine Angabe" blendet es komplett aus.
+                </div>
               </div>
               <div className="col-span-2"><Label>{t("profile.bio")}</Label><Textarea rows={4} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} /></div>
             </div>

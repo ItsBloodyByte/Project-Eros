@@ -19,7 +19,7 @@ import { useTranslation } from "react-i18next";
 import { RoleBadge } from "../components/RoleBadge";
 import { PersonDetails } from "../components/PersonDetails";
 import { MoodBadge } from "../components/MoodBadge";
-import { RelationshipStatusBadge } from "../components/RelationshipStatusBadge";
+import { getRelationshipStatusMeta } from "../components/RelationshipStatusBadge";
 import { AcquaintancesSection } from "../components/AcquaintancesSection";
 
 function Row({ label, value }) {
@@ -231,9 +231,6 @@ export default function ProfileViewPage() {
                     {profile.current_mood && (
                       <MoodBadge mood={profile.current_mood} size="md" testid="profile-mood-badge" />
                     )}
-                    {profile.relationship_status && profile.relationship_status !== "not_specified" && (
-                      <RelationshipStatusBadge value={profile.relationship_status} />
-                    )}
                     {(profile.partner || (profile.account_type === "duo" && profile.persona_b)) && (
                       <Badge className="gap-1 bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] ring-1 ring-[hsl(var(--accent))]/40" data-testid="profile-couple-badge">
                         Paar
@@ -264,6 +261,21 @@ export default function ProfileViewPage() {
                   )}
                   {profile.is_online && <span className="inline-flex items-center gap-1"><span className="online-dot" /> {t("profile.online")}</span>}
                 </div>
+
+                {/* Beziehungsstatus als reguläres Info-Feld */}
+                {profile.relationship_status && profile.relationship_status !== "not_specified" && (() => {
+                  const meta = getRelationshipStatusMeta(profile.relationship_status);
+                  const Icon = meta.icon;
+                  return (
+                    <div
+                      className="mt-2 flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]"
+                      data-testid={`profile-relationship-status-${meta.value}`}
+                    >
+                      <Icon className="h-4 w-4 text-[hsl(var(--accent))]" />
+                      <span>Beziehungsstatus: <strong className="text-[hsl(var(--foreground))]">{meta.label}</strong></span>
+                    </div>
+                  );
+                })()}
                 {profile.bio && <p className="mt-3 text-sm leading-relaxed">{profile.bio}</p>}
 
                 {/* Körper & Life-Style + Kinks (always visible, even if empty) */}
