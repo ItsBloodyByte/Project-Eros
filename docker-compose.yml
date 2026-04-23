@@ -26,7 +26,7 @@
 #  persistiert, damit Sessions Restarts überleben. Für Produktion in
 #  einer `.env` explizit setzen (siehe .env.example).
 #
-#  App erreichbar unter:  http://localhost:8080  (über FRONTEND_HOST_PORT anpassbar)
+#  App erreichbar unter:  http://localhost:8585  (über FRONTEND_HOST_PORT anpassbar)
 # =====================================================================
 
 services:
@@ -106,7 +106,7 @@ services:
       # /data/jwt_secret.key ab – JWT-Sessions überleben Restarts.
       JWT_SECRET: "${JWT_SECRET:-}"
       EROS_DATA_DIR: "/data"
-      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:8080}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:8585}"
       EMERGENT_LLM_KEY: "${EMERGENT_LLM_KEY:-}"
       STRIPE_API_KEY: "${STRIPE_API_KEY:-}"
       PYTHONUNBUFFERED: "1"
@@ -142,10 +142,16 @@ services:
         WORKDIR /app
         ARG REACT_APP_BACKEND_URL=""
         ENV REACT_APP_BACKEND_URL=$${REACT_APP_BACKEND_URL}
-        COPY --from=fetch /src/frontend/package.json /src/frontend/yarn.lock ./
-        RUN corepack enable && yarn install --frozen-lockfile --network-timeout 120000
+        # Komplettes Frontend-Verzeichnis rüberkopieren (yarn.lock ist im Repo
+        # optional; bei Abwesenheit löst Yarn frisch auf).
         COPY --from=fetch /src/frontend/ ./
-        RUN yarn build
+        RUN corepack enable && \
+            if [ -f yarn.lock ]; then \
+                yarn install --frozen-lockfile --network-timeout 120000; \
+            else \
+                yarn install --network-timeout 120000; \
+            fi && \
+            yarn build
 
         # ---- Runtime: nginx serviert das Bundle + proxyt /api ----
         FROM nginx:1.27-alpine
@@ -159,7 +165,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "${FRONTEND_HOST_PORT:-8080}:80"
+      - "${FRONTEND_HOST_PORT:-8585}:80"
     networks:
       - eros_net
 

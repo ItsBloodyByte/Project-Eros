@@ -18,7 +18,7 @@ Das Backend erzeugt beim ersten Start automatisch ein starkes `JWT_SECRET`
 und persistiert es im Docker-Volume `backend_data` unter
 `/data/jwt_secret.key` – Sessions überleben damit Restarts. Mongo läuft
 mit den Default-Credentials aus der YAML. Danach direkt
-`http://localhost:8080` aufrufen.
+`http://localhost:8585` aufrufen.
 
 > Für Produktion solltest du trotzdem `.env` mit eigenen Secrets anlegen
 > (siehe Abschnitt 2). Die Default-Credentials sind **nur für lokales
@@ -33,7 +33,7 @@ generiertem `JWT_SECRET` und Mongo-Passwort an und startet die Stacks:
 bash <(curl -fsSL https://raw.githubusercontent.com/itsbloodybyte/project-eros/main/bootstrap.sh)
 ```
 
-Danach direkt `http://localhost:8080` aufrufen. Wer lieber manuell
+Danach direkt `http://localhost:8585` aufrufen. Wer lieber manuell
 vorgeht, nutzt die Schritte unten.
 
 ## 1. docker-compose.yml und .env.example laden
@@ -68,8 +68,8 @@ Pflicht-Variablen (nur für Produktion nötig – bei lokalem Testen werden sie 
 | `MONGO_INITDB_ROOT_USERNAME` | Mongo Root-User | `eros` |
 | `MONGO_INITDB_ROOT_PASSWORD` | Mongo Root-Passwort | `eros-mongo-change-me` |
 | `MONGO_DB_NAME` | App-Datenbank | `eros` |
-| `CORS_ORIGINS` | Browser-Origins, die die API aufrufen dürfen | `http://localhost:8080` |
-| `FRONTEND_HOST_PORT` | Port auf dem Host | `8080` |
+| `CORS_ORIGINS` | Browser-Origins, die die API aufrufen dürfen | `http://localhost:8585` |
+| `FRONTEND_HOST_PORT` | Port auf dem Host | `8585` |
 
 Git-Quelle (optional überschreibbar):
 
@@ -99,7 +99,7 @@ Beim ersten Start:
 * Backend `on_event('startup')` sorgt für alle Mongo-Indizes.
 * Frontend produziert ein statisches CRA-Bundle, nginx serviert es auf `:80`.
 
-Aufrufen: **http://localhost:8080** – neuen Account registrieren, fertig.
+Aufrufen: **http://localhost:8585** – neuen Account registrieren, fertig.
 
 ## 4. Updates aus dem Repo ziehen
 

@@ -58,5 +58,5 @@ fi
 say "Starte docker compose up --build -d ..."
 docker compose up --build -d
 
-say "Fertig. App erreichbar unter: http://localhost:$(grep -E '^FRONTEND_HOST_PORT=' .env | cut -d= -f2 2>/dev/null || echo 8080)"
+say "Fertig. App erreichbar unter: http://localhost:$(grep -E '^FRONTEND_HOST_PORT=' .env | cut -d= -f2 2>/dev/null || echo 8585)"
 say "Logs live verfolgen:  docker compose logs -f backend"
