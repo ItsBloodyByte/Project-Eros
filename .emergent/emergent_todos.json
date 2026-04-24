@@ -1,22 +1,22 @@
 [
   {
-    "content": "PersonaBScreen erweitern: Kinks, Lifestyle, Sprachen, Interessen, Ethnizität, STI, Cup-/Penis-Size (konditional)",
+    "content": "Refactor Schritt 2a: payments.py + webhooks.py extrahiert",
     "status": "completed"
   },
   {
-    "content": "EditProfileScreen: Foto-Upload Moderation-Feedback (NSFW-Score, Face-Status, Thumbnail-Anzeige, Blur-Hinweis)",
+    "content": "Refactor Schritt 2b: admin.py extrahiert (52 Routes, 1395 LOC)",
     "status": "completed"
   },
   {
-    "content": "Mobile-Syntax-Check (esbuild) + Services laufen",
+    "content": "Regression-Tests iteration_11: 100% pass",
     "status": "completed"
   },
   {
-    "content": "Refactor Schritt 1: legal.py, blog.py, couples.py aus server.py extrahiert",
-    "status": "completed"
+    "content": "Refactor Schritt 3: me.py, discover.py, matches_chat.py extrahieren",
+    "status": "in_progress"
   },
   {
-    "content": "Regression-Tests via testing_agent: 20/21 passed (nur Rate-Limit 429 beim Test-Login)",
-    "status": "completed"
+    "content": "Task 2 (P1): Payments Production Hardening",
+    "status": "pending"
   }
 ]
