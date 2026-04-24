@@ -4,6 +4,7 @@ import {
 } from "react-native";
 import { api } from "../api";
 import { colors, radii, spacing } from "../theme";
+import { GAY_POSITIONS, isGayMaleLike, MASCULINE_GENDERS } from "../demographics";
 
 const GENDERS = ["female", "male", "non_binary", "trans_female", "trans_male", "other"];
 const GENDER_LABELS = {
@@ -11,10 +12,28 @@ const GENDER_LABELS = {
   trans_female: "Trans Frau", trans_male: "Trans Mann", other: "Andere",
 };
 
-export default function DiscoverFilterDrawer({ visible, onClose, onApplied }) {
+/** Map mobile gender values → backend gender_identity codes used by the
+ * `is_gay_male_like` rule. The mobile picker uses slightly different keys
+ * (`male`, `trans_male`) than the backend (`man`, `trans_man`) because the
+ * seeking picker was extended before the profile model was unified. We map
+ * here to stay consistent with backend demographic gating. */
+function mobileSeekToBackendGender(g) {
+  if (g === "male") return "man";
+  if (g === "trans_male") return "trans_man";
+  if (g === "female") return "woman";
+  if (g === "trans_female") return "trans_woman";
+  if (g === "non_binary") return "nonbinary";
+  return g;
+}
+function seekingIncludesMen(seek) {
+  return (seek || []).map(mobileSeekToBackendGender).some((g) => MASCULINE_GENDERS.has(g));
+}
+
+export default function DiscoverFilterDrawer({ visible, onClose, onApplied, viewer }) {
   const [prefs, setPrefs] = useState({
     age_min: 18, age_max: 99, radius_km: 50,
     seeking_genders: [], only_with_photos: true, only_face_photo: false, only_verified: false,
+    hide_nsfw_profiles: false, gay_positions: [],
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,6 +51,8 @@ export default function DiscoverFilterDrawer({ visible, onClose, onApplied }) {
         only_with_photos: p.only_with_photos ?? true,
         only_face_photo: p.only_face_photo ?? false,
         only_verified: p.only_verified ?? false,
+        hide_nsfw_profiles: !!p.hide_nsfw_profiles,
+        gay_positions: Array.isArray(p.gay_positions) ? p.gay_positions : [],
       });
     } catch {}
     finally { setLoading(false); }
@@ -117,7 +138,41 @@ export default function DiscoverFilterDrawer({ visible, onClose, onApplied }) {
                   <ToggleRow label="Nur mit Foto" value={prefs.only_with_photos} onValueChange={(v) => setPrefs((s) => ({ ...s, only_with_photos: v }))} />
                   <ToggleRow label="Nur mit Gesicht auf Foto" value={prefs.only_face_photo} onValueChange={(v) => setPrefs((s) => ({ ...s, only_face_photo: v }))} />
                   <ToggleRow label="Nur verifiziert" value={prefs.only_verified} onValueChange={(v) => setPrefs((s) => ({ ...s, only_verified: v }))} />
+                  <ToggleRow
+                    label="NSFW-Profile ausblenden"
+                    value={prefs.hide_nsfw_profiles}
+                    onValueChange={(v) => setPrefs((s) => ({ ...s, hide_nsfw_profiles: v }))}
+                  />
                 </View>
+
+                {isGayMaleLike(viewer) && seekingIncludesMen(prefs.seeking_genders) && (
+                  <View testID="filter-gay-positions-section">
+                    <Text style={styles.section}>Position</Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                      {GAY_POSITIONS.filter((p) => p.value !== "prefer_not_say").map((p) => {
+                        const active = prefs.gay_positions.includes(p.value);
+                        return (
+                          <TouchableOpacity
+                            key={p.value}
+                            style={[styles.chip, active && styles.chipActive]}
+                            onPress={() => setPrefs((s) => ({
+                              ...s,
+                              gay_positions: active
+                                ? s.gay_positions.filter((x) => x !== p.value)
+                                : [...s.gay_positions, p.value],
+                            }))}
+                            testID={`filter-gay-position-${p.value}`}
+                          >
+                            <Text style={[styles.chipText, active && styles.chipTextActive]}>{p.label}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    <Text style={styles.helpText}>
+                      Nur sichtbar für gleichgeschlechtlich-männlich suchende Accounts.
+                    </Text>
+                  </View>
+                )}
               </>
             )}
           </ScrollView>
@@ -159,6 +214,7 @@ const styles = StyleSheet.create({
   chipText: { color: colors.text, fontSize: 12, fontWeight: "600" },
   chipTextActive: { color: colors.bg },
   toggleRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8 },
+  helpText: { color: colors.textMuted, fontSize: 11, marginTop: 6, lineHeight: 15 },
   footer: { flexDirection: "row", gap: 8, padding: spacing(4), borderTopWidth: 1, borderTopColor: colors.border },
   btn: { flex: 1, backgroundColor: colors.accent, borderRadius: radii.pill, paddingVertical: 12, alignItems: "center" },
   btnGhost: { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border },

@@ -5,8 +5,10 @@ import {
 import { api } from "../api";
 import { colors, radii, spacing } from "../theme";
 import DiscoverFilterDrawer from "../components/DiscoverFilterDrawer";
+import { useAuth } from "../AuthContext";
 
 export default function DiscoverScreen({ navigation }) {
+  const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -71,6 +73,7 @@ export default function DiscoverScreen({ navigation }) {
         visible={filterOpen}
         onClose={() => setFilterOpen(false)}
         onApplied={load}
+        viewer={user}
       />
     </View>
   );

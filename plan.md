@@ -228,7 +228,7 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 
 ### Phase 7.2 — Linked Couple (Two-Login Paarprofil mit Bestätigung)
 **Ziel (erfüllt):**
-- Zwei Accounts werden über **gegenseitige Bestätigung** verknüpft, jeder behält seine Logindaten.
+- Zwei Accounts werden über **gegenseitige Bestätigung** verknüpft, jeder behält seine Login-Daten.
 
 **Umsetzung (Delivered):**
 - Backend:
@@ -283,7 +283,7 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 ---
 
 ## Phase 8 — Produktion/Deployment, Legal Pages, Payments (PayPal/Klarna) & Mobile Iteration 2
-Diese Phase bündelt die zuletzt in Session 7 umgesetzten produktionsnahen Arbeiten (Docker/Synology, Auto-Updater, Legal, Payment UI) und den nächsten Mobile-Paritätsschritt.
+Diese Phase bündelt die zuletzt umgesetzten produktionsnahen Arbeiten (Docker/Synology, Auto-Updater, Legal, Payment UI) und den Mobile-Paritätsschritt.
 
 ### Phase 8.1 — Robuster Docker-Compose Prod-Setup (Synology)
 **Ziel (erfüllt):**
@@ -351,6 +351,94 @@ Diese Phase bündelt die zuletzt in Session 7 umgesetzten produktionsnahen Arbei
 
 ---
 
+## Phase 9 — UX-Fixes + Conditional Filters + Mobile Parität (NSFW / Gay Position)
+Diese Phase bündelt drei zusammenhängende Produktpunkte:
+1) **UX-Bugfix** für Range-Slider (fehlender zweiter Griff).
+2) **Kontextabhängige Filterfelder** nach Zielgruppe/Orientierung (z. B. Cup-Size bei Gay-/Männer-only-Searching ausblenden).
+3) **Mobile Parität**: neue Profilfelder (NSFW-Präferenz & Gay Position) und passende Discover-Filter im React Native Client.
+
+### Phase 9.1 — Web: Slider-Bugfix (Range-Thumb)
+**Umsetzung (Delivered):**
+- Fix in `/app/frontend/src/components/ui/slider.jsx`:
+  - Rendert jetzt dynamisch **N** `SliderPrimitive.Thumb` basierend auf `value.length` (oder `defaultValue.length`).
+  - Fallback: 1 Thumb.
+  - Zusätzliche `data-testid="slider-thumb-{i}"` für UI-Checks.
+
+**Verifikation:**
+- `/me` (Einstellungen) → Altersspanne zeigt **zwei Handles**.
+- Discover FilterDrawer → Altersspanne zeigt **zwei Handles**.
+
+**Status:** Abgeschlossen.
+
+### Phase 9.2 — Web: Conditional Filterfelder nach Seeking/Orientierung
+**Umsetzung (Delivered):**
+- Anpassung `/app/frontend/src/components/FilterDrawer.js`:
+  - Helpers `seeksWomen(seeking_genders)` / `seeksMen(seeking_genders)`:
+    - Wenn keine `seeking_genders` gesetzt sind → beide sichtbar (Onboarding/Erstnutzerfreundlich).
+    - Neutral/NB/Other zählt zu beiden (so bleibt die UI inklusiv).
+  - Cup-Filter (`CUP_SIZES`) nur wenn `seeksWomen(...)` true (`data-testid="filter-cup-sizes"`).
+  - Penis-Filter (`PENIS_CATEGORIES`) nur wenn `seeksMen(...)` true (`data-testid="filter-penis-categories"`).
+
+**Verifikation:**
+- Nur „Mann“ gewählt → Cup ausgeblendet, Penis sichtbar.
+- Nur „Frau“ gewählt → Cup sichtbar, Penis ausgeblendet.
+
+**Status:** Abgeschlossen.
+
+### Phase 9.3 — Web: NSFW Hide-Toggle + Gay-Position Filter
+**Umsetzung (Delivered):**
+- `/app/frontend/src/components/FilterDrawer.js`:
+  - Neuer Switch: `hide_nsfw_profiles` ("NSFW-Profile ausblenden").
+  - Neuer Multi-Select: `gay_positions` (Chips) in der Body-Sektion.
+  - Anzeige-Gate für `gay_positions`:
+    - Nur für Viewer, die `isGayMaleLike({gender_identity, orientation})` erfüllen **und** Männer suchen.
+  - `reset()` + `activeCount` um `hide_nsfw_profiles` und `gay_positions` erweitert.
+
+**Status:** Abgeschlossen.
+
+### Phase 9.4 — Mobile: Shared Demographic Helper + Profilbearbeitung
+**Umsetzung (Delivered):**
+- Neue Datei `/app/mobile/src/demographics.js`:
+  - `isGayMaleLike(user)` (konform zu `/app/backend/helpers.py`).
+  - `GAY_POSITIONS` + `NSFW_OPTIONS`.
+  - `nsfwToValue()` / `valueToNsfw()`.
+- Update `/app/mobile/src/screens/EditProfileScreen.js`:
+  - Lädt `accept_nsfw` und `gay_position` aus `/me`.
+  - Neue UI-Sektion „Präferenzen & Sichtbarkeit“:
+    - NSFW (Chips: Keine Angabe / Offen / Nur SFW) — immer sichtbar.
+    - Gay Position — **nur** für `isGayMaleLike(user)`.
+  - Save sendet `accept_nsfw` immer; `gay_position` nur konditional.
+
+**Status:** Abgeschlossen.
+
+### Phase 9.5 — Mobile: DiscoverFilterDrawer + DiscoverScreen
+**Umsetzung (Delivered):**
+- Update `/app/mobile/src/components/DiscoverFilterDrawer.js`:
+  - Neue Prefs: `hide_nsfw_profiles`, `gay_positions`.
+  - Toggle „NSFW-Profile ausblenden“.
+  - Position-Chips nur für gay-male-like Viewer der Männer sucht.
+  - Mapping der mobilen Seeking-Gender Keys → Backend Keys (z. B. `male→man`, `trans_male→trans_man`) für das Gate.
+  - Neuer Prop: `viewer`.
+- Update `/app/mobile/src/screens/DiscoverScreen.js`:
+  - Übergibt `viewer={user}` via `useAuth()`.
+
+**Status:** Abgeschlossen.
+
+### Phase 9.6 — Testing / Abnahme
+**Ergebnisse:**
+- Web: Screenshot-Verifikation zeigt zwei Handles am Alters-Slider (Bug behoben).
+- Web: Conditional Cup/Penis Filter verifiziert (über DOM Counts + Screenshot).
+- Mobile: `esbuild` Syntax-/Bundle-Check für:
+  - `EditProfileScreen.js`
+  - `DiscoverFilterDrawer.js`
+  - `DiscoverScreen.js`
+  - `demographics.js`
+  → erfolgreich.
+
+**Status:** Abgeschlossen.
+
+---
+
 ## Offene Issues / Risiken
 ### Issue 1: Session persistence UX issue (Recurring)
 - Status: behoben/abgemildert.
@@ -365,13 +453,17 @@ Diese Phase bündelt die zuletzt in Session 7 umgesetzten produktionsnahen Arbei
 - Risiko: Wartbarkeit.
 - Empfehlung: Router-Split (`routers/auth.py`, `routers/payments.py`, `routers/legal.py`, `routers/admin.py`, `routers/blog.py` …).
 
+### Issue 5: Range-Slider Handle fehlt (Web)
+- Ursache: Slider-UI rendert nur 1 `Thumb` (Radix Range benötigt 2).
+- Status: **Behoben** in Phase 9.1.
+
 ---
 
 ## Nächste Schritte (Upcoming Tasks)
-### Task 1 (P1): Broadcast-Historie für Nutzer:innen im Konto-Bereich
-**Ziel:** Nutzer:innen können offizielle System-Broadcasts („Eros“) im Konto-Bereich nachträglich einsehen und filtern.
+### Task 1 (P1): Mobile: Report-Flows
+**Ziel:** Nutzer:innen können Profil/Foto/Nachricht aus der Mobile App melden.
 
-**Status:** Bereits geliefert (BroadcastHistory im Web). Mobile-Parität noch optional.
+**Status:** Offen.
 
 ### Task 2 (P1): Payments – Admin-Konfig & Production Hardening
 **Ziel:** Payment Provider Credentials & Webhooks sauber produktionsreif betreiben.
@@ -381,7 +473,7 @@ Diese Phase bündelt die zuletzt in Session 7 umgesetzten produktionsnahen Arbei
 - Webhook/Return Härtung: Retry/Idempotenz auf Transaktionen.
 - Klarna: Echte Confirmation/Return URLs (konfiguriertes `EROS_PUBLIC_URL`) und ggf. Order-Management.
 
-**Status:** Offen (Produktions-Härtung).
+**Status:** Offen.
 
 ### Task 3 (P2): Mobile Voll-Parität (Option C) — Re-sync `/app/mobile`
 **Ziel:** Vollständige Feature- und UX-Parität mit Web.
@@ -390,7 +482,7 @@ Diese Phase bündelt die zuletzt in Session 7 umgesetzten produktionsnahen Arbei
 - Iterativ, API bleibt identisch, Mobile implementiert Clients/Views.
 - Paare/Couples sind First-Class (Linked Couples + Duo Account) inkl. Chat-Identität pro Nachricht.
 
-**Iterationen (aktualisiert um aktuellen Stand):**
+**Iterationen (aktualisiert):**
 1. **Iteration 1 — Core Client + Couples Foundations (DONE)**
    - Auth: Login + **Register inkl. Duo-Option**
    - Navigation: Bottom Tabs (Discover/Matches/Account) + Stack (Profile/Chat)
@@ -411,14 +503,14 @@ Diese Phase bündelt die zuletzt in Session 7 umgesetzten produktionsnahen Arbei
 
    **Status:** Abgeschlossen.
 
-3. **Iteration 3 — Filters + Media Uploads + Profile Editing (OPEN)**
-   - Filter UI (Quick Filter Bar / Drawer) + Premium-gated advanced filters
+3. **Iteration 3 — Filters + Media Uploads + Profile Editing (IN PROGRESS)**
+   - Filter UI (Drawer) + Premium-gated advanced filters
    - Foto-Upload (inkl. Moderation/Blur Handling) + Profilbearbeitung
    - Persona-B Editing (mobile) für Duo Accounts
    - Stealth Toggle, Visitors/Views parity (inkl. Incognito)
    - Video Upload UI (Premium gate: max 4, 60s, 1080p)
 
-   **Status:** Offen.
+   **Status:** Teilumfang geliefert durch **Phase 9** (NSFW/Gay-Position + Conditional Filter). Rest offen.
 
 4. **Iteration 4 — Broadcast Inbox + Notifications + Settings (OPEN)**
    - Broadcast-Historie im Konto + mobile parity
@@ -434,7 +526,7 @@ Diese Phase bündelt die zuletzt in Session 7 umgesetzten produktionsnahen Arbei
 
 6. **Iteration 6 — Optional: Admin Panel auf Mobile (Optional)**
 
-**Status:** In Umsetzung (Iteration 1–2 fertig; weitere Iterationen offen).
+**Status:** In Umsetzung (Iteration 1–2 fertig; Iteration 3 teilweise; weitere Iterationen offen).
 
 ---
 
@@ -443,7 +535,8 @@ Diese Phase bündelt die zuletzt in Session 7 umgesetzten produktionsnahen Arbei
 - Phase 5.0–5.6: **fertig (Backend + Frontend)** inkl. Broadcast-System.
 - Phase 6.0–6.4: **fertig** (City, RoleBadge Tooltips, Bulk Actions, Premium/Promos, Blog).
 - Phase 7.0–7.4: **fertig** (Always-visible Körper/Kinks, Couples in 2 Modi, Couple-aware Chat, Persona-B Editor im Web).
-- Phase 8.1–8.4: **fertig** (Prod Deployment Hardening, Legal Pages Seeding/Verifikation, PayPal/Klarna Frontend-Flows + Klarna place-order, Mobile additive Screens).
+- Phase 8.1–8.4: **fertig** (Prod Deployment Hardening, Legal Pages Seeding/Verifikation, PayPal/Klarna Flows, Mobile additive Screens).
+- Phase 9: **fertig** (Slider-Fix, Conditional Filter nach Zielgruppe, Web Filter: NSFW + Position, Mobile Parität inkl. Shared Helper).
 
 ### Final delivery (aktualisiert)
 - Voll funktionsfähige Web-App mit:
@@ -468,6 +561,7 @@ Diese Phase bündelt die zuletzt in Session 7 umgesetzten produktionsnahen Arbei
 
 - Mobile App (`/app/mobile`):
   - **Iteration 1–2 abgeschlossen**: Core (Auth/Discover/Profile/Matches/Chat/Account) + Content Screens (Events/Albums/Blog/Visitors) + Mehr-Hub.
-  - Weitere Iterationen offen (Filters, Uploads, Settings, Broadcast Inbox, Reports, Video, Admin optional).
+  - **Iteration 3 teilweise abgeschlossen**: Filter/Profilbearbeitung erweitert (Phase 9: NSFW + Gay Position + Discover Filter).
+  - Nächster großer Block: Reports (P1) + Upload/Persona-B Editing/Stealth/Video-Upload.
 
-**Status:** COMPLETED (Web). Mobile Voll-Parität: IN PROGRESS (Iteration 1–2 DONE).
+**Status:** COMPLETED (Web). Mobile Voll-Parität: IN PROGRESS (Iteration 1–2 DONE; Iteration 3 teilweise durch Phase 9 erweitert).

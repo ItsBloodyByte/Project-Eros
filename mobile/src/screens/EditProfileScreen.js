@@ -6,6 +6,9 @@ import * as ImagePicker from "expo-image-picker";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
 import { colors, radii, spacing } from "../theme";
+import {
+  GAY_POSITIONS, NSFW_OPTIONS, isGayMaleLike, nsfwToValue, valueToNsfw,
+} from "../demographics";
 
 const RELATIONSHIP_TYPES = ["monogamous", "polyamorous", "casual", "friendship", "play", "long_term", "long_distance", "other"];
 const RT_LABELS = {
@@ -26,6 +29,7 @@ export default function EditProfileScreen({ navigation }) {
     display_name: "", bio: "", pronouns: "",
     height_cm: "", body_type: "", ethnicity: "",
     languages: [], interests: [], relationship_types: [],
+    accept_nsfw: "na", gay_position: "",
   });
   const [languageDraft, setLanguageDraft] = useState("");
   const [interestDraft, setInterestDraft] = useState("");
@@ -43,6 +47,8 @@ export default function EditProfileScreen({ navigation }) {
         languages: Array.isArray(data.languages) ? data.languages : [],
         interests: Array.isArray(data.interests) ? data.interests : [],
         relationship_types: Array.isArray(data.relationship_types) ? data.relationship_types : [],
+        accept_nsfw: nsfwToValue(data.accept_nsfw),
+        gay_position: data.gay_position || "",
       });
     } catch {}
     finally { setLoading(false); }
@@ -73,6 +79,13 @@ export default function EditProfileScreen({ navigation }) {
         languages: fields.languages,
         interests: fields.interests,
         relationship_types: fields.relationship_types,
+        // NSFW preference — always send (null clears the choice)
+        accept_nsfw: valueToNsfw(fields.accept_nsfw),
+        // Position — only send when the account currently qualifies;
+        // backend would null it anyway otherwise.
+        gay_position: isGayMaleLike(user)
+          ? (fields.gay_position || null)
+          : undefined,
       };
       await api.patch("/me", payload);
       await refresh();
@@ -184,6 +197,52 @@ export default function EditProfileScreen({ navigation }) {
         </View>
       </Section>
 
+      <Section title="Präferenzen & Sichtbarkeit">
+        <Label>NSFW-Inhalte</Label>
+        <View style={styles.chipRow}>
+          {NSFW_OPTIONS.map((o) => {
+            const active = fields.accept_nsfw === o.value;
+            return (
+              <TouchableOpacity
+                key={o.value}
+                style={[styles.chip, active && styles.chipActive]}
+                onPress={() => setFields((s) => ({ ...s, accept_nsfw: o.value }))}
+                testID={`nsfw-option-${o.value}`}
+              >
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <Text style={styles.helpText}>
+          Signalisiert anderen, ob du explizite Nachrichten/Inhalte empfangen möchtest.
+        </Text>
+
+        {isGayMaleLike(user) && (
+          <View testID="gay-position-field">
+            <Label>Position</Label>
+            <View style={styles.chipRow}>
+              {GAY_POSITIONS.map((p) => {
+                const active = fields.gay_position === p.value;
+                return (
+                  <TouchableOpacity
+                    key={p.value}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => setFields((s) => ({ ...s, gay_position: active ? "" : p.value }))}
+                    testID={`gay-position-${p.value}`}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{p.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={styles.helpText}>
+              Sichtbar für andere männlich-gleichgeschlechtlich suchende Nutzer.
+            </Text>
+          </View>
+        )}
+      </Section>
+
       <TagField title="Sprachen" values={fields.languages} draft={languageDraft} setDraft={setLanguageDraft}
         onAdd={() => addTag("languages", languageDraft, () => setLanguageDraft(""))}
         onRemove={(v) => removeTag("languages", v)} placeholder="z. B. Deutsch" />
@@ -238,6 +297,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.text, fontSize: 16, fontWeight: "700" },
   sectionSub: { color: colors.textMuted, fontSize: 11 },
   label: { color: colors.textMuted, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", marginTop: 10, marginBottom: 4 },
+  helpText: { color: colors.textMuted, fontSize: 11, marginTop: 6, lineHeight: 15 },
   input: { borderWidth: 1, borderColor: colors.border, color: colors.text, padding: 10, borderRadius: radii.md, fontSize: 15, backgroundColor: colors.bg },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
   chip: { borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, paddingHorizontal: 10, paddingVertical: 6 },

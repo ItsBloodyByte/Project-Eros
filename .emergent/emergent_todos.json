@@ -1,42 +1,26 @@
 [
   {
-    "content": "Payment Webhook Härtung: Idempotenz-Guard + Dedup + Admin UI ✅",
+    "content": "Web: Slider-Komponente fixen — dynamisch N Thumbs je value.length rendern",
     "status": "completed"
   },
   {
-    "content": "PayPal Webhook-Endpoint /api/webhook/paypal ✅",
+    "content": "Web FilterDrawer: Cup-Size & Penis-Kategorie konditional nach seeking_genders einblenden",
     "status": "completed"
   },
   {
-    "content": "Klarna Push-Endpoint /api/webhook/klarna ✅",
+    "content": "Web FilterDrawer: NSFW Hide-Toggle + Gay-Position Multi-Select (konditional für gay-male-like Viewer)",
     "status": "completed"
   },
   {
-    "content": "Admin: Payment Transaction Viewer + Reconcile ✅",
+    "content": "Mobile EditProfileScreen: NSFW-Präferenz + Gay-Position (konditional) hinzufügen",
     "status": "completed"
   },
   {
-    "content": "Mobile It3: Filter UI (Quick Filter Bar auf Discover) ✅",
+    "content": "Mobile DiscoverFilterDrawer: NSFW Hide-Toggle + Gay-Position Filter (konditional)",
     "status": "completed"
   },
   {
-    "content": "Mobile It3: Profilbearbeitung (EditProfileScreen) ✅",
-    "status": "completed"
-  },
-  {
-    "content": "Mobile It3: Foto-Upload via expo-image-picker ✅",
-    "status": "completed"
-  },
-  {
-    "content": "Mobile It3: Persona-B Editor für Duo-Accounts ✅",
-    "status": "completed"
-  },
-  {
-    "content": "Mobile It3: Stealth/Incognito Toggle in Settings ✅",
-    "status": "completed"
-  },
-  {
-    "content": "Mobile It3: Video-Upload (Premium-Gate, max 4) ✅",
+    "content": "Verifikation: Screenshot Web (Alters-Slider, Filter) + syntaxcheck Mobile (esbuild)",
     "status": "completed"
   }
 ]

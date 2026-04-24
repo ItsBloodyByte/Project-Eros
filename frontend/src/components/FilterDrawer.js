@@ -18,6 +18,25 @@ import {
 import { MOOD_LIST } from "../lib/moods";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "../lib/AuthContext";
+import { isGayMaleLike, GAY_POSITIONS } from "../pages/MyProfilePage";
+
+/** Seeking-audience helpers: determine whether a filter's body metric is
+ * relevant given the genders the viewer is looking for. When no seeking
+ * genders are set we keep both visible, so first-time users still see all
+ * options. */
+const FEMININE_GENDERS = new Set(["woman", "trans_woman"]);
+const MASCULINE_GENDERS = new Set(["man", "trans_man"]);
+const NEUTRAL_GENDERS = new Set(["nonbinary", "genderqueer", "agender", "other"]);
+
+function seeksWomen(seekingGenders) {
+  if (!Array.isArray(seekingGenders) || seekingGenders.length === 0) return true;
+  return seekingGenders.some((g) => FEMININE_GENDERS.has(g) || NEUTRAL_GENDERS.has(g));
+}
+function seeksMen(seekingGenders) {
+  if (!Array.isArray(seekingGenders) || seekingGenders.length === 0) return true;
+  return seekingGenders.some((g) => MASCULINE_GENDERS.has(g) || NEUTRAL_GENDERS.has(g));
+}
 
 function Chip({ on, onClick, children, testid }) {
   return (
@@ -30,8 +49,20 @@ function Chip({ on, onClick, children, testid }) {
 
 export function FilterDrawer({ prefs, onChange, onApply }) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [local, setLocal] = useState(prefs);
+
+  const viewerSeekingGenders = local.seeking_genders || [];
+  const showCup = seeksWomen(viewerSeekingGenders);
+  const showPenis = seeksMen(viewerSeekingGenders);
+  // Gay-male-like viewers looking for men get the position filter; everyone
+  // else never sees the control (mirrors the backend gate in /api/discover).
+  const viewerIsGayMale = isGayMaleLike({
+    gender_identity: user?.gender_identity,
+    orientation: user?.orientation,
+  });
+  const showGayPosition = viewerIsGayMale && viewerSeekingGenders.some((g) => MASCULINE_GENDERS.has(g));
 
   const update = (patch) => setLocal((p) => ({ ...p, ...patch }));
   const toggleArr = (key, value) => {
@@ -48,10 +79,11 @@ export function FilterDrawer({ prefs, onChange, onApply }) {
       age_min: 18, age_max: 99, seeking_genders: [], radius_km: 50,
       relationship_types: [], seeking_roles: [], kinks: [],
       only_with_photos: true, only_face_photo: false, only_verified: false,
-      hide_seen: false, online_only: false,
+      hide_seen: false, online_only: false, hide_nsfw_profiles: false,
       body_types: [], min_height_cm: null, max_height_cm: null,
       smoking: [], drinking: [], diet: [], sti_status: [],
-      cup_sizes: [], penis_categories: [], languages: [], ethnicities: [], moods: [],
+      cup_sizes: [], penis_categories: [], gay_positions: [],
+      languages: [], ethnicities: [], moods: [],
     };
     setLocal(fresh);
     onChange(fresh);
@@ -68,12 +100,14 @@ export function FilterDrawer({ prefs, onChange, onApply }) {
     (local.sti_status?.length || 0) +
     (local.cup_sizes?.length || 0) +
     (local.penis_categories?.length || 0) +
+    (local.gay_positions?.length || 0) +
     (local.languages?.length || 0) +
     (local.ethnicities?.length || 0) +
     (local.moods?.length || 0) +
     (local.only_face_photo ? 1 : 0) +
     (local.only_verified ? 1 : 0) +
     (local.online_only ? 1 : 0) +
+    (local.hide_nsfw_profiles ? 1 : 0) +
     (local.min_height_cm ? 1 : 0) +
     (local.max_height_cm ? 1 : 0);
 
@@ -221,20 +255,45 @@ export function FilterDrawer({ prefs, onChange, onApply }) {
                       <Chip key={v} on={local.sti_status?.includes(v)} onClick={() => toggleArr("sti_status", v)}>{t(`lifestyle.sti.${v}`)}</Chip>
                     ))}
                   </div>
-                  <Label className="text-sm">{t("filters.cup_sizes")}</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {CUP_SIZES.map((c) => (
-                      <Chip key={c} on={local.cup_sizes?.includes(c)} onClick={() => toggleArr("cup_sizes", c)}>{c}</Chip>
-                    ))}
-                  </div>
-                  <Label className="text-sm">{t("filters.penis_categories")}</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {PENIS_CATEGORIES.map((p) => (
-                      <Chip key={p} on={local.penis_categories?.includes(p)} onClick={() => toggleArr("penis_categories", p)}>
-                        {p} <span className="opacity-70">({PENIS_RANGES[p]})</span>
-                      </Chip>
-                    ))}
-                  </div>
+                  {showCup && (
+                    <>
+                      <Label className="text-sm">{t("filters.cup_sizes")}</Label>
+                      <div className="flex flex-wrap gap-2" data-testid="filter-cup-sizes">
+                        {CUP_SIZES.map((c) => (
+                          <Chip key={c} on={local.cup_sizes?.includes(c)} onClick={() => toggleArr("cup_sizes", c)}>{c}</Chip>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {showPenis && (
+                    <>
+                      <Label className="text-sm">{t("filters.penis_categories")}</Label>
+                      <div className="flex flex-wrap gap-2" data-testid="filter-penis-categories">
+                        {PENIS_CATEGORIES.map((p) => (
+                          <Chip key={p} on={local.penis_categories?.includes(p)} onClick={() => toggleArr("penis_categories", p)}>
+                            {p} <span className="opacity-70">({PENIS_RANGES[p]})</span>
+                          </Chip>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {showGayPosition && (
+                    <>
+                      <Label className="text-sm" data-testid="filter-gay-positions-label">Position (Top/Bottom/…)</Label>
+                      <div className="flex flex-wrap gap-2" data-testid="filter-gay-positions">
+                        {GAY_POSITIONS.filter((p) => p.value !== "prefer_not_say").map((p) => (
+                          <Chip
+                            key={p.value}
+                            on={local.gay_positions?.includes(p.value)}
+                            onClick={() => toggleArr("gay_positions", p.value)}
+                            testid={`filter-gay-position-${p.value}`}
+                          >
+                            {p.label}
+                          </Chip>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   <Label className="text-sm">{t("filters.languages")}</Label>
                   <div className="flex flex-wrap gap-2">
                     {COMMON_LANGUAGES.map((l) => (
@@ -264,6 +323,11 @@ export function FilterDrawer({ prefs, onChange, onApply }) {
                     checked={!!local.hide_seen} onCheckedChange={(v) => update({ hide_seen: v })} />
                   <Row title={t("filters.online_only")} desc={t("filters.online_only_desc")}
                     checked={!!local.online_only} onCheckedChange={(v) => update({ online_only: v })} />
+                  <Row title="NSFW-Profile ausblenden"
+                    desc="Verbirgt Profile, die ausdrücklich NSFW-Inhalte kennzeichnen."
+                    checked={!!local.hide_nsfw_profiles}
+                    onCheckedChange={(v) => update({ hide_nsfw_profiles: v })}
+                    testid="filters-hide-nsfw-switch" />
                 </AccordionContent>
               </AccordionItem>
 
