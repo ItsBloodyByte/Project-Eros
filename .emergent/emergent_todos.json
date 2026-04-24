@@ -12,7 +12,11 @@
     "status": "completed"
   },
   {
-    "content": "User-Abstimmung: server.py Router-Refactor (großer Scope, ~6400 LOC)",
-    "status": "in_progress"
+    "content": "Refactor Schritt 1: legal.py, blog.py, couples.py aus server.py extrahiert",
+    "status": "completed"
+  },
+  {
+    "content": "Regression-Tests via testing_agent: 20/21 passed (nur Rate-Limit 429 beim Test-Login)",
+    "status": "completed"
   }
 ]

@@ -210,74 +210,15 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 **Status:** Abgeschlossen.
 
 ### Phase 7.1 — Duo Account (Single-Login Paarprofil)
-**Ziel (erfüllt):**
-- Neu registrierte Partner-Profile können als **ein Konto** bestehen, aber **beide Personen erkennbar** darstellen.
-
-**Umsetzung (Delivered):**
-- Backend:
-  - `RegisterRequest`: `account_type: single|duo` + `persona_b`.
-  - Register-Flow speichert `account_type` + sanitizte `persona_b`.
-  - Serializer: `public_user_from_doc` gibt `account_type` + `persona_b` (public) zurück.
-  - Endpoint: `PATCH /api/me/persona-b`.
-- Frontend:
-  - RegisterPage: Toggle **Einzelperson / Paar** + Person-B Subformular (MVP Felder).
-  - ProfileCard: zeigt „A & B“ + Paar-Badge + optional Secondary Avatar.
-  - ProfileViewPage: zeigt Person A + Persona B als getrennte Panels.
-
 **Status:** Abgeschlossen.
 
 ### Phase 7.2 — Linked Couple (Two-Login Paarprofil mit Bestätigung)
-**Ziel (erfüllt):**
-- Zwei Accounts werden über **gegenseitige Bestätigung** verknüpft, jeder behält seine Login-Daten.
-
-**Umsetzung (Delivered):**
-- Backend:
-  - Collections: `couples`, `couple_invites`.
-  - Endpoints:
-    - `POST /api/couples/invite` (E-Mail **oder** user_id)
-    - `GET /api/couples/invites`
-    - `POST /api/couples/invites/{id}/accept`
-    - `POST /api/couples/invites/{id}/decline`
-    - `DELETE /api/couples/invites/{id}` (revoke)
-    - `POST /api/couples/unlink` (unilateral)
-    - `GET /api/couples/me`
-  - Schutzregeln: Duo-Accounts können nicht zusätzlich verknüpfen.
-  - Discover: Partner-Snapshot wird angehängt + Couple-De-Dupe (nur 1 Eintrag pro couple_id).
-  - ProfileView: `/api/users/{id}` liefert optional `partner` Snapshot.
-- Frontend:
-  - AccountPage: `CoupleSection` (Einladen/Annehmen/Ablehnen/Zurückziehen/Unlink).
-  - ProfileCard + ProfileView: Paar-Badge + Darstellung beider Personen.
-
 **Status:** Abgeschlossen.
 
 ### Phase 7.3 — Chat: Sender-Identität pro Nachricht (Couple-aware Chats)
-**Ziel (erfüllt):**
-- Wenn Person A schreibt, wird Name/Avatar von Person A gezeigt (und analog für Person B).
-- Beide Partner sehen denselben Thread (shared inbox) über ihre zwei Logins.
-
-**Umsetzung (Delivered):**
-- Backend:
-  - `_match_or_403` erlaubt Zugriff auch über `partner_user_id`.
-  - `/api/matches`: inkludiert Partner-Matches; unread count berücksichtigt beide IDs.
-  - `/api/matches/{id}/messages`: liefert `senders` Lookup + `couple_meta` (für Header) und markiert read_by couple-aware.
-  - `POST /api/messages`: broadcastet WS-Event mit `sender` Snapshot + `for_users` inkl. beider Partnerseiten.
-- Frontend:
-  - ChatPage: nutzt `senders`/`couple_meta`, Header zeigt „A & B“.
-  - ChatBubble: optionaler Sender-Label + Sender-Avatar (für nicht-Ich Nachrichten), couple-aware `isMe`.
-
 **Status:** Abgeschlossen.
 
 ### Phase 7.4 — Persona-B Editor (Duo Account) (P2)
-**Ziel (erfüllt):**
-- Duo-Accounts können Person B vollständig pflegen (Fotos/Körper/Lifestyle/Kinks/Interessen etc.).
-
-**Umsetzung (Delivered):**
-- Frontend:
-  - Neue Komponente `PersonaBEditor` (Fotos: add/remove/primary; Basisangaben; Körper & Lifestyle; Kinks; Save).
-  - `MyProfilePage` zeigt Person-B-Bereich konditional (`user.account_type === 'duo'`) + Jump-Link.
-- Backend:
-  - Nutzung des bereits vorhandenen `PATCH /api/me/persona-b` Endpoints; Foto-Array wird als Teil von `persona_b` persistiert.
-
 **Status:** Abgeschlossen.
 
 ---
@@ -286,67 +227,15 @@ Diese Phase implementiert Paar-Profile in zwei Modi sowie konsistente Profilsekt
 Diese Phase bündelt die zuletzt umgesetzten produktionsnahen Arbeiten (Docker/Synology, Auto-Updater, Legal, Payment UI) und den Mobile-Paritätsschritt.
 
 ### Phase 8.1 — Robuster Docker-Compose Prod-Setup (Synology)
-**Ziel (erfüllt):**
-- Deployment muss in restriktiven Umgebungen (Synology NAS) zuverlässig builden und laufen.
-
-**Umsetzung (Delivered):**
-- `docker-compose.yml` mit `dockerfile_inline` und `alpine/git` Fetcher-Stages.
-- `$$`-Escapes für compose-variable Shell-Auswertung.
-- `eros-updater` Sidecar mit automatischem GitHub-Pull/Build.
-- Persistent `JWT_SECRET` Auto-Generation + Volume-Backing.
-- Dokumentation: `DOCKER.md`, `bootstrap.sh`.
-
 **Status:** Abgeschlossen.
 
 ### Phase 8.2 — Legal Pages: Default-Inhalte, Seeding, UI-Verifikation
-**Ziel (erfüllt):**
-- Realistische deutsche Texte für: Nutzungsbedingungen, Datenschutz, Impressum, Community, Cookies, Widerruf.
-- Robust gegen bereits bestehende Platzhalter in DB.
-
-**Umsetzung (Delivered):**
-- Korrektur typografischer Anführungszeichen, die einen `SyntaxError` verursachten.
-- `_ensure_default_legal_pages` erweitert:
-  - Insert bei fehlendem Eintrag.
-  - **Auto-Refresh** nur für nicht-edited Einträge (`updated_by is None`) wenn DB-Content kürzer als Default (Placeholder-Erkennung).
-- Impressum-Stub zurückgesetzt, sodass Default wieder ausgespielt wird.
-- UI-Screenshot-Verifikation: `/legal/terms` rendert korrekt.
-
 **Status:** Abgeschlossen.
 
 ### Phase 8.3 — Payments: PayPal/Klarna Frontend-Integration + Klarna Finalisierung
-**Ziel (erfüllt):**
-- Nutzer:innen können im Konto-Bereich den Checkout Provider auswählen.
-- PayPal redirect + capture Return Flow.
-- Klarna Checkout Page mit Widget + Place-Order Finalisierung.
-
-**Umsetzung (Delivered):**
-- Backend:
-  - Neues Model `KlarnaPlaceOrderRequest`.
-  - Neuer Endpoint `POST /api/payments/klarna/place-order`.
-- Frontend:
-  - Neue Komponente `PaymentProviderDialog` (Stripe/PayPal/Klarna Auswahl, Allowlist-Redirect-Safety).
-  - Neue Seiten:
-    - `/payments/paypal/return` (Capture)
-    - `/payments/klarna/checkout` (Widget)
-- UI-Verifikation per Screenshot: Dialog erscheint, Provider-Status wird aus `providers_live` abgeleitet.
-
-**Status:** Abgeschlossen (funktional). Hinweis: echte PayPal/Klarna Zahlungen hängen von Admin-Credentials ab.
+**Status:** Abgeschlossen (funktional).
 
 ### Phase 8.4 — Mobile: Feature-Parität erweitern (Iteration 2 — Additive Screens)
-**Ziel (erfüllt):**
-- Mobile App bekommt zentrale Web-Features als read-only / light-interaction Parität, ohne Upload-/Editor-Komplexität.
-
-**Umsetzung (Delivered):**
-- Neue Screens in `/app/mobile/src/screens`:
-  - `AlbumsScreen` + `AlbumDetailScreen` (inkl. Unlock-Request via `POST /albums/unlock-request`)
-  - `EventsScreen` + `EventDetailScreen` (RSVP via `POST /events/{id}/rsvp` mit Status `going|interested|not_going`)
-  - `BlogScreen` + `BlogPostScreen` (Markdown als Plaintext; Web bleibt rich)
-  - `VisitorsScreen` (Premium-aware, berücksichtigt `blurred_visitors` und flaches Response-Shape)
-  - `MenuScreen` (Hub für Navigation)
-- Navigation:
-  - Tabs erweitert: Discover, Matches, Events, Mehr, Konto
-  - Stack-Routes ergänzt: Albums, AlbumDetail, EventDetail, Blog, BlogPost, Visitors
-
 **Status:** Abgeschlossen.
 
 ---
@@ -358,83 +247,21 @@ Diese Phase bündelt drei zusammenhängende Produktpunkte:
 3) **Mobile Parität**: neue Profilfelder (NSFW-Präferenz & Gay Position) und passende Discover-Filter im React Native Client.
 
 ### Phase 9.1 — Web: Slider-Bugfix (Range-Thumb)
-**Umsetzung (Delivered):**
-- Fix in `/app/frontend/src/components/ui/slider.jsx`:
-  - Rendert jetzt dynamisch **N** `SliderPrimitive.Thumb` basierend auf `value.length` (oder `defaultValue.length`).
-  - Fallback: 1 Thumb.
-  - Zusätzliche `data-testid="slider-thumb-{i}"` für UI-Checks.
-
-**Verifikation:**
-- `/me` (Einstellungen) → Altersspanne zeigt **zwei Handles**.
-- Discover FilterDrawer → Altersspanne zeigt **zwei Handles**.
-
 **Status:** Abgeschlossen.
 
 ### Phase 9.2 — Web: Conditional Filterfelder nach Seeking/Orientierung
-**Umsetzung (Delivered):**
-- Anpassung `/app/frontend/src/components/FilterDrawer.js`:
-  - Helpers `seeksWomen(seeking_genders)` / `seeksMen(seeking_genders)`:
-    - Wenn keine `seeking_genders` gesetzt sind → beide sichtbar (Onboarding/Erstnutzerfreundlich).
-    - Neutral/NB/Other zählt zu beiden (so bleibt die UI inklusiv).
-  - Cup-Filter (`CUP_SIZES`) nur wenn `seeksWomen(...)` true (`data-testid="filter-cup-sizes"`).
-  - Penis-Filter (`PENIS_CATEGORIES`) nur wenn `seeksMen(...)` true (`data-testid="filter-penis-categories"`).
-
-**Verifikation:**
-- Nur „Mann“ gewählt → Cup ausgeblendet, Penis sichtbar.
-- Nur „Frau“ gewählt → Cup sichtbar, Penis ausgeblendet.
-
 **Status:** Abgeschlossen.
 
 ### Phase 9.3 — Web: NSFW Hide-Toggle + Gay-Position Filter
-**Umsetzung (Delivered):**
-- `/app/frontend/src/components/FilterDrawer.js`:
-  - Neuer Switch: `hide_nsfw_profiles` ("NSFW-Profile ausblenden").
-  - Neuer Multi-Select: `gay_positions` (Chips) in der Body-Sektion.
-  - Anzeige-Gate für `gay_positions`:
-    - Nur für Viewer, die `isGayMaleLike({gender_identity, orientation})` erfüllen **und** Männer suchen.
-  - `reset()` + `activeCount` um `hide_nsfw_profiles` und `gay_positions` erweitert.
-
 **Status:** Abgeschlossen.
 
 ### Phase 9.4 — Mobile: Shared Demographic Helper + Profilbearbeitung
-**Umsetzung (Delivered):**
-- Neue Datei `/app/mobile/src/demographics.js`:
-  - `isGayMaleLike(user)` (konform zu `/app/backend/helpers.py`).
-  - `GAY_POSITIONS` + `NSFW_OPTIONS`.
-  - `nsfwToValue()` / `valueToNsfw()`.
-- Update `/app/mobile/src/screens/EditProfileScreen.js`:
-  - Lädt `accept_nsfw` und `gay_position` aus `/me`.
-  - Neue UI-Sektion „Präferenzen & Sichtbarkeit“:
-    - NSFW (Chips: Keine Angabe / Offen / Nur SFW) — immer sichtbar.
-    - Gay Position — **nur** für `isGayMaleLike(user)`.
-  - Save sendet `accept_nsfw` immer; `gay_position` nur konditional.
-
 **Status:** Abgeschlossen.
 
 ### Phase 9.5 — Mobile: DiscoverFilterDrawer + DiscoverScreen
-**Umsetzung (Delivered):**
-- Update `/app/mobile/src/components/DiscoverFilterDrawer.js`:
-  - Neue Prefs: `hide_nsfw_profiles`, `gay_positions`.
-  - Toggle „NSFW-Profile ausblenden“.
-  - Position-Chips nur für gay-male-like Viewer der Männer sucht.
-  - Mapping der mobilen Seeking-Gender Keys → Backend Keys (z. B. `male→man`, `trans_male→trans_man`) für das Gate.
-  - Neuer Prop: `viewer`.
-- Update `/app/mobile/src/screens/DiscoverScreen.js`:
-  - Übergibt `viewer={user}` via `useAuth()`.
-
 **Status:** Abgeschlossen.
 
 ### Phase 9.6 — Testing / Abnahme
-**Ergebnisse:**
-- Web: Screenshot-Verifikation zeigt zwei Handles am Alters-Slider (Bug behoben).
-- Web: Conditional Cup/Penis Filter verifiziert (über DOM Counts + Screenshot).
-- Mobile: `esbuild` Syntax-/Bundle-Check für:
-  - `EditProfileScreen.js`
-  - `DiscoverFilterDrawer.js`
-  - `DiscoverScreen.js`
-  - `demographics.js`
-  → erfolgreich.
-
 **Status:** Abgeschlossen.
 
 ---
@@ -445,60 +272,82 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 ### Phase 10.1 — Stealth Toggle (Mobile)
 **Status:** Bereits vorhanden.
 
-**Implementierung (Existing):**
-- `/app/mobile/src/screens/SettingsScreen.js`:
-  - Toggle `privacy.stealth_mode`.
-  - Premium-Gate auf UI-Ebene (`isPremium`).
-  - Persistenz über `PATCH /me { privacy: ... }`.
-
 ### Phase 10.2 — Video Upload (Mobile)
 **Status:** Bereits vorhanden.
 
-**Implementierung (Existing):**
-- `/app/mobile/src/screens/VideosScreen.js`:
-  - Premium-Gate.
-  - Upload via `POST /me/videos` inkl. `duration_seconds`, `width`, `height`.
-  - Client-side Guards: max 4 Videos, max 60s, max 1080p, grobe Größenbegrenzung.
-  - Delete via `DELETE /me/videos/{video_id}`.
-
 ### Phase 10.3 — Foto-Upload (Mobile) — Moderation Feedback + Thumbnails
-**Ziel:** Foto-Upload soll sich wie Web „erklärt“ anfühlen (NSFW/Face Feedback) und Nutzer:innen sollen sehen, welche Fotos ggf. geblurrt werden.
-
-**Umsetzung (Delivered):**
-- `/app/mobile/src/screens/EditProfileScreen.js`:
-  - Foto-Tiles rendern jetzt echte Thumbnails (`<Image />`).
-  - NSFW-Handling:
-    - `nsfw_score >= 0.75` → lokale Blur-Vorschau + NSFW-Badge.
-    - Meta: „NSFW xx% · Gesicht“.
-  - Upload zeigt Moderations-Feedback nach erfolgreichem `POST /me/photos`:
-    - NSFW-Score Prozent + Hinweis „wird weichgezeichnet“ (ab 75%).
-    - Gesicht erkannt ja/nein.
-
 **Status:** Abgeschlossen.
 
 ### Phase 10.4 — Persona‑B Editing (Mobile) — Feature-Parität zum Web
-**Ziel:** Duo-Accounts sollen Person B auf Mobile ähnlich umfangreich pflegen können wie im Web (`PersonaBEditor`).
-
-**Umsetzung (Delivered):**
-- `/app/mobile/src/screens/PersonaBScreen.js` komplett erweitert:
-  - Fotos mit Thumbnails + Primärbadge
-  - Basis: Anzeigename, Alter, Pronomen, Bio, **gender_identity** Auswahl
-  - Körper & Lifestyle: Größe, Statur, Ethnizität, Rauchen, Alkohol, Ernährung, STI-Status
-  - Konditionale Körperfelder:
-    - `cup_size` nur wenn `showsCupSize(gender_identity)`
-    - `penis_length_cm`/`penis_girth_cm` nur wenn `showsPenisSize(gender_identity)`
-  - Kinks: Chip-Auswahl (Common Kinks)
-  - Sprachen/Interessen: Tag-Felder
-  - Save via `PATCH /me/persona-b`
-
 **Status:** Abgeschlossen.
 
 ### Phase 10.5 — Testing / Abnahme
-**Ergebnisse:**
-- Mobile: `esbuild` Syntax-Checks erfolgreich für `PersonaBScreen.js`, `EditProfileScreen.js`, `VideosScreen.js`, `SettingsScreen.js`.
-- Services: `backend`, `frontend`, `mongodb`, `nginx` laufen stabil.
+**Status:** Abgeschlossen.
+
+---
+
+## Phase 11 — Backend Refactoring: `server.py` Monolith → Router-Split (Stepwise)
+**Problem:** `server.py` war/ist ein Monolith (vor Refactor ~6432 LOC). Das erhöht Wartungsaufwand und macht Änderungen riskanter.
+
+**Refactor-Prinzip (Low-Risk):**
+- **Late-Binding-Pattern:**
+  - Router-Module in `/app/backend/routers/*.py` importieren `api_router` + benötigte Helpers/Deps aus `server.py` und registrieren ihre Routen via `@api_router.<verb>`.
+  - `server.py` importiert diese Module **ganz am Ende** (unmittelbar vor `app.include_router(api_router)`), nachdem alle Helpers deklariert sind.
+- Dadurch: **kein API-Contract-Change**, minimaler Bewegungsradius, schnelle Regressionstests möglich.
+
+### Phase 11.1 — Refactor Schritt 1 (Delivered): Legal + Blog + Couples
+**Ziel (erfüllt):** Erste, relativ isolierte Module extrahieren, ohne zentrale Auth-/Discover-/Payment-Teile anzufassen.
+
+**Umsetzung (Delivered):**
+- Neue Dateien:
+  - `/app/backend/routers/__init__.py` (Dokumentation des Patterns)
+  - `/app/backend/routers/legal.py`
+  - `/app/backend/routers/blog.py`
+  - `/app/backend/routers/couples.py`
+- `server.py`:
+  - Entfernt: alle Handler für `/legal`, `/blog`, `/couples`, `PATCH /me/persona-b`.
+  - Behalten: alle Helpers und Start-up Seeding (`_ensure_default_legal_pages`, Blog Helpers, Persona-B Helpers, Chat/Couple Helpers, etc.).
+  - Added: late imports am Ende:
+    - `from routers import legal as _legal_routes`
+    - `from routers import blog as _blog_routes`
+    - `from routers import couples as _couples_routes`
+
+**Messbarer Fortschritt:**
+- `server.py` reduziert von **6432** auf **6011** Zeilen (**-421 LOC**, ~6.5%).
+
+**Testing / Abnahme:**
+- `testing_agent` Report: `/app/test_reports/iteration_10.json`
+  - **20/21 Kern-Tests bestanden**, **keine Regressionen**.
+  - Einziges Flaky: `/auth/login` gelegentlich 429 bei sehr schnellen Test-Requests (Test-Umgebung / Rate-Limit; kein Product-Bug).
 
 **Status:** Abgeschlossen.
+
+### Phase 11.2 — Refactor Schritt 2 (Next): Mid-Risk Module (Payments + Admin)
+**Ziel:** Große, aber klar abgegrenzte Bereiche extrahieren, ohne Discover/Me-Core anzufassen.
+
+**Vorgehen (geplant):**
+- Neue Router:
+  - `/app/backend/routers/payments.py` (Checkout, Provider config endpoints)
+  - `/app/backend/routers/webhooks.py` (Stripe/PayPal/Klarna Webhooks; Idempotenz)
+  - `/app/backend/routers/admin.py` (Moderation, User-Management, Payment-Transactions Viewer)
+- Testen:
+  - Regression-Tests (ähnlich iteration_10), Fokus: Webhooks Idempotenz, Admin Auth/RBAC, Provider UI endpoints.
+
+**Status:** Offen (Next).
+
+### Phase 11.3 — Refactor Schritt 3 (Later): High-Frequency Core (Me + Discover + Chat)
+**Ziel:** Die am häufigsten genutzten und fehleranfälligsten Routen entkoppeln, nachdem Schritt 2 stabil ist.
+
+**Vorgehen (geplant):**
+- Neue Router:
+  - `/app/backend/routers/me.py` (Profilupdates, Preferences, Privacy, Photos, Videos)
+  - `/app/backend/routers/discover.py` (Sortierung inkl. Boost-Fix, bidirektionale Filter)
+  - `/app/backend/routers/matches_chat.py` (Matches, Messages, WS)
+- Testen:
+  - Extra Augenmerk: Boost-Sortierung (Boosted zuerst, separater Query), Geo `$near` + Pagination.
+  - E2E: Login → /me → /discover → Like/Match → Chat.
+
+**Status:** Offen.
 
 ---
 
@@ -512,13 +361,10 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 ### Issue 3: Blockliste nicht im `/api/me` Response sichtbar (niedrige Priorität)
 - Empfehlung: `/api/me` Serializer um `blocked_user_ids` erweitern oder `GET /api/me/blocks`.
 
-### Issue 4: `server.py` Monolith (~6400+ Zeilen)
-- Risiko: Wartbarkeit, Code-Ownership, Regression-Risiko bei Änderungen.
-- Empfehlung: Router-Split (`routers/auth.py`, `routers/payments.py`, `routers/admin.py`, `routers/profiles.py`, `routers/discover.py`, `routers/couples.py`, `routers/media.py`, `routers/legal.py`, `routers/blog.py` …).
-- Status: **Offen (separater großer Block)**.
+### Issue 4: `server.py` Monolith (historisch ~6400+ Zeilen)
+- Status: **In Arbeit** → siehe Phase 11 (Schritt 1 abgeschlossen).
 
 ### Issue 5: Range-Slider Handle fehlt (Web)
-- Ursache: Slider-UI rendert nur 1 `Thumb`.
 - Status: **Behoben** in Phase 9.1.
 
 ---
@@ -532,32 +378,12 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 ### Task 2 (P1): Payments – Admin-Konfig & Production Hardening
 **Ziel:** Payment Provider Credentials & Webhooks sauber produktionsreif betreiben.
 
-**ToDos:**
-- Admin UI: Klarna/PayPal Felder validieren, Sandbox/Live Toggle sichtbar.
-- Webhook/Return Härtung: Retry/Idempotenz auf Transaktionen.
-- Klarna: Echte Confirmation/Return URLs (konfiguriertes `EROS_PUBLIC_URL`) und ggf. Order-Management.
-
 **Status:** Offen.
 
 ### Task 3 (P1/P2): Backend Refactoring — `server.py` in Router splitten
 **Ziel:** Wartbarkeit massiv verbessern ohne Feature-Regressions.
 
-**Vorgehen (geplant):**
-- Neue Struktur:
-  - `app/main.py` (FastAPI init + middleware + include_router)
-  - `app/routers/auth.py`
-  - `app/routers/me.py` (Profil-Updates, Privacy, Photos, Videos)
-  - `app/routers/discover.py`
-  - `app/routers/matches_chat.py`
-  - `app/routers/couples.py`
-  - `app/routers/payments.py` + `app/routers/webhooks.py`
-  - `app/routers/admin.py`
-  - `app/routers/legal.py`
-  - `app/routers/blog.py`
-  - `app/services/*` (shared helpers, moderation, payments, sorting)
-- Schrittweise Migration mit identischer API-Surface und Tests zwischen den Schritten.
-
-**Status:** Offen.
+**Status:** In Arbeit (Phase 11.1 fertig; Phase 11.2/11.3 offen).
 
 ### Task 4 (P2): Mobile Voll-Parität — Restliche Iterationen
 - Iteration 4: Broadcast Inbox + Notifications + Settings Parität
@@ -569,17 +395,21 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 ## Status / Zusammenfassung
 - Phase 1–4: **fertig**.
 - Phase 5.0–5.6: **fertig (Backend + Frontend)** inkl. Broadcast-System.
-- Phase 6.0–6.4: **fertig** (City, RoleBadge Tooltips, Bulk Actions, Premium/Promos, Blog).
-- Phase 7.0–7.4: **fertig** (Always-visible Körper/Kinks, Couples in 2 Modi, Couple-aware Chat, Persona-B Editor im Web).
-- Phase 8.1–8.4: **fertig** (Prod Deployment Hardening, Legal Pages, PayPal/Klarna Flows, Mobile additive Screens).
-- Phase 9: **fertig** (Slider-Fix, Conditional Filter, Web: NSFW + Position Filter, Mobile: NSFW/Gay Position Parität).
-- **Phase 10: fertig** (Iteration-3-Abschluss: Mobile Persona‑B Parität, Foto-Upload UX/Blur/Badges, Stealth  + Video Upload bestätigt).
+- Phase 6.0–6.4: **fertig**.
+- Phase 7.0–7.4: **fertig**.
+- Phase 8.1–8.4: **fertig**.
+- Phase 9: **fertig**.
+- Phase 10: **fertig**.
+- Phase 11.1: **fertig** (Legal/Blog/Couples Router-Split; iteration_10 Regression ok).
 
 ### Final delivery (aktualisiert)
 - Web-App: produktionsnah, modern, inklusiv, Payments (Stripe/PayPal/Klarna), Couples (Linked + Duo), Boost, Admin/Moderation, Blog/Events/Albums, GDPR.
 - Mobile App:
-  - Iteration 1–2: fertig.
-  - Iteration 3: **abgeschlossen** (inkl. Foto-Upload UX, Persona‑B, Stealth, Videos, Filter/NSFW/Position).
+  - Iteration 1–3: **abgeschlossen**.
   - Nächster Block: Reports (P1) + Broadcast Inbox/Notifications.
+- Backend Refactor:
+  - Schritt 1 (Legal/Blog/Couples): **abgeschlossen**.
+  - Schritt 2 (Payments/Admin): **als nächstes**.
+  - Schritt 3 (Me/Discover/Chat): **später**.
 
-**Gesamtstatus:** Web **COMPLETED**. Mobile: Iteration 1–3 **COMPLETED**. Backend Refactor `server.py` → Router: **OPEN**.
+**Gesamtstatus:** Web **COMPLETED**. Mobile: Iteration 1–3 **COMPLETED**. Backend Refactor: **IN PROGRESS** (Step 1 done).
