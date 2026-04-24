@@ -1,22 +1,26 @@
 [
   {
-    "content": "Refactor Schritt 2a: payments.py + webhooks.py extrahiert",
-    "status": "completed"
-  },
-  {
-    "content": "Refactor Schritt 2b: admin.py extrahiert (52 Routes, 1395 LOC)",
-    "status": "completed"
-  },
-  {
-    "content": "Regression-Tests iteration_11: 100% pass",
-    "status": "completed"
-  },
-  {
-    "content": "Refactor Schritt 3: me.py, discover.py, matches_chat.py extrahieren",
+    "content": "Payments Hardening: Rate-Limits an /payments/* und /webhook/*",
     "status": "in_progress"
   },
   {
-    "content": "Task 2 (P1): Payments Production Hardening",
+    "content": "Payments Hardening: Audit-Logs bei Checkout / Capture / Place-Order",
+    "status": "pending"
+  },
+  {
+    "content": "Payments Hardening: Amount/Currency Anti-Tampering Validation bei PayPal-Capture",
+    "status": "pending"
+  },
+  {
+    "content": "Payments Hardening: Stale-Transaction Expiry Job + Admin Endpoint",
+    "status": "pending"
+  },
+  {
+    "content": "Payments Hardening: Webhook Strict-Mode Check + Admin Warning",
+    "status": "pending"
+  },
+  {
+    "content": "Regression-Test der Payment-Härtung",
     "status": "pending"
   }
 ]

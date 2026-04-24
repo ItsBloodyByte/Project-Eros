@@ -43,8 +43,10 @@ from server import (
     _paypal_access_token,
     _klarna_api_base,
     serialize_doc,
+    _audit,
     logger as _server_logger,
 )
+from rate_limit import rate_limiter, client_ip as _ratelimit_client_ip
 from models import (
     CheckoutRequest,
     PayPalOrderRequest,
@@ -53,6 +55,14 @@ from models import (
 )
 
 logger = logging.getLogger("app.routers.payments")
+
+
+# Max discrepancy (in minor units / cents) tolerated between what we asked the
+# provider to charge and what the provider actually captured. Zero would be
+# ideal, but some gateways round the tax field — so allow a single cent for
+# safety. Larger deltas indicate tampering or a mis-wired integration and we
+# reject them.
+_AMOUNT_TOLERANCE_MINOR_UNITS = 1
 
 
 @api_router.get("/payments/packages")
@@ -71,6 +81,11 @@ async def list_packages(user=Depends(_require_user)):
 # ---------- Stripe ----------
 @api_router.post("/payments/checkout")
 async def create_checkout(body: CheckoutRequest, request: Request, user=Depends(_require_user)):
+    # Rate-limit: authenticated users may create at most 8 checkout sessions/hour
+    # and 24/day. Stripe itself rejects abusive traffic, but we want to cap it
+    # at our edge to keep DB churn and webhook-event load predictable.
+    await rate_limiter.check(f"pay:checkout:user:{user['id']}:hr", capacity=8, window_seconds=3600)
+    await rate_limiter.check(f"pay:checkout:user:{user['id']}:day", capacity=24, window_seconds=86400)
     cfg = await _get_payment_config()
     if not cfg.get("enabled") or cfg.get("provider") == "disabled":
         raise HTTPException(400, "Zahlungen sind deaktiviert")
@@ -113,6 +128,10 @@ async def create_checkout(body: CheckoutRequest, request: Request, user=Depends(
         "provider": provider,
         "created_at": now_utc().isoformat(),
     })
+    # Audit for every created checkout session — makes fraud triage possible.
+    await _audit(user["id"], "payment_checkout_created", session.session_id, {
+        "provider": provider, "package_id": body.package_id, "amount": pkg["amount"],
+    })
     return {"url": session.url, "session_id": session.session_id, "provider": provider}
 
 
@@ -138,6 +157,7 @@ async def payment_status(session_id: str, request: Request, user=Depends(_requir
 @api_router.post("/payments/paypal/create-order")
 async def paypal_create_order(body: PayPalOrderRequest, user=Depends(_require_user)):
     """Create a PayPal Orders v2 order. Returns the approval URL for redirect."""
+    await rate_limiter.check(f"pay:paypal-create:user:{user['id']}:hr", capacity=10, window_seconds=3600)
     cfg = await _get_payment_config()
     pkg = _find_package(cfg, body.package_id)
     if not pkg:
@@ -186,12 +206,16 @@ async def paypal_create_order(body: PayPalOrderRequest, user=Depends(_require_us
         "status": "created",
         "created_at": now_utc().isoformat(),
     })
+    await _audit(user["id"], "payment_paypal_order_created", data.get("id"), {
+        "package_id": pkg["id"], "amount": float(pkg["amount"]),
+    })
     return {"order_id": data.get("id"), "approve_url": approve, "status": data.get("status")}
 
 
 @api_router.post("/payments/paypal/{order_id}/capture")
 async def paypal_capture_order(order_id: str, user=Depends(_require_user)):
     """Capture a PayPal order after user approval; activates premium / boost on success."""
+    await rate_limiter.check(f"pay:paypal-capture:user:{user['id']}:hr", capacity=15, window_seconds=3600)
     cfg = await _get_payment_config()
     token, api_base = await _paypal_access_token(cfg)
     import httpx as _httpx
@@ -206,6 +230,38 @@ async def paypal_capture_order(order_id: str, user=Depends(_require_user)):
         data = r.json()
     status_ok = (data.get("status") == "COMPLETED")
     txn = await db.payment_transactions.find_one({"provider": "paypal", "order_id": order_id})
+    # Anti-tampering: make sure the capture is for OUR user, OUR package,
+    # AT the expected amount+currency. If PayPal reports a delta we refuse to
+    # grant entitlement and flag the transaction for review.
+    tampering_reason: Optional[str] = None
+    if txn and txn.get("user_id") != user["id"]:
+        tampering_reason = "user_mismatch"
+    if status_ok and txn and not tampering_reason:
+        try:
+            captured = ((data.get("purchase_units") or [{}])[0].get("payments", {})
+                        .get("captures", [{}])[0])
+            amt = captured.get("amount") or {}
+            reported_value = float(amt.get("value") or 0)
+            reported_currency = (amt.get("currency_code") or "").upper()
+            expected_minor = int(round(float(txn.get("amount", 0)) * 100))
+            reported_minor = int(round(reported_value * 100))
+            if abs(expected_minor - reported_minor) > _AMOUNT_TOLERANCE_MINOR_UNITS:
+                tampering_reason = f"amount_mismatch:{reported_value}!={txn.get('amount')}"
+            elif reported_currency and reported_currency != (txn.get("currency") or "").upper():
+                tampering_reason = f"currency_mismatch:{reported_currency}!={txn.get('currency')}"
+        except Exception as ex:
+            logger.warning("PayPal capture payload parse error: %s", ex)
+    if tampering_reason:
+        logger.error("PayPal capture rejected for tampering: %s order=%s user=%s",
+                     tampering_reason, order_id, user["id"])
+        if txn:
+            await db.payment_transactions.update_one(
+                {"_id": txn["_id"]},
+                {"$set": {"status": "review", "review_reason": tampering_reason,
+                          "reviewed_at": now_utc().isoformat()}},
+            )
+        await _audit(user["id"], "payment_paypal_capture_rejected", order_id, {"reason": tampering_reason})
+        raise HTTPException(409, "Zahlungsdifferenz erkannt — Zahlung wird manuell geprüft.")
     if status_ok and txn and txn.get("status") != "paid":
         pkg = _find_package(cfg, txn.get("package_id"))
         if pkg:
@@ -219,6 +275,9 @@ async def paypal_capture_order(order_id: str, user=Depends(_require_user)):
             {"_id": txn["_id"]},
             {"$set": {"status": "paid", "paid_at": now_utc().isoformat()}},
         )
+        await _audit(user["id"], "payment_paypal_captured", order_id, {
+            "package_id": txn.get("package_id"), "amount": txn.get("amount"),
+        })
     return {"status": data.get("status"), "order_id": order_id, "paid": status_ok}
 
 
@@ -226,6 +285,7 @@ async def paypal_capture_order(order_id: str, user=Depends(_require_user)):
 @api_router.post("/payments/klarna/create-session")
 async def klarna_create_session(body: KlarnaSessionRequest, user=Depends(_require_user)):
     """Create a Klarna Payments session. Returns client_token for the frontend widget."""
+    await rate_limiter.check(f"pay:klarna-sess:user:{user['id']}:hr", capacity=15, window_seconds=3600)
     cfg = await _get_payment_config()
     pkg = _find_package(cfg, body.package_id)
     if not pkg:
