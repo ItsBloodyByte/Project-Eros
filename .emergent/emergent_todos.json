@@ -1,26 +1,18 @@
 [
   {
-    "content": "Web: Slider-Komponente fixen — dynamisch N Thumbs je value.length rendern",
+    "content": "PersonaBScreen erweitern: Kinks, Lifestyle, Sprachen, Interessen, Ethnizität, STI, Cup-/Penis-Size (konditional)",
     "status": "completed"
   },
   {
-    "content": "Web FilterDrawer: Cup-Size & Penis-Kategorie konditional nach seeking_genders einblenden",
+    "content": "EditProfileScreen: Foto-Upload Moderation-Feedback (NSFW-Score, Face-Status, Thumbnail-Anzeige, Blur-Hinweis)",
     "status": "completed"
   },
   {
-    "content": "Web FilterDrawer: NSFW Hide-Toggle + Gay-Position Multi-Select (konditional für gay-male-like Viewer)",
+    "content": "Mobile-Syntax-Check (esbuild) + Services laufen",
     "status": "completed"
   },
   {
-    "content": "Mobile EditProfileScreen: NSFW-Präferenz + Gay-Position (konditional) hinzufügen",
-    "status": "completed"
-  },
-  {
-    "content": "Mobile DiscoverFilterDrawer: NSFW Hide-Toggle + Gay-Position Filter (konditional)",
-    "status": "completed"
-  },
-  {
-    "content": "Verifikation: Screenshot Web (Alters-Slider, Filter) + syntaxcheck Mobile (esbuild)",
-    "status": "completed"
+    "content": "User-Abstimmung: server.py Router-Refactor (großer Scope, ~6400 LOC)",
+    "status": "in_progress"
   }
 ]

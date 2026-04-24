@@ -439,6 +439,69 @@ Diese Phase bündelt drei zusammenhängende Produktpunkte:
 
 ---
 
+## Phase 10 — Mobile Iteration 3 Abschluss: Foto-Upload UX + Persona‑B Parität + Stealth + Video Upload
+Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scope-Check hat gezeigt, dass Teile bereits existierten; fehlende Parität wurde nachgezogen.
+
+### Phase 10.1 — Stealth Toggle (Mobile)
+**Status:** Bereits vorhanden.
+
+**Implementierung (Existing):**
+- `/app/mobile/src/screens/SettingsScreen.js`:
+  - Toggle `privacy.stealth_mode`.
+  - Premium-Gate auf UI-Ebene (`isPremium`).
+  - Persistenz über `PATCH /me { privacy: ... }`.
+
+### Phase 10.2 — Video Upload (Mobile)
+**Status:** Bereits vorhanden.
+
+**Implementierung (Existing):**
+- `/app/mobile/src/screens/VideosScreen.js`:
+  - Premium-Gate.
+  - Upload via `POST /me/videos` inkl. `duration_seconds`, `width`, `height`.
+  - Client-side Guards: max 4 Videos, max 60s, max 1080p, grobe Größenbegrenzung.
+  - Delete via `DELETE /me/videos/{video_id}`.
+
+### Phase 10.3 — Foto-Upload (Mobile) — Moderation Feedback + Thumbnails
+**Ziel:** Foto-Upload soll sich wie Web „erklärt“ anfühlen (NSFW/Face Feedback) und Nutzer:innen sollen sehen, welche Fotos ggf. geblurrt werden.
+
+**Umsetzung (Delivered):**
+- `/app/mobile/src/screens/EditProfileScreen.js`:
+  - Foto-Tiles rendern jetzt echte Thumbnails (`<Image />`).
+  - NSFW-Handling:
+    - `nsfw_score >= 0.75` → lokale Blur-Vorschau + NSFW-Badge.
+    - Meta: „NSFW xx% · Gesicht“.
+  - Upload zeigt Moderations-Feedback nach erfolgreichem `POST /me/photos`:
+    - NSFW-Score Prozent + Hinweis „wird weichgezeichnet“ (ab 75%).
+    - Gesicht erkannt ja/nein.
+
+**Status:** Abgeschlossen.
+
+### Phase 10.4 — Persona‑B Editing (Mobile) — Feature-Parität zum Web
+**Ziel:** Duo-Accounts sollen Person B auf Mobile ähnlich umfangreich pflegen können wie im Web (`PersonaBEditor`).
+
+**Umsetzung (Delivered):**
+- `/app/mobile/src/screens/PersonaBScreen.js` komplett erweitert:
+  - Fotos mit Thumbnails + Primärbadge
+  - Basis: Anzeigename, Alter, Pronomen, Bio, **gender_identity** Auswahl
+  - Körper & Lifestyle: Größe, Statur, Ethnizität, Rauchen, Alkohol, Ernährung, STI-Status
+  - Konditionale Körperfelder:
+    - `cup_size` nur wenn `showsCupSize(gender_identity)`
+    - `penis_length_cm`/`penis_girth_cm` nur wenn `showsPenisSize(gender_identity)`
+  - Kinks: Chip-Auswahl (Common Kinks)
+  - Sprachen/Interessen: Tag-Felder
+  - Save via `PATCH /me/persona-b`
+
+**Status:** Abgeschlossen.
+
+### Phase 10.5 — Testing / Abnahme
+**Ergebnisse:**
+- Mobile: `esbuild` Syntax-Checks erfolgreich für `PersonaBScreen.js`, `EditProfileScreen.js`, `VideosScreen.js`, `SettingsScreen.js`.
+- Services: `backend`, `frontend`, `mongodb`, `nginx` laufen stabil.
+
+**Status:** Abgeschlossen.
+
+---
+
 ## Offene Issues / Risiken
 ### Issue 1: Session persistence UX issue (Recurring)
 - Status: behoben/abgemildert.
@@ -449,12 +512,13 @@ Diese Phase bündelt drei zusammenhängende Produktpunkte:
 ### Issue 3: Blockliste nicht im `/api/me` Response sichtbar (niedrige Priorität)
 - Empfehlung: `/api/me` Serializer um `blocked_user_ids` erweitern oder `GET /api/me/blocks`.
 
-### Issue 4: server.py Monolith (~6000+ Zeilen)
-- Risiko: Wartbarkeit.
-- Empfehlung: Router-Split (`routers/auth.py`, `routers/payments.py`, `routers/legal.py`, `routers/admin.py`, `routers/blog.py` …).
+### Issue 4: `server.py` Monolith (~6400+ Zeilen)
+- Risiko: Wartbarkeit, Code-Ownership, Regression-Risiko bei Änderungen.
+- Empfehlung: Router-Split (`routers/auth.py`, `routers/payments.py`, `routers/admin.py`, `routers/profiles.py`, `routers/discover.py`, `routers/couples.py`, `routers/media.py`, `routers/legal.py`, `routers/blog.py` …).
+- Status: **Offen (separater großer Block)**.
 
 ### Issue 5: Range-Slider Handle fehlt (Web)
-- Ursache: Slider-UI rendert nur 1 `Thumb` (Radix Range benötigt 2).
+- Ursache: Slider-UI rendert nur 1 `Thumb`.
 - Status: **Behoben** in Phase 9.1.
 
 ---
@@ -475,58 +539,30 @@ Diese Phase bündelt drei zusammenhängende Produktpunkte:
 
 **Status:** Offen.
 
-### Task 3 (P2): Mobile Voll-Parität (Option C) — Re-sync `/app/mobile`
-**Ziel:** Vollständige Feature- und UX-Parität mit Web.
+### Task 3 (P1/P2): Backend Refactoring — `server.py` in Router splitten
+**Ziel:** Wartbarkeit massiv verbessern ohne Feature-Regressions.
 
-**Leitplanken:**
-- Iterativ, API bleibt identisch, Mobile implementiert Clients/Views.
-- Paare/Couples sind First-Class (Linked Couples + Duo Account) inkl. Chat-Identität pro Nachricht.
+**Vorgehen (geplant):**
+- Neue Struktur:
+  - `app/main.py` (FastAPI init + middleware + include_router)
+  - `app/routers/auth.py`
+  - `app/routers/me.py` (Profil-Updates, Privacy, Photos, Videos)
+  - `app/routers/discover.py`
+  - `app/routers/matches_chat.py`
+  - `app/routers/couples.py`
+  - `app/routers/payments.py` + `app/routers/webhooks.py`
+  - `app/routers/admin.py`
+  - `app/routers/legal.py`
+  - `app/routers/blog.py`
+  - `app/services/*` (shared helpers, moderation, payments, sorting)
+- Schrittweise Migration mit identischer API-Surface und Tests zwischen den Schritten.
 
-**Iterationen (aktualisiert):**
-1. **Iteration 1 — Core Client + Couples Foundations (DONE)**
-   - Auth: Login + **Register inkl. Duo-Option**
-   - Navigation: Bottom Tabs (Discover/Matches/Account) + Stack (Profile/Chat)
-   - Discover: Grid, NSFW blur, City/Distance, Couple Badge + Partner-Avatar Overlay
-   - Profile: Couple-aware Header + PersonDetails (Körper & Lifestyle + Kinks immer sichtbar)
-   - Matches: Liste mit Couple Anzeige
-   - Chat: Couple-aware Sender-Labels + Sender-Avatare; Header über `couple_meta`
-   - Account: Premium-Quota, Promo Redeem, Couple Invites (invite/accept/decline/revoke/unlink), Logout
+**Status:** Offen.
 
-   **Status:** Abgeschlossen.
-
-2. **Iteration 2 — Content + Utility Screens (DONE)**
-   - Events (List/Detail/RSVP)
-   - Albums (List/Detail + Unlock Request)
-   - Blog (List/Post)
-   - Visitors (Premium-aware, blurred visitor handling)
-   - Mehr/Hub Navigation
-
-   **Status:** Abgeschlossen.
-
-3. **Iteration 3 — Filters + Media Uploads + Profile Editing (IN PROGRESS)**
-   - Filter UI (Drawer) + Premium-gated advanced filters
-   - Foto-Upload (inkl. Moderation/Blur Handling) + Profilbearbeitung
-   - Persona-B Editing (mobile) für Duo Accounts
-   - Stealth Toggle, Visitors/Views parity (inkl. Incognito)
-   - Video Upload UI (Premium gate: max 4, 60s, 1080p)
-
-   **Status:** Teilumfang geliefert durch **Phase 9** (NSFW/Gay-Position + Conditional Filter). Rest offen.
-
-4. **Iteration 4 — Broadcast Inbox + Notifications + Settings (OPEN)**
-   - Broadcast-Historie im Konto + mobile parity
-   - Settings (Privacy, Screenshot-Deterrence handling, Language)
-
-   **Status:** Offen.
-
-5. **Iteration 5 — Reports (User Side) + Moderation Entry Points (OPEN)**
-   - Report flows aus Mobile
-   - Minimal moderation surfaces (optional)
-
-   **Status:** Offen.
-
-6. **Iteration 6 — Optional: Admin Panel auf Mobile (Optional)**
-
-**Status:** In Umsetzung (Iteration 1–2 fertig; Iteration 3 teilweise; weitere Iterationen offen).
+### Task 4 (P2): Mobile Voll-Parität — Restliche Iterationen
+- Iteration 4: Broadcast Inbox + Notifications + Settings Parität
+- Iteration 5: Reports (User Side) + Moderation Entry Points
+- Iteration 6: Optional Admin Panel Mobile
 
 ---
 
@@ -535,33 +571,15 @@ Diese Phase bündelt drei zusammenhängende Produktpunkte:
 - Phase 5.0–5.6: **fertig (Backend + Frontend)** inkl. Broadcast-System.
 - Phase 6.0–6.4: **fertig** (City, RoleBadge Tooltips, Bulk Actions, Premium/Promos, Blog).
 - Phase 7.0–7.4: **fertig** (Always-visible Körper/Kinks, Couples in 2 Modi, Couple-aware Chat, Persona-B Editor im Web).
-- Phase 8.1–8.4: **fertig** (Prod Deployment Hardening, Legal Pages Seeding/Verifikation, PayPal/Klarna Flows, Mobile additive Screens).
-- Phase 9: **fertig** (Slider-Fix, Conditional Filter nach Zielgruppe, Web Filter: NSFW + Position, Mobile Parität inkl. Shared Helper).
+- Phase 8.1–8.4: **fertig** (Prod Deployment Hardening, Legal Pages, PayPal/Klarna Flows, Mobile additive Screens).
+- Phase 9: **fertig** (Slider-Fix, Conditional Filter, Web: NSFW + Position Filter, Mobile: NSFW/Gay Position Parität).
+- **Phase 10: fertig** (Iteration-3-Abschluss: Mobile Persona‑B Parität, Foto-Upload UX/Blur/Badges, Stealth  + Video Upload bestätigt).
 
 ### Final delivery (aktualisiert)
-- Voll funktionsfähige Web-App mit:
-  - Mutual Discovery, AI Moderation, Events, Premium/Boost, Chat, i18n, erweiterte Profile, Screenshot Guard.
-  - Broadcasts (signed) als read-only Chats, segmentierte Broadcasts inkl. Live-Preview.
-  - Promo-Codes, Auto-Register-Kampagnen, Visitors, Stealth, Super-Like, Free-Like-Limit.
-  - Blog mit TipTap Editor.
-  - **Couples / Partner-Profile**:
-    - Linked (2 Konten, 2 Logins) mit Invite/Accept/Unlink.
-    - Duo (1 Konto) mit `persona_b`.
-    - Discover/Profile zeigt beide Personen; Chat zeigt Sender pro Nachricht.
-    - Web: Voller Person-B Editor (Fotos/Körper/Kinks).
-  - **Payments**:
-    - Stripe Checkout (bestehend)
-    - PayPal Redirect + Capture Return
-    - Klarna Widget Checkout + Place-Order Endpoint
-    - Provider-Auswahl im Konto via Dialog.
-  - **Legal Pages**:
-    - Vollständige deutsche Standardtexte + robustes Seeding/Placeholder-Refresh.
-  - **Deployment**:
-    - Synology-tauglicher Compose, Auto-Updater Sidecar, persistenter JWT Secret.
+- Web-App: produktionsnah, modern, inklusiv, Payments (Stripe/PayPal/Klarna), Couples (Linked + Duo), Boost, Admin/Moderation, Blog/Events/Albums, GDPR.
+- Mobile App:
+  - Iteration 1–2: fertig.
+  - Iteration 3: **abgeschlossen** (inkl. Foto-Upload UX, Persona‑B, Stealth, Videos, Filter/NSFW/Position).
+  - Nächster Block: Reports (P1) + Broadcast Inbox/Notifications.
 
-- Mobile App (`/app/mobile`):
-  - **Iteration 1–2 abgeschlossen**: Core (Auth/Discover/Profile/Matches/Chat/Account) + Content Screens (Events/Albums/Blog/Visitors) + Mehr-Hub.
-  - **Iteration 3 teilweise abgeschlossen**: Filter/Profilbearbeitung erweitert (Phase 9: NSFW + Gay Position + Discover Filter).
-  - Nächster großer Block: Reports (P1) + Upload/Persona-B Editing/Stealth/Video-Upload.
-
-**Status:** COMPLETED (Web). Mobile Voll-Parität: IN PROGRESS (Iteration 1–2 DONE; Iteration 3 teilweise durch Phase 9 erweitert).
+**Gesamtstatus:** Web **COMPLETED**. Mobile: Iteration 1–3 **COMPLETED**. Backend Refactor `server.py` → Router: **OPEN**.

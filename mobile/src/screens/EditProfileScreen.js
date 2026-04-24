@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,
+  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "../api";
@@ -108,9 +108,24 @@ export default function EditProfileScreen({ navigation }) {
     const mime = asset.mimeType || "image/jpeg";
     const data_url = `data:${mime};base64,${asset.base64}`;
     try {
-      await api.post("/me/photos", { data_url, is_primary: false });
+      const { data } = await api.post("/me/photos", { data_url, is_primary: false });
       await refresh();
-      Alert.alert("Upload", "Foto hochgeladen.");
+      // Moderation feedback — mirrors what the web UI surfaces in its toast.
+      // The server runs NSFW + face detection BEFORE responding so we can
+      // tell the user exactly how the photo will be treated downstream
+      // (auto-blur for others when score ≥ 0.75 in /discover).
+      const nsfw = typeof data.nsfw_score === "number" ? data.nsfw_score : null;
+      const face = data.has_face;
+      const lines = [];
+      if (nsfw !== null) {
+        const pct = Math.round(nsfw * 100);
+        const flag = nsfw >= 0.75 ? " (wird für andere standardmäßig weichgezeichnet)" : "";
+        lines.push(`NSFW-Score: ${pct}%${flag}`);
+      }
+      if (typeof face === "boolean") {
+        lines.push(`Gesicht erkannt: ${face ? "ja" : "nein"}`);
+      }
+      Alert.alert("Foto hochgeladen", lines.length ? lines.join("\n") : "Foto gespeichert.");
     } catch (e) {
       Alert.alert("Upload fehlgeschlagen", e?.response?.data?.detail || "Unbekannter Fehler");
     }
@@ -138,23 +153,47 @@ export default function EditProfileScreen({ navigation }) {
 
       <Section title="Fotos" sub={`${photos.length} / 5`}>
         <View style={styles.photoGrid}>
-          {photos.map((p) => (
-            <View key={p.id} style={styles.photoTile}>
-              <View style={[styles.photoThumb, p.is_primary && styles.photoPrimary]}>
-                <Text style={{ color: colors.textMuted, fontSize: 10 }}>{p.is_primary ? "PRIMÄR" : ""}</Text>
+          {photos.map((p) => {
+            const isNsfw = typeof p.nsfw_score === "number" && p.nsfw_score >= 0.75;
+            return (
+              <View key={p.id} style={styles.photoTile}>
+                <View style={[styles.photoThumb, p.is_primary && styles.photoPrimary]}>
+                  {p.data ? (
+                    <Image
+                      source={{ uri: p.data }}
+                      style={{ width: "100%", height: "100%", borderRadius: radii.md, opacity: isNsfw ? 0.55 : 1 }}
+                      blurRadius={isNsfw ? 22 : 0}
+                    />
+                  ) : null}
+                  {p.is_primary ? (
+                    <View style={styles.primaryBadge}><Text style={styles.primaryBadgeText}>PRIMÄR</Text></View>
+                  ) : null}
+                  {isNsfw ? (
+                    <View style={styles.nsfwBadge}><Text style={styles.nsfwBadgeText}>NSFW</Text></View>
+                  ) : null}
+                </View>
+                <View style={styles.photoActions}>
+                  {!p.is_primary && <TouchableOpacity onPress={() => setPrimary(p.id)} testID={`photo-primary-${p.id}`}><Text style={styles.photoLink}>Primär</Text></TouchableOpacity>}
+                  <TouchableOpacity onPress={() => removePhoto(p.id)} testID={`photo-remove-${p.id}`}><Text style={[styles.photoLink, { color: colors.danger }]}>Löschen</Text></TouchableOpacity>
+                </View>
+                {typeof p.nsfw_score === "number" ? (
+                  <Text style={styles.photoMeta}>
+                    NSFW {Math.round(p.nsfw_score * 100)}%{p.has_face ? " · Gesicht" : ""}
+                  </Text>
+                ) : null}
               </View>
-              <View style={styles.photoActions}>
-                {!p.is_primary && <TouchableOpacity onPress={() => setPrimary(p.id)}><Text style={styles.photoLink}>Primär</Text></TouchableOpacity>}
-                <TouchableOpacity onPress={() => removePhoto(p.id)}><Text style={[styles.photoLink, { color: colors.danger }]}>Löschen</Text></TouchableOpacity>
-              </View>
-            </View>
-          ))}
+            );
+          })}
           {photos.length < 5 && (
-            <TouchableOpacity style={styles.addTile} onPress={pickAndUploadPhoto}>
+            <TouchableOpacity style={styles.addTile} onPress={pickAndUploadPhoto} testID="photo-add">
               <Text style={styles.addTileText}>+ Foto</Text>
             </TouchableOpacity>
           )}
         </View>
+        <Text style={styles.helpText}>
+          Fotos mit NSFW-Score ≥ 75% werden für andere standardmäßig weichgezeichnet.
+          Das Primärfoto erscheint als Cover im Discover.
+        </Text>
       </Section>
 
       <Section title="Basisangaben">
@@ -306,10 +345,15 @@ const styles = StyleSheet.create({
   chipTextActive: { color: colors.bg },
   photoGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   photoTile: { width: "30%", alignItems: "center" },
-  photoThumb: { width: "100%", aspectRatio: 3 / 4, borderRadius: radii.md, backgroundColor: colors.bgAlt, alignItems: "center", justifyContent: "center" },
+  photoThumb: { width: "100%", aspectRatio: 3 / 4, borderRadius: radii.md, backgroundColor: colors.bgAlt, alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" },
   photoPrimary: { borderWidth: 2, borderColor: colors.accent },
+  primaryBadge: { position: "absolute", top: 4, left: 4, backgroundColor: colors.accent, borderRadius: radii.pill, paddingHorizontal: 6, paddingVertical: 2 },
+  primaryBadgeText: { color: colors.bg, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
+  nsfwBadge: { position: "absolute", top: 4, right: 4, backgroundColor: colors.danger, borderRadius: radii.pill, paddingHorizontal: 6, paddingVertical: 2 },
+  nsfwBadgeText: { color: colors.bg, fontSize: 9, fontWeight: "800", letterSpacing: 1 },
   photoActions: { flexDirection: "row", gap: 8, marginTop: 4 },
   photoLink: { color: colors.accent, fontSize: 11, fontWeight: "700" },
+  photoMeta: { color: colors.textMuted, fontSize: 10, marginTop: 2 },
   addTile: { width: "30%", aspectRatio: 3 / 4, borderRadius: radii.md, borderWidth: 2, borderColor: colors.border, borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
   addTileText: { color: colors.accent, fontWeight: "700" },
   btn: { backgroundColor: colors.accent, borderRadius: radii.pill, paddingVertical: 14, alignItems: "center" },
