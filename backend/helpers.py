@@ -162,6 +162,21 @@ def compute_age(birth_date) -> Optional[int]:
     return max(0, years)
 
 
+def is_gay_male_like(doc: Optional[dict]) -> bool:
+    """True when a profile qualifies for the gay-male-role feature set.
+
+    Rule (per product decision): gender_identity in {man, trans_man}
+    AND orientation in {gay, bisexual, pansexual, queer, questioning}.
+    Cis- and trans-male-identifying accounts qualify equally; explicit
+    female / non-binary accounts are excluded from this very specific tag.
+    """
+    if not doc:
+        return False
+    g = doc.get("gender_identity")
+    o = doc.get("orientation")
+    return g in {"man", "trans_man"} and o in {"gay", "bisexual", "pansexual", "queer", "questioning"}
+
+
 def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
                          privacy: Optional[dict] = None,
                          list_mode: bool = False) -> dict:
@@ -244,6 +259,11 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
         "persona_b": _persona_b_public(doc.get("persona_b"), list_mode=list_mode) if doc.get("account_type") == "duo" else None,
         "current_mood": doc.get("current_mood"),
         "relationship_status": doc.get("relationship_status"),
+        # NSFW acceptance signal (True / False / None=no opinion). Always public.
+        "accept_nsfw": doc.get("accept_nsfw"),
+        # Gay-male role/position — only surfaced for qualifying accounts so we
+        # don't inadvertently tag other identities with a gay-specific label.
+        "gay_position": doc.get("gay_position") if is_gay_male_like(doc) else None,
     }
 
 

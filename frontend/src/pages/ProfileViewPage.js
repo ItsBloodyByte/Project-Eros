@@ -254,6 +254,26 @@ export default function ProfileViewPage() {
                           <ShieldCheck className="h-3 w-3" /> ID verifiziert
                         </Badge>
                       )}
+                      {profile.accept_nsfw === true && (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 bg-[hsl(345_60%_45%)]/10 text-[hsl(345_60%_45%)] border-[hsl(345_60%_45%)]/40"
+                          data-testid="profile-accept-nsfw-badge"
+                          title="Dieses Profil signalisiert Offenheit für NSFW-Inhalte"
+                        >
+                          18+ NSFW offen
+                        </Badge>
+                      )}
+                      {profile.accept_nsfw === false && (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 text-[hsl(var(--muted-foreground))]"
+                          data-testid="profile-nsfw-off-badge"
+                          title="Dieses Profil möchte keine NSFW-Inhalte"
+                        >
+                          Nur SFW
+                        </Badge>
+                      )}
                       {profile.role && profile.role !== "user" && (
                         <RoleBadge role={profile.role} />
                       )}

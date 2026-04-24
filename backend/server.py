@@ -518,6 +518,8 @@ async def update_me(body: ProfileUpdate, user=Depends(_require_user)):
         "smoking", "drinking", "diet", "sti_status", "sti_tested_on",
         "cup_size", "penis_length_cm", "penis_girth_cm", "current_mood",
         "relationship_status",
+        # NSFW signal (all users) + conditional gay-male position (guarded below).
+        "accept_nsfw", "gay_position",
     ]:
         val = getattr(body, field)
         if val is None:
@@ -526,6 +528,20 @@ async def update_me(body: ProfileUpdate, user=Depends(_require_user)):
             # silently ignore age changes after it is set
             continue
         update[field] = val
+    # Gay-position guard: silently drop the field for non-qualifying accounts
+    # (prevents e.g. a cis-hetero woman from accidentally storing a gay-male tag).
+    # We evaluate against the *merged* profile view — i.e. whatever identity will
+    # be effective after this PATCH — so a user flipping their orientation in the
+    # same request works correctly.
+    if "gay_position" in update:
+        effective_gender = update.get("gender_identity", user.get("gender_identity"))
+        effective_orientation = update.get("orientation", user.get("orientation"))
+        if not (
+            effective_gender in {"man", "trans_man"} and
+            effective_orientation in {"gay", "bisexual", "pansexual", "queer", "questioning"}
+        ):
+            # Clear any previous value so stale tags can't survive orientation changes.
+            update["gay_position"] = None
     if body.location is not None:
         update["location"] = {"type": "Point", "coordinates": body.location.coordinates}
     if body.preferences is not None:
@@ -848,6 +864,24 @@ async def discover(
         query["photos.has_face"] = True
     if prefs.get("only_verified"):
         query["verified"] = True
+    # NSFW content filter (applies to everyone who opts in via preferences).
+    # A profile that explicitly signals "accept_nsfw=True" is considered
+    # potentially offering NSFW content. When the viewer opts out, we hide
+    # those profiles. Null (`None`) is treated as "no opinion" → visible.
+    if prefs.get("hide_nsfw_profiles"):
+        query["$and"] = query.get("$and", []) + [
+            {"$or": [{"accept_nsfw": {"$ne": True}}, {"accept_nsfw": {"$exists": False}}]},
+        ]
+    # Gay-male position filter — only applied when the viewer is themselves a
+    # gay-male-like account AND is seeking men. This keeps the filter scoped
+    # to the identities it was designed for and prevents accidental misuse.
+    viewer_seeks_men = any(g in {"man", "trans_man"} for g in (viewer_seeking or []))
+    viewer_is_gay_male = (
+        my_gender in {"man", "trans_man"} and
+        user.get("orientation") in {"gay", "bisexual", "pansexual", "queer", "questioning"}
+    )
+    if prefs.get("gay_positions") and viewer_is_gay_male and viewer_seeks_men:
+        query["gay_position"] = {"$in": list(prefs["gay_positions"])}
     if prefs.get("hide_seen") and seen:
         cur = query.get("id", {"$ne": user["id"]})
         if "$nin" in cur:

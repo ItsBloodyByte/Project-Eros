@@ -32,6 +32,27 @@ function Chip({ on, onClick, children }) {
   );
 }
 
+/** Shared with the discover filter: determines which accounts qualify for
+ * gay-male-specific UI (position tag). Must stay in sync with the backend
+ * helper `is_gay_male_like()` in helpers.py. */
+export function isGayMaleLike({ gender_identity, orientation }) {
+  return (
+    (gender_identity === "man" || gender_identity === "trans_man") &&
+    ["gay", "bisexual", "pansexual", "queer", "questioning"].includes(orientation)
+  );
+}
+
+/** Ordered position options with German labels. */
+export const GAY_POSITIONS = [
+  { value: "top",          label: "Top (aktiv)" },
+  { value: "vers_top",     label: "Vers-Top (eher aktiv)" },
+  { value: "vers",         label: "Vers (beides)" },
+  { value: "vers_bottom",  label: "Vers-Bottom (eher passiv)" },
+  { value: "bottom",       label: "Bottom (passiv)" },
+  { value: "side",         label: "Side (kein Analverkehr)" },
+  { value: "prefer_not_say", label: "Keine Angabe" },
+];
+
 export default function MyProfilePage() {
   const { t } = useTranslation();
   const { user, refresh } = useAuth();
@@ -65,6 +86,8 @@ export default function MyProfilePage() {
       penis_length_cm: user.penis_length_cm || "",
       penis_girth_cm: user.penis_girth_cm || "",
       relationship_status: user.relationship_status || "not_specified",
+      accept_nsfw: typeof user.accept_nsfw === "boolean" ? user.accept_nsfw : null,
+      gay_position: user.gay_position || "",
     });
   }, [user]);
 
@@ -111,6 +134,14 @@ export default function MyProfilePage() {
         relationship_status: form.relationship_status && form.relationship_status !== "not_specified"
           ? form.relationship_status
           : null,
+        // NSFW acceptance — null means "no opinion / ask me later". We send
+        // it unconditionally so users can actively unset their choice.
+        accept_nsfw: form.accept_nsfw,
+        // Gay-male position — only send if the account currently qualifies;
+        // otherwise the backend would null it anyway, which is wasted traffic.
+        gay_position: isGayMaleLike({ gender_identity: form.gender_identity, orientation: form.orientation })
+          ? (form.gay_position || null)
+          : undefined,
       };
       await api.patch("/me", payload);
       await refresh();
@@ -433,6 +464,51 @@ export default function MyProfilePage() {
                   Wird im Profil als normales Info-Feld angezeigt. „Keine Angabe" blendet es komplett aus.
                 </div>
               </div>
+
+              {/* NSFW acceptance — always visible to every user */}
+              <div className="col-span-2">
+                <Label>NSFW-Inhalte</Label>
+                <Select
+                  value={form.accept_nsfw === true ? "yes" : form.accept_nsfw === false ? "no" : "na"}
+                  onValueChange={(v) => setForm({ ...form, accept_nsfw: v === "yes" ? true : v === "no" ? false : null })}
+                >
+                  <SelectTrigger data-testid="profile-accept-nsfw-select">
+                    <SelectValue placeholder="Bevorzugung wählen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="na">Keine Angabe</SelectItem>
+                    <SelectItem value="yes">Offen für NSFW-Inhalte</SelectItem>
+                    <SelectItem value="no">Nur SFW (keine NSFW-Inhalte)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
+                  Signalisiert anderen, ob du explizite Nachrichten/Inhalte empfangen möchtest. Erscheint als dezente Pille im Profil-Header.
+                </div>
+              </div>
+
+              {/* Gay-male position — only for qualifying accounts */}
+              {isGayMaleLike(form) && (
+                <div className="col-span-2" data-testid="profile-gay-position-field">
+                  <Label>Position</Label>
+                  <Select
+                    value={form.gay_position || "_"}
+                    onValueChange={(v) => setForm({ ...form, gay_position: v === "_" ? "" : v })}
+                  >
+                    <SelectTrigger data-testid="profile-gay-position-select">
+                      <SelectValue placeholder="Position wählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_">Keine Auswahl</SelectItem>
+                      {GAY_POSITIONS.map((p) => (
+                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
+                    Sichtbar für andere männlich-gleichgeschlechtlich suchende Nutzer.
+                  </div>
+                </div>
+              )}
               <div className="col-span-2"><Label>{t("profile.bio")}</Label><Textarea rows={4} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} /></div>
             </div>
           </section>

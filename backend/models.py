@@ -13,6 +13,7 @@ Orientation = Literal[
 ]
 RelationshipType = Literal["casual", "serious", "friendship", "open", "undecided"]
 SeekingRole = Literal["top", "bottom", "versatile", "any"]
+GayPosition = Literal["top", "vers_top", "vers", "vers_bottom", "bottom", "side", "prefer_not_say"]
 PhotoCategory = Literal["face", "individual", "nsfw"]
 BodyType = Literal["slim", "athletic", "average", "muscular", "curvy", "bear", "cub", "chub", "twink", "jock", "dad"]
 SmokingStatus = Literal["never", "sometimes", "often", "prefer_not_say"]
@@ -130,6 +131,12 @@ class UserPreferences(BaseModel):
     languages: List[str] = []
     ethnicities: List[str] = []
     moods: List[Mood] = []
+    # NSFW/Content-acceptance filter: when True, hide profiles that signal
+    # openness to NSFW content from the discover grid.
+    hide_nsfw_profiles: bool = False
+    # Gay-male-specific filter. Only applied when the searcher is themselves
+    # a gay-male-like account AND seeks other men. Backend enforces the gate.
+    gay_positions: List[GayPosition] = []
 
 
 class PhotoMeta(BaseModel):
@@ -191,6 +198,14 @@ class ProfileUpdate(BaseModel):
     penis_girth_cm: Optional[float] = Field(default=None, ge=1, le=40)
     current_mood: Optional[Mood] = None
     relationship_status: Optional[RelationshipStatus] = None
+    # Signals whether this profile is open to receiving NSFW content (DMs,
+    # explicit photos from albums, etc.). Exposed as a dezent pill on the
+    # public profile header.
+    accept_nsfw: Optional[bool] = None
+    # Queer-male role/position preference. Only relevant for and stored on
+    # gay-male-like accounts (man/trans_man + gay/bi/pan/queer/questioning).
+    # Rendered + accepted conditionally on both the editor and the API.
+    gay_position: Optional[GayPosition] = None
 
 
 class MoodUpdateRequest(BaseModel):
