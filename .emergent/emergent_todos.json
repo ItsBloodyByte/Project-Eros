@@ -1,18 +1,14 @@
 [
   {
-    "content": "#9 Honey-Pot + Shadow-Ban: Backend Helpers + Admin API + Frontend Tab + E2E getestet",
+    "content": "#2 Album mutual-Freigabe: bidirektional gating + auto-cascade-revoke",
     "status": "completed"
   },
   {
-    "content": "#4 AI optional + Multi-Provider + optionale Reviews",
+    "content": "#1 Pic4Pic sicherer Bildtausch im Chat",
     "status": "in_progress"
   },
   {
-    "content": "#2 Album mutual-Freigabe",
-    "status": "pending"
-  },
-  {
-    "content": "#1 Pic4Pic",
+    "content": "#4 AI optional + Multi-Provider + optionale Reviews",
     "status": "pending"
   },
   {
@@ -21,6 +17,10 @@
   },
   {
     "content": "#8 Performance-Sweep",
+    "status": "pending"
+  },
+  {
+    "content": "Payments Hardening Restarbeiten",
     "status": "pending"
   }
 ]

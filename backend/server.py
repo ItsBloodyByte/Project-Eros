@@ -1508,7 +1508,63 @@ async def get_album(album_id: str, user=Depends(_require_user)):
         # check expiry
         if share.get("expires_at") and share["expires_at"] < now_utc().isoformat():
             return {"id": a["id"], "owner_id": a["owner_id"], "title": a["title"], "locked": True, "photos": []}
+        # Mutual gating: if the share requires reciprocity, the viewer must
+        # also have shared one of THEIR albums with the owner. Otherwise the
+        # photos stay locked, but we tell them why so the UI can prompt for
+        # reciprocal sharing.
+        if share.get("mutual_required") and not share.get("mutual_active"):
+            reverse_active = await _has_active_share(viewer_id=a["owner_id"], owner_id=user["id"])
+            if not reverse_active:
+                return {
+                    "id": a["id"], "owner_id": a["owner_id"], "title": a["title"],
+                    "is_nsfw": a.get("is_nsfw"), "description": a.get("description"),
+                    "locked": True, "lock_reason": "mutual_required", "photos": [],
+                }
+            # Lazy heal: the reverse share now exists — promote both sides
+            # to active so future reads are O(1).
+            await _set_mutual_active(album_id, user["id"], True)
+            share["mutual_active"] = True
     return serialize_doc(a)
+
+
+async def _has_active_share(viewer_id: str, owner_id: str) -> bool:
+    """Return True if `owner_id` has at least one album shared with `viewer_id`."""
+    return await db.albums.find_one(
+        {"owner_id": owner_id, "shared_with.user_id": viewer_id},
+        {"_id": 1},
+    ) is not None
+
+
+async def _set_mutual_active(album_id: str, viewer_id: str, active: bool) -> None:
+    await db.albums.update_one(
+        {"id": album_id, "shared_with.user_id": viewer_id},
+        {"$set": {"shared_with.$.mutual_active": active}},
+    )
+
+
+async def _cascade_revoke_mutual(owner_id: str, target_user_id: str) -> int:
+    """When a user revokes/loses sharing rights, also tear down mutual flags on
+    the OTHER user's albums that pointed back. Returns number of cross-album
+    revocations. Only acts on `mutual_required` shares — pure one-way shares
+    stay untouched.
+    """
+    cursor = db.albums.find(
+        {
+            "owner_id": target_user_id,
+            "shared_with": {
+                "$elemMatch": {"user_id": owner_id, "mutual_required": True},
+            },
+        },
+        {"_id": 1, "id": 1},
+    )
+    revoked = 0
+    async for doc in cursor:
+        res = await db.albums.update_one(
+            {"id": doc["id"]},
+            {"$pull": {"shared_with": {"user_id": owner_id, "mutual_required": True}}},
+        )
+        revoked += res.modified_count
+    return revoked
 
 
 @api_router.post("/albums/{album_id}/photos")
@@ -1549,10 +1605,15 @@ async def share_album(body: AlbumShareRequest, user=Depends(_require_user)):
     )
     if not match:
         raise HTTPException(403, "Can only share with a mutual match")
+    # `mutual_required` defaults to True (the new product policy). Owners
+    # can opt out for one-shot one-way grants by passing `mutual_required=False`.
+    mutual_required = bool(getattr(body, "mutual_required", True))
     share = {
         "user_id": body.user_id,
         "expires_at": body.expires_at.isoformat() if body.expires_at else None,
         "granted_at": now_utc().isoformat(),
+        "mutual_required": mutual_required,
+        "mutual_active": False,
     }
     await db.albums.update_one(
         {"id": body.album_id},
@@ -1562,7 +1623,49 @@ async def share_album(body: AlbumShareRequest, user=Depends(_require_user)):
         {"id": body.album_id},
         {"$push": {"shared_with": share}},
     )
-    return {"ok": True}
+    # If the partner already shared one of THEIR albums with us, both sides
+    # should immediately become active. We promote every reverse share to
+    # mutual_active=True too, so the partner's UI updates without polling.
+    if mutual_required:
+        reverse_owner_albums = db.albums.find(
+            {"owner_id": body.user_id, "shared_with.user_id": user["id"]},
+            {"id": 1},
+        )
+        promoted = []
+        async for rev in reverse_owner_albums:
+            promoted.append(rev["id"])
+        if promoted:
+            await db.albums.update_one({"id": body.album_id, "shared_with.user_id": body.user_id},
+                                       {"$set": {"shared_with.$.mutual_active": True}})
+            for rev_id in promoted:
+                await db.albums.update_one(
+                    {"id": rev_id, "shared_with.user_id": user["id"]},
+                    {"$set": {"shared_with.$.mutual_active": True}},
+                )
+            return {"ok": True, "mutual_active": True, "reverse_albums": promoted}
+    return {"ok": True, "mutual_active": False}
+
+
+@api_router.post("/albums/share/revoke")
+async def revoke_album_share(body: AlbumShareRequest, user=Depends(_require_user)):
+    """Revoke a share. If the share was `mutual_required`, the cascade also
+    tears down any reverse mutual share so the partner doesn't keep visible
+    access to OUR albums after we walked away.
+    """
+    a = await db.albums.find_one({"id": body.album_id})
+    if not a or a["owner_id"] != user["id"]:
+        raise HTTPException(404, "Album not found")
+    existing = next((s for s in (a.get("shared_with") or []) if s.get("user_id") == body.user_id), None)
+    if not existing:
+        return {"ok": True, "noop": True}
+    await db.albums.update_one(
+        {"id": body.album_id},
+        {"$pull": {"shared_with": {"user_id": body.user_id}}},
+    )
+    cascade_count = 0
+    if existing.get("mutual_required"):
+        cascade_count = await _cascade_revoke_mutual(owner_id=user["id"], target_user_id=body.user_id)
+    return {"ok": True, "cascade_revocations": cascade_count}
 
 
 @api_router.post("/albums/unlock-request")

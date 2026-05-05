@@ -275,6 +275,11 @@ class AlbumShareRequest(BaseModel):
     album_id: str
     user_id: str
     expires_at: Optional[datetime] = None
+    # When True (default), the share only "activates" once both sides have
+    # shared at least one album with each other. Revoking either side cascades
+    # the revocation back to the partner. False keeps the legacy one-way
+    # behaviour.
+    mutual_required: bool = True
 
 
 class AlbumUnlockRequest(BaseModel):
