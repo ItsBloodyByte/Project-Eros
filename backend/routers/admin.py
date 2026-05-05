@@ -955,24 +955,58 @@ async def admin_list_verifications(user=Depends(_require_user), status: Optional
     if status:
         q["status"] = status
     items = await db.id_verifications.find(q).sort("submitted_at", -1).to_list(200)
+    # Defense in depth: never echo a destroyed payload back to the admin UI,
+    # even if a stale doc still has bytes hanging around. The destroyed
+    # timestamp is the only authoritative signal that the document is gone.
+    for it in items:
+        if it.get("document_destroyed_at"):
+            it["selfie_data_url"] = None
+            it["document_data_url"] = None
     return {"verifications": serialize_doc(items)}
 
 
 @api_router.post("/admin/verifications/review")
 async def admin_review_verification(body: AdminReviewIdRequest, user=Depends(_require_user)):
     await _require_role(user, ["admin", "moderator", "content_reviewer", "superadmin"])
+    # We mark the record as reviewed AND, on approval, immediately wipe the
+    # selfie + document base64 payload from MongoDB. Once a moderator has
+    # confirmed identity there is no legitimate reason to keep a copy of the
+    # ID — the user was promised the document would be destroyed. We retain
+    # the metadata (status, reviewer, timestamps, note) for audit purposes.
+    update: Dict = {
+        "status": body.decision,
+        "reviewed_by": user["id"],
+        "reviewed_at": now_utc().isoformat(),
+        "review_note": body.note,
+    }
+    if body.decision in ("approved", "rejected"):
+        # Hard-delete sensitive imagery for both decisions: there is no
+        # reason to keep a denied applicant's ID either.
+        update.update({
+            "selfie_data_url": None,
+            "document_data_url": None,
+            "document_destroyed_at": now_utc().isoformat(),
+            "document_destroyed_by": user["id"],
+        })
     await db.id_verifications.update_one(
         {"user_id": body.user_id, "status": "pending"},
-        {"$set": {"status": body.decision, "reviewed_by": user["id"],
-                   "reviewed_at": now_utc().isoformat(), "review_note": body.note}},
+        {"$set": update, "$unset": {"selfie_data_url_legacy": "", "document_data_url_legacy": ""}},
     )
     user_update: Dict = {"id_verification_status": body.decision}
     if body.decision == "approved":
         user_update["id_verified"] = True
         user_update["verified"] = True  # grant general verified badge too
     await db.users.update_one({"id": body.user_id}, {"$set": user_update})
-    await _audit(user["id"], "id_review", body.user_id, {"decision": body.decision})
-    return {"ok": True}
+    await _audit(
+        user["id"],
+        "id_review",
+        body.user_id,
+        {
+            "decision": body.decision,
+            "documents_destroyed": body.decision in ("approved", "rejected"),
+        },
+    )
+    return {"ok": True, "documents_destroyed": body.decision in ("approved", "rejected")}
 
 
 # --- Admin user management ---

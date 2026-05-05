@@ -62,6 +62,15 @@ export function ProfileCard({ user, visited = false }) {
 
         {/* Top-left badges — only ID-verified users get a visible badge */}
         <div className="absolute left-2.5 top-2.5 flex flex-col gap-1">
+          {user.is_new && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--accent))]/90 px-2 py-0.5 text-[10.5px] font-medium text-[hsl(var(--accent-foreground))] backdrop-blur-sm shadow-sm"
+              title="Profil < 7 Tage"
+              data-testid="profile-card-new-badge"
+            >
+              ✨ Neu
+            </span>
+          )}
           {user.id_verified && (
             <span
               className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--verified))]/90 px-2 py-0.5 text-[10.5px] font-medium text-white backdrop-blur-sm"

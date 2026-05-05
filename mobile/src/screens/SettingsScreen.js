@@ -76,11 +76,6 @@ export default function SettingsScreen() {
         />
       </Section>
 
-      <Section title="Sicherheit">
-        <Row label="Screenshot-Hinweise" description="Benachrichtigung, wenn jemand einen Screenshot deines Profils macht."
-             value={privacy.screenshot_notifications} onValueChange={(v) => save({ screenshot_notifications: v })} />
-      </Section>
-
       {(user?.role && user.role !== "user") && (
         <Section title="Team">
           <Row label="Rollen-Badge auf dem Profil zeigen" description="Wenn aus, sehen andere deine Team-Rolle nicht."

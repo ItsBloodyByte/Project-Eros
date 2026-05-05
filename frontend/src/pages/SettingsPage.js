@@ -96,9 +96,6 @@ export default function SettingsPage() {
               <Row label="Versteckter Modus" hint="Verbirgt dein Profil vorübergehend">
                 <Switch checked={!!privacy.hidden_mode} onCheckedChange={(v) => save({ hidden_mode: v })} data-testid="privacy-hidden-mode" />
               </Row>
-              <Row label="Screenshot-Hinweise" hint="Benachrichtige andere bei erkanntem Screenshot">
-                <Switch checked={!!privacy.screenshot_notifications} onCheckedChange={(v) => save({ screenshot_notifications: v })} data-testid="privacy-screenshot" />
-              </Row>
               <Row
                 label="Partner-Einladungen zulassen"
                 hint="Wenn aus: andere können dich nicht als Partner:in für ein gemeinsames Paarprofil anfragen."

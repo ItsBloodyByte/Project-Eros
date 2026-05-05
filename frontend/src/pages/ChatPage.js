@@ -72,8 +72,6 @@ export default function ChatPage() {
             }
           } else if (data.type === "typing" && data.from !== user?.id) {
             setPeerTyping(Boolean(data.is_typing));
-          } else if (data.type === "screenshot" && data.from !== user?.id) {
-            toast.info("Someone took a screenshot of this chat.");
           }
         } catch {}
       };

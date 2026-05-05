@@ -1011,18 +1011,10 @@ async def ws_chat(websocket: WebSocket, match_id: str, token: str = Query(...)):
                         "is_typing": bool(evt.get("is_typing")),
                     })
             elif evt.get("type") == "screenshot":
-                # notify the other user
-                sender = await db.users.find_one({"id": user_id})
-                if (sender or {}).get("privacy", {}).get("screenshot_notifications", True):
-                    await ws_manager.broadcast(match_id, {
-                        "type": "screenshot",
-                        "from": user_id,
-                    })
-                # Always log screenshot events to the audit trail so moderators can review
-                try:
-                    await _audit(user_id, "screenshot_detected", match_id, {"match_id": match_id})
-                except Exception:
-                    pass
+                # Screenshot detection deprecated (2026-04). The chat client no
+                # longer emits these events. We accept and silently drop any
+                # legacy frames so old clients don't see WS errors.
+                pass
     except WebSocketDisconnect:
         pass
     finally:

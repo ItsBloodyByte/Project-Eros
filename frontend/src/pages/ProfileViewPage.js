@@ -249,6 +249,16 @@ export default function ProfileViewPage() {
                           Paar
                         </Badge>
                       )}
+                      {profile.is_new && (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] border-[hsl(var(--accent))]/40 animate-pulse"
+                          data-testid="profile-new-badge"
+                          title="Dieses Profil ist seit weniger als 7 Tagen aktiv"
+                        >
+                          ✨ Neu
+                        </Badge>
+                      )}
                       {profile.id_verified && (
                         <Badge className="gap-1 bg-[hsl(var(--accent))]/90 hover:bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]" data-testid="profile-id-verified-badge">
                           <ShieldCheck className="h-3 w-3" /> ID verifiziert
@@ -308,6 +318,16 @@ export default function ProfileViewPage() {
                       );
                     })()}
                     {profile.is_online && <span className="inline-flex items-center gap-1"><span className="online-dot" /> {t("profile.online")}</span>}
+                    {profile.created_at && (
+                      <span
+                        className="inline-flex items-center gap-1"
+                        data-testid="profile-created-at"
+                        title={`Mitglied seit ${new Date(profile.created_at).toLocaleDateString("de-DE")}`}
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        Mitglied seit {new Date(profile.created_at).toLocaleDateString("de-DE", { month: "long", year: "numeric" })}
+                      </span>
+                    )}
                   </div>
                 </div>
 

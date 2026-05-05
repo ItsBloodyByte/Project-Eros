@@ -264,7 +264,34 @@ def public_user_from_doc(doc: dict, viewer_location: Optional[list] = None,
         # Gay-male role/position — only surfaced for qualifying accounts so we
         # don't inadvertently tag other identities with a gay-specific label.
         "gay_position": doc.get("gay_position") if is_gay_male_like(doc) else None,
+        # Profile age signals (public). `created_at` is the ISO timestamp of
+        # account creation; `is_new` is True for the first 7 days so the UI
+        # can render a "Neu" badge without re-computing on each render.
+        "created_at": doc.get("created_at"),
+        "is_new": _is_new_profile(doc.get("created_at")),
     }
+
+
+def _is_new_profile(created_at, days: int = 7) -> bool:
+    """Return True when the account is younger than `days`. Tolerates strings,
+    datetimes, or missing values. Never raises."""
+    if not created_at:
+        return False
+    try:
+        if isinstance(created_at, str):
+            dt = parse_dt(created_at)
+        else:
+            dt = created_at
+        if dt is None:
+            return False
+        # Normalise to UTC-aware
+        if dt.tzinfo is None:
+            from datetime import timezone as _tz
+            dt = dt.replace(tzinfo=_tz.utc)
+        from datetime import timedelta as _td
+        return (now_utc() - dt) < _td(days=days)
+    except Exception:
+        return False
 
 
 def _persona_b_public(p: Optional[dict], list_mode: bool = False) -> Optional[dict]:

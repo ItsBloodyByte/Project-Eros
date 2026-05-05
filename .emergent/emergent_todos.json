@@ -1,26 +1,18 @@
 [
   {
-    "content": "Payments Hardening: Rate-Limits an /payments/* und /webhook/*",
+    "content": "#5 Screenshotschutz entfernen (Web + Mobile + Backend WS)",
+    "status": "completed"
+  },
+  {
+    "content": "#3 created_at öffentlich + 'Neu'-Badge für Profile <7 Tage (Helper + Card + ProfileView)",
+    "status": "completed"
+  },
+  {
+    "content": "#7 ID-Verifikations-Dokument hard-löschen nach Approval/Reject",
+    "status": "completed"
+  },
+  {
+    "content": "User-Rückfrage: große Features (#2 #1 #9 #4 #6 #8)",
     "status": "in_progress"
-  },
-  {
-    "content": "Payments Hardening: Audit-Logs bei Checkout / Capture / Place-Order",
-    "status": "pending"
-  },
-  {
-    "content": "Payments Hardening: Amount/Currency Anti-Tampering Validation bei PayPal-Capture",
-    "status": "pending"
-  },
-  {
-    "content": "Payments Hardening: Stale-Transaction Expiry Job + Admin Endpoint",
-    "status": "pending"
-  },
-  {
-    "content": "Payments Hardening: Webhook Strict-Mode Check + Admin Warning",
-    "status": "pending"
-  },
-  {
-    "content": "Regression-Test der Payment-Härtung",
-    "status": "pending"
   }
 ]
