@@ -1,18 +1,26 @@
 [
   {
-    "content": "#5 Screenshotschutz entfernen (Web + Mobile + Backend WS)",
+    "content": "#9 Honey-Pot + Shadow-Ban: Backend Helpers + Admin API + Frontend Tab + E2E getestet",
     "status": "completed"
   },
   {
-    "content": "#3 created_at öffentlich + 'Neu'-Badge für Profile <7 Tage (Helper + Card + ProfileView)",
-    "status": "completed"
-  },
-  {
-    "content": "#7 ID-Verifikations-Dokument hard-löschen nach Approval/Reject",
-    "status": "completed"
-  },
-  {
-    "content": "User-Rückfrage: große Features (#2 #1 #9 #4 #6 #8)",
+    "content": "#4 AI optional + Multi-Provider + optionale Reviews",
     "status": "in_progress"
+  },
+  {
+    "content": "#2 Album mutual-Freigabe",
+    "status": "pending"
+  },
+  {
+    "content": "#1 Pic4Pic",
+    "status": "pending"
+  },
+  {
+    "content": "#6 Custom Landing Page für Gäste",
+    "status": "pending"
+  },
+  {
+    "content": "#8 Performance-Sweep",
+    "status": "pending"
   }
 ]

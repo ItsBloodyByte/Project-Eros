@@ -31,6 +31,8 @@ Konzept sieht NestJS + PostgreSQL + Next.js + React Native vor. Umgebung nutzt F
    - **Duo Account (1 Login):** Registrierung als Paar-Profil mit Person A + Person B (`persona_b`) im selben Konto.
    - **Chat Identität pro Nachricht:** Wenn A schreibt, erscheint A; wenn B schreibt, erscheint B (shared inbox).
 
+> **Update 2026-05:** Screenshot-Schutz wurde bewusst entfernt (siehe Phase 12.1). Privacy Controls umfassen weiterhin Hidden/Stealth, Online-Status, Read-Receipts etc.
+
 ---
 
 ## Phase 1 — Core POC (Isolation Test)
@@ -296,58 +298,119 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 - Dadurch: **kein API-Contract-Change**, minimaler Bewegungsradius, schnelle Regressionstests möglich.
 
 ### Phase 11.1 — Refactor Schritt 1 (Delivered): Legal + Blog + Couples
-**Ziel (erfüllt):** Erste, relativ isolierte Module extrahieren, ohne zentrale Auth-/Discover-/Payment-Teile anzufassen.
+**Status:** Abgeschlossen.
 
+### Phase 11.2 — Refactor Schritt 2 (Delivered): Payments + Webhooks + Admin
 **Umsetzung (Delivered):**
-- Neue Dateien:
-  - `/app/backend/routers/__init__.py` (Dokumentation des Patterns)
-  - `/app/backend/routers/legal.py`
-  - `/app/backend/routers/blog.py`
-  - `/app/backend/routers/couples.py`
-- `server.py`:
-  - Entfernt: alle Handler für `/legal`, `/blog`, `/couples`, `PATCH /me/persona-b`.
-  - Behalten: alle Helpers und Start-up Seeding (`_ensure_default_legal_pages`, Blog Helpers, Persona-B Helpers, Chat/Couple Helpers, etc.).
-  - Added: late imports am Ende:
-    - `from routers import legal as _legal_routes`
-    - `from routers import blog as _blog_routes`
-    - `from routers import couples as _couples_routes`
-
-**Messbarer Fortschritt:**
-- `server.py` reduziert von **6432** auf **6011** Zeilen (**-421 LOC**, ~6.5%).
-
-**Testing / Abnahme:**
-- `testing_agent` Report: `/app/test_reports/iteration_10.json`
-  - **20/21 Kern-Tests bestanden**, **keine Regressionen**.
-  - Einziges Flaky: `/auth/login` gelegentlich 429 bei sehr schnellen Test-Requests (Test-Umgebung / Rate-Limit; kein Product-Bug).
+- Neue Router:
+  - `/app/backend/routers/payments.py` (Checkout + Provider-Flows)
+  - `/app/backend/routers/webhooks.py` (Stripe/PayPal/Klarna Webhooks, weiterhin auf root `app` gemountet)
+  - `/app/backend/routers/admin.py` (52 Admin-Endpunkte)
+- Regression: `iteration_11.json` **100% pass**.
 
 **Status:** Abgeschlossen.
 
-### Phase 11.2 — Refactor Schritt 2 (Next): Mid-Risk Module (Payments + Admin)
-**Ziel:** Große, aber klar abgegrenzte Bereiche extrahieren, ohne Discover/Me-Core anzufassen.
-
-**Vorgehen (geplant):**
+### Phase 11.3 — Refactor Schritt 3 (Delivered): High-Frequency Core (Me + Discover + Chat)
+**Umsetzung (Delivered):**
 - Neue Router:
-  - `/app/backend/routers/payments.py` (Checkout, Provider config endpoints)
-  - `/app/backend/routers/webhooks.py` (Stripe/PayPal/Klarna Webhooks; Idempotenz)
-  - `/app/backend/routers/admin.py` (Moderation, User-Management, Payment-Transactions Viewer)
-- Testen:
-  - Regression-Tests (ähnlich iteration_10), Fokus: Webhooks Idempotenz, Admin Auth/RBAC, Provider UI endpoints.
+  - `/app/backend/routers/me.py`
+  - `/app/backend/routers/discover.py` (Boost-Fix bleibt erhalten: separate boosted query vor `$near`)
+  - `/app/backend/routers/matches_chat.py`
+- Regression: `iteration_12.json` **31/32 pass** (ein 403 war erwartetes RBAC-Verhalten, keine Regression).
 
-**Status:** Offen (Next).
+**Messbarer Fortschritt:**
+- `server.py` reduziert von **6432** → **3336** LOC (**-48%**).
+- Router-Module gesamt: 9 (`legal`, `blog`, `couples`, `payments`, `webhooks`, `admin`, `me`, `discover`, `matches_chat`).
 
-### Phase 11.3 — Refactor Schritt 3 (Later): High-Frequency Core (Me + Discover + Chat)
-**Ziel:** Die am häufigsten genutzten und fehleranfälligsten Routen entkoppeln, nachdem Schritt 2 stabil ist.
+**Status:** Abgeschlossen.
 
-**Vorgehen (geplant):**
-- Neue Router:
-  - `/app/backend/routers/me.py` (Profilupdates, Preferences, Privacy, Photos, Videos)
-  - `/app/backend/routers/discover.py` (Sortierung inkl. Boost-Fix, bidirektionale Filter)
-  - `/app/backend/routers/matches_chat.py` (Matches, Messages, WS)
-- Testen:
-  - Extra Augenmerk: Boost-Sortierung (Boosted zuerst, separater Query), Geo `$near` + Pagination.
-  - E2E: Login → /me → /discover → Like/Match → Chat.
+---
 
-**Status:** Offen.
+## Phase 12 — Quick-Wins / Policy Updates (Security/UX)
+Diese Phase bündelt kleinere, aber produktrelevante Änderungen.
+
+### Phase 12.1 — Screenshot-Schutz entfernen
+**Entscheidung:** Screenshot-Abschreckung/Indikatoren entfernen.
+
+**Umsetzung (Delivered):**
+- Web:
+  - `frontend/src/lib/screenshotGuard.js` → No-op
+  - `frontend/src/index.css` → `.no-capture` no-op + Print-Block entfernt
+  - `SettingsPage` Screenshot-Option entfernt
+  - `ChatPage` Screenshot-WS Toast entfernt
+- Mobile:
+  - Screenshot-Option aus `SettingsScreen` entfernt
+- Backend:
+  - WS Event `type="screenshot"` wird akzeptiert und gedroppt (legacy clients) statt broadcast/audit.
+
+**Status:** Abgeschlossen.
+
+### Phase 12.2 — Profil-Erstellungsdatum öffentlich + „Neu“-Badge (7 Tage)
+**Umsetzung (Delivered):**
+- Backend:
+  - `helpers.public_user_from_doc` liefert jetzt `created_at` + `is_new` (computed, 7 Tage).
+- Web:
+  - `ProfileViewPage` zeigt „Mitglied seit <Monat Jahr>“ + Neu-Badge.
+  - `ProfileCard` im Discover zeigt Neu-Badge.
+
+**Status:** Abgeschlossen.
+
+### Phase 12.3 — ID-Verifikation: Dokument-Zerstörung nach Review
+**Ziel:** Sobald ein Reviewer eine Verifikation (approved/rejected) entscheidet, müssen Selfie + Dokumentdaten umgehend zerstört werden.
+
+**Umsetzung (Delivered):**
+- Admin Review Endpoint setzt bei `approved` **und** `rejected`:
+  - `selfie_data_url=None`, `document_data_url=None`
+  - `document_destroyed_at`, `document_destroyed_by`
+- Admin Listing filtert defensiv: wenn `document_destroyed_at` gesetzt, werden Bildfelder nie wieder ausgeliefert.
+
+**Status:** Abgeschlossen.
+
+---
+
+## Phase 13 — Honey-Pot Profiles + Shadow-Bans (Anti-Bot)
+Ziel: Bot-/Scraper-Aktivitäten aktiv abfangen, ohne echte User zu beeinträchtigen.
+
+### Phase 13.1 — Honey-Pot Subsystem (Backend)
+**Umsetzung (Delivered):**
+- Neues Modul: `/app/backend/honeypot.py`:
+  - `visibility_filter_for(viewer)` → Mongo query fragment (versteckt honeypots + shadow-banned)
+  - `trigger_honeypot(db, viewer, target, action, meta)` → idempotenter Shadow-Ban
+  - `record_honeypot_flag` → `moderation_flags` Eintrag `kind="honeypot_trigger"`
+- Discover:
+  - `/discover` nutzt `_hp_filter(user)` → Honey-Pots (und Shadow-Banned) für Non-Staff unsichtbar.
+- Trigger-Hooks:
+  - `GET /users/{id}`: View eines Honey-Pots shadow-banned den Viewer (ohne UX-Feedback).
+  - `POST /likes`: Like auf Honey-Pot → shadow-ban + Return success (no-op).
+  - `POST /messages`: Message an Honey-Pot (Match-Gegenstück) → shadow-ban + synthetische success response (keine Zustellung).
+
+**Status:** Abgeschlossen.
+
+### Phase 13.2 — Admin API (Backend)
+**Umsetzung (Delivered):**
+- `/admin/honeypots`:
+  - `GET` list
+  - `POST` create
+  - `DELETE /{hp_id}`
+- `/admin/shadow-banned`:
+  - `GET` list (filterable by reason)
+  - `POST /admin/shadow-ban/{user_id}` manual shadow ban
+  - `POST /admin/shadow-unban/{user_id}` lift
+
+**Status:** Abgeschlossen.
+
+### Phase 13.3 — Admin UI (Web)
+**Umsetzung (Delivered):**
+- `AdminNav` neuer Eintrag **Honey-Pots**.
+- Neue Komponente: `frontend/src/components/AdminHoneypotsTab.js`:
+  - Tabs: Fallen / Geblockte Bots
+  - Create/Delete Trap (superadmin)
+  - Unban + optional Hard-Ban (superadmin)
+
+**E2E-Verifikation:**
+- Admin erstellt Honeypot → normaler User view triggert Shadow-Ban → Admin sieht Trigger-Trail → Honeypot taucht nicht in Discover auf → Cleanup erfolgreich.
+
+**Status:** Abgeschlossen.
 
 ---
 
@@ -361,11 +424,9 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 ### Issue 3: Blockliste nicht im `/api/me` Response sichtbar (niedrige Priorität)
 - Empfehlung: `/api/me` Serializer um `blocked_user_ids` erweitern oder `GET /api/me/blocks`.
 
-### Issue 4: `server.py` Monolith (historisch ~6400+ Zeilen)
-- Status: **In Arbeit** → siehe Phase 11 (Schritt 1 abgeschlossen).
-
-### Issue 5: Range-Slider Handle fehlt (Web)
-- Status: **Behoben** in Phase 9.1.
+### Issue 4: Payments Production Hardening (P1)
+- Status: **in Arbeit / teilweise pausiert** (Refactor und Feature-Backlog hatten Priorität).
+- Hinweis: Hardening-Änderungen (Rate-Limits, Audit, Anti-Tampering) wurden teilweise begonnen, aber nicht vollständig abgeschlossen.
 
 ---
 
@@ -378,17 +439,44 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 ### Task 2 (P1): Payments – Admin-Konfig & Production Hardening
 **Ziel:** Payment Provider Credentials & Webhooks sauber produktionsreif betreiben.
 
+**Empfohlene Restarbeiten:**
+- Webhook Rate-Limits + Strict-Mode Warnings in Admin UI
+- Stale-Transaction Cleanup (`initiated` → `expired`) + Admin Job/Endpoint
+- Mehr Provider-Key Slots + Rotation-Prozess
+
+**Status:** Offen / in Bearbeitung.
+
+### Task 3 (P1): Album mutual-Freigabe (neu)
+**Ziel:** Album wird nur freigegeben, wenn beide Chat-Partner freigeben; Freigabe endet automatisch, wenn eine Seite stoppt.
+
 **Status:** Offen.
 
-### Task 3 (P1/P2): Backend Refactoring — `server.py` in Router splitten
-**Ziel:** Wartbarkeit massiv verbessern ohne Feature-Regressions.
+### Task 4 (P1): Pic4Pic (neu)
+**Ziel:** Sicherer Bildtausch: A sendet Pic; erst wenn B ein gültiges Pic sendet, werden beide Bilder ausgetauscht. Ungültige/fehlende Antwort → kein Austausch.
 
-**Status:** In Arbeit (Phase 11.1 fertig; Phase 11.2/11.3 offen).
+**Status:** Offen.
 
-### Task 4 (P2): Mobile Voll-Parität — Restliche Iterationen
+### Task 5 (P1/P2): AI optional + Multi-Provider + optionale Reviews (neu)
+**Ziel:** Admin kann KI komplett deaktivieren; mehrere Provider-Keys verwalten; Reviews optional über Moderation laufen.
+
+**Status:** Offen.
+
+### Task 6 (P1/P2): Custom Landing Page für Gäste (neu)
+**Ziel:** Für nicht eingeloggte User eine admin-konfigurierbare Landingpage (Blogposts, Hero, CTAs, Sections).
+
+**Status:** Offen.
+
+### Task 7 (P2): Performance Sweep
+**Ziel:** UX „live“: Interaktionen ohne spürbare Verzögerung, geringe Ladezeiten.
+
+**Status:** Offen.
+
+### Task 8 (P2): Mobile Voll-Parität — Restliche Iterationen
 - Iteration 4: Broadcast Inbox + Notifications + Settings Parität
 - Iteration 5: Reports (User Side) + Moderation Entry Points
 - Iteration 6: Optional Admin Panel Mobile
+
+**Status:** Offen.
 
 ---
 
@@ -400,16 +488,10 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 - Phase 8.1–8.4: **fertig**.
 - Phase 9: **fertig**.
 - Phase 10: **fertig**.
-- Phase 11.1: **fertig** (Legal/Blog/Couples Router-Split; iteration_10 Regression ok).
+- Phase 11.1–11.3: **fertig** (Monolith-Router-Split; server.py 6432→3336 LOC).
+- Phase 12.1–12.3: **fertig** (Screenshot-Schutz entfernt, Neu-Badge, ID-Doc hard-delete).
+- Phase 13.1–13.3: **fertig** (Honey-Pots + Shadow-Bans + Admin UI).
 
-### Final delivery (aktualisiert)
-- Web-App: produktionsnah, modern, inklusiv, Payments (Stripe/PayPal/Klarna), Couples (Linked + Duo), Boost, Admin/Moderation, Blog/Events/Albums, GDPR.
-- Mobile App:
-  - Iteration 1–3: **abgeschlossen**.
-  - Nächster Block: Reports (P1) + Broadcast Inbox/Notifications.
-- Backend Refactor:
-  - Schritt 1 (Legal/Blog/Couples): **abgeschlossen**.
-  - Schritt 2 (Payments/Admin): **als nächstes**.
-  - Schritt 3 (Me/Discover/Chat): **später**.
+**Gesamtstatus:** Web **COMPLETED** (mit neuem Anti-Bot System). Mobile: Iteration 1–3 **COMPLETED**. Backend Refactor: **COMPLETED** (Router-Split). 
 
-**Gesamtstatus:** Web **COMPLETED**. Mobile: Iteration 1–3 **COMPLETED**. Backend Refactor: **IN PROGRESS** (Step 1 done).
+**Aktuelle Priorität (gemäß Roadmap):** #4 AI optional → #2 Album mutual → #1 Pic4Pic → #6 Landing → #8 Performance, plus **Task 2 Payments Production Hardening** abschließen.

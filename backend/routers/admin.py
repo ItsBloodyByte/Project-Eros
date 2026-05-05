@@ -1427,3 +1427,139 @@ async def admin_delete_promo(promo_id: str, user=Depends(_require_user)):
     return {"ok": True}
 
 
+
+
+
+# ---------------------------------------------------------------------------
+# Honey-Pot Profile + Shadow-Ban management (Feature #9, 2026-05).
+# ---------------------------------------------------------------------------
+@api_router.get("/admin/honeypots")
+async def admin_list_honeypots(user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
+    items = await db.users.find(
+        {"is_honeypot": True},
+        {"_id": 0, "id": 1, "display_name": 1, "age": 1, "gender_identity": 1,
+         "orientation": 1, "photos": 1, "created_at": 1, "honeypot_note": 1,
+         "shadow_ban_triggers": 1},
+    ).sort("created_at", -1).to_list(200)
+    # Also surface the trigger count = number of users this trap caught
+    enriched = []
+    for hp in items:
+        cnt = await db.users.count_documents({
+            "shadow_ban_triggers.honeypot_user_id": hp["id"],
+        })
+        enriched.append({**hp, "trigger_count": cnt})
+    return {"honeypots": serialize_doc(enriched)}
+
+
+@api_router.post("/admin/honeypots")
+async def admin_create_honeypot(payload: dict, user=Depends(_require_user)):
+    """Create a new honeypot account.
+
+    Required: `display_name`, `age`, `gender_identity`, `orientation`.
+    Optional: `bio`, `photos` (list of {data, is_primary}), `honeypot_note`.
+    The created user has `is_honeypot=True` and a random throwaway email so it
+    cannot accidentally match a real registration.
+    """
+    await _require_role(user, ["admin", "superadmin"])
+    name = (payload.get("display_name") or "").strip()
+    if not name or len(name) > 60:
+        raise HTTPException(400, "display_name erforderlich (max. 60 Zeichen)")
+    try:
+        age = int(payload.get("age"))
+    except Exception:
+        raise HTTPException(400, "age erforderlich (Zahl)")
+    if age < 18 or age > 99:
+        raise HTTPException(400, "age muss zwischen 18 und 99 liegen")
+    gender = payload.get("gender_identity") or "other"
+    orient = payload.get("orientation") or "straight"
+    hp_id = str(uuid.uuid4())
+    doc = {
+        "id": hp_id,
+        "email": f"honeypot+{hp_id[:8]}@eros.internal",
+        "password_hash": "!honeypot!",  # never used to log in
+        "display_name": name,
+        "age": age,
+        "gender_identity": gender,
+        "orientation": orient,
+        "bio": (payload.get("bio") or "")[:500] or None,
+        "photos": payload.get("photos") or [],
+        "preferences": {"age_min": 18, "age_max": 99, "seeking_genders": [], "radius_km": 50},
+        "consents": {"terms": True, "privacy": True, "sensitive_data": True},
+        "privacy": {"hidden_mode": False},
+        "is_honeypot": True,
+        "honeypot_note": (payload.get("honeypot_note") or "")[:300] or None,
+        "honeypot_created_by": user["id"],
+        "is_system": True,  # also hides from /discover under existing rules
+        "banned": False,
+        "created_at": now_utc().isoformat(),
+        "last_active": now_utc().isoformat(),
+    }
+    await db.users.insert_one(doc)
+    await _audit(user["id"], "honeypot_create", hp_id, {"display_name": name})
+    return {"ok": True, "honeypot": serialize_doc(doc)}
+
+
+@api_router.delete("/admin/honeypots/{hp_id}")
+async def admin_delete_honeypot(hp_id: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "superadmin"])
+    res = await db.users.delete_one({"id": hp_id, "is_honeypot": True})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Honeypot nicht gefunden")
+    await _audit(user["id"], "honeypot_delete", hp_id)
+    return {"ok": True}
+
+
+@api_router.get("/admin/shadow-banned")
+async def admin_list_shadow_banned(
+    user=Depends(_require_user),
+    reason: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List shadow-banned users with their honeypot trigger trail.
+
+    Filter by `reason` (e.g. `honeypot_trigger`) to surface only bot catches.
+    """
+    await _require_role(user, ["admin", "moderator", "superadmin", "content_reviewer"])
+    q: Dict = {"shadow_banned": True}
+    if reason:
+        q["shadow_ban_reason"] = reason
+    items = await db.users.find(
+        q,
+        {"_id": 0, "id": 1, "email": 1, "display_name": 1, "shadow_banned_at": 1,
+         "shadow_ban_reason": 1, "shadow_ban_triggers": 1, "registration_ip": 1,
+         "created_at": 1},
+    ).sort("shadow_banned_at", -1).to_list(limit)
+    return {"users": serialize_doc(items)}
+
+
+@api_router.post("/admin/shadow-ban/{user_id}")
+async def admin_shadow_ban(user_id: str, payload: dict, user=Depends(_require_user)):
+    """Manually shadow-ban a user. Body: {reason: str}."""
+    await _require_role(user, ["admin", "superadmin"])
+    reason = (payload or {}).get("reason") or "manual"
+    if user_id == user["id"]:
+        raise HTTPException(400, "Du kannst dich nicht selbst shadow-bannen")
+    res = await db.users.update_one(
+        {"id": user_id, "shadow_banned": {"$ne": True}},
+        {"$set": {"shadow_banned": True, "shadow_banned_at": now_utc().isoformat(),
+                   "shadow_ban_reason": reason, "shadow_banned_by": user["id"]}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "User nicht gefunden oder bereits shadow-banned")
+    await _audit(user["id"], "shadow_ban", user_id, {"reason": reason})
+    return {"ok": True}
+
+
+@api_router.post("/admin/shadow-unban/{user_id}")
+async def admin_shadow_unban(user_id: str, user=Depends(_require_user)):
+    await _require_role(user, ["admin", "moderator", "superadmin"])
+    res = await db.users.update_one(
+        {"id": user_id, "shadow_banned": True},
+        {"$set": {"shadow_banned": False, "shadow_unbanned_at": now_utc().isoformat(),
+                   "shadow_unbanned_by": user["id"]}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "User nicht shadow-banned")
+    await _audit(user["id"], "shadow_unban", user_id)
+    return {"ok": True}

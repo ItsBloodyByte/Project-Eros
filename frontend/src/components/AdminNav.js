@@ -1,6 +1,7 @@
 import {
   Flag, Users, ImageIcon, BadgeCheck, Brain, CreditCard, Scale,
   Megaphone, Gift, Newspaper, MessageSquare, History, ServerCog,
+  ShieldAlert,
 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -28,6 +29,7 @@ export function AdminNav({ value, onChange, isSuper, counts = {} }) {
         { id: "users", label: "User:innen", icon: Users, always: true },
         { id: "photos", label: "Foto-Queue", icon: ImageIcon, badge: counts.photos, always: true },
         { id: "verifications", label: "Verifizierungen", icon: BadgeCheck, badge: counts.verifications, always: true },
+        { id: "honeypots", label: "Honey-Pots", icon: ShieldAlert, badge: counts.shadow_banned, always: true },
       ],
     },
     {

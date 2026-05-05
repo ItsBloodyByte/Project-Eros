@@ -26,6 +26,7 @@ from server import (
     now_utc,
     public_user_from_doc,
 )
+from honeypot import visibility_filter_for as _hp_filter
 
 logger = logging.getLogger("app.routers.discover")
 
@@ -104,6 +105,9 @@ async def discover(
             "$gte": prefs.get("age_min", 18),
             "$lte": prefs.get("age_max", 99),
         },
+        # Honeypot + shadow-ban filtering: regular users never see traps or
+        # shadow-banned accounts. The helper short-circuits to {} for staff.
+        **_hp_filter(user),
     }
     # Exclude users who blocked me OR whom I blocked
     exclude_ids = set(blocked)

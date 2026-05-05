@@ -37,6 +37,13 @@ from auth import (
     get_optional_user_payload,
 )
 from helpers import now_utc, public_user_from_doc, rounded_distance_km, haversine_km, serialize_doc, parse_dt, contains_link_like
+from honeypot import (
+    is_honeypot as _is_honeypot,
+    is_shadow_banned as _is_shadow_banned,
+    trigger_honeypot,
+    record_honeypot_flag,
+    visibility_filter_for as _hp_visibility_filter,
+)
 from image_compression import compress_image_data_url
 from moderation import moderate_image
 from rate_limit import rate_limiter, client_ip as _ratelimit_client_ip
@@ -551,6 +558,21 @@ async def view_user(user_id: str, user=Depends(_require_user)):
     if not is_admin and not is_self:
         if doc.get("banned") or doc.get("privacy", {}).get("hidden_mode"):
             raise HTTPException(404, "Not found")
+        # Honeypot trip-wire: a non-staff user reaching a honeypot's profile
+        # page is by definition a bot, scraper, or someone who learned the ID
+        # out of band. We shadow-ban them but still serve the page so they
+        # don't realise they've been caught.
+        if doc.get("is_honeypot"):
+            tripped = await trigger_honeypot(db, user, doc, "view_user")
+            if tripped:
+                await record_honeypot_flag(db, user["id"], doc["id"], "view_user")
+                try:
+                    await notify_admins({"type": "honeypot_trigger",
+                                          "user_id": user["id"],
+                                          "honeypot_id": doc["id"],
+                                          "action": "view_user"})
+                except Exception:
+                    pass
     # Record visit (unless self, admin-mode viewing, or stealth viewer)
     if not is_self and not is_admin:
         try:
@@ -602,6 +624,20 @@ async def create_like(body: LikeRequest, user=Depends(_require_user)):
     target = await db.users.find_one({"id": body.target_user_id})
     if not target or target.get("banned"):
         raise HTTPException(404, "Target not found")
+    # Honeypot trip-wire: if the target is a trap, shadow-ban the actor and
+    # return a faked success so the bot believes the like landed.
+    if _is_honeypot(target) and not user.get("role") in {"admin","moderator","superadmin","content_reviewer","support"}:
+        await trigger_honeypot(db, user, target, "like")
+        await record_honeypot_flag(db, user["id"], target["id"], "like")
+        try:
+            await notify_admins({"type": "honeypot_trigger", "user_id": user["id"],
+                                  "honeypot_id": target["id"], "action": "like"})
+        except Exception:
+            pass
+        return LikeResponse(liked=True, matched=False)
+    # Shadow-banned actors: their likes silently no-op (we lie and say success).
+    if _is_shadow_banned(user):
+        return LikeResponse(liked=True, matched=False)
     # Free-tier daily like limit (premium / staff bypass)
     if not _is_user_premium(user):
         cfg = await _get_platform_config()

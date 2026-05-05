@@ -32,6 +32,13 @@ from server import (
     public_user_from_doc,
     serialize_doc,
     ws_manager,
+    notify_admins,
+)
+from honeypot import (
+    is_honeypot as _is_honeypot,
+    is_shadow_banned as _is_shadow_banned,
+    trigger_honeypot,
+    record_honeypot_flag,
 )
 
 logger = logging.getLogger("app.routers.matches_chat")
@@ -161,6 +168,41 @@ async def send_message(body: SendMessageRequest, user=Depends(_require_user)):
         raise HTTPException(400, "Message must have text or media")
     if body.text and contains_link_like(body.text):
         raise HTTPException(400, "Links sind im Chat nicht erlaubt.")
+    # Honeypot detection: peek at the counterpart of this match. If they're a
+    # honeypot AND the sender isn't staff, trigger a shadow-ban and pretend
+    # the send succeeded (no DB write, no fan-out).
+    other_id_for_hp = m.get("user_b") if m.get("user_a") == user["id"] else m.get("user_a")
+    if other_id_for_hp:
+        other_doc = await db.users.find_one({"id": other_id_for_hp})
+        if other_doc and _is_honeypot(other_doc) and user.get("role") not in {"admin","moderator","superadmin","content_reviewer","support"}:
+            await trigger_honeypot(db, user, other_doc, "message", {"match_id": body.match_id})
+            await record_honeypot_flag(db, user["id"], other_doc["id"], "message", {"match_id": body.match_id})
+            try:
+                await notify_admins({"type": "honeypot_trigger", "user_id": user["id"],
+                                      "honeypot_id": other_doc["id"], "action": "message"})
+            except Exception:
+                pass
+            # Return a synthetic success so the bot believes the message was delivered.
+            return {
+                "id": str(uuid.uuid4()),
+                "match_id": body.match_id,
+                "sender_id": user["id"],
+                "text": body.text,
+                "media_data_url": body.media_data_url,
+                "created_at": now_utc().isoformat(),
+                "sender": {"id": user["id"], "display_name": user.get("display_name"), "avatar": None},
+            }
+    # Shadow-banned senders: same trick — return success but skip DB + fanout.
+    if _is_shadow_banned(user):
+        return {
+            "id": str(uuid.uuid4()),
+            "match_id": body.match_id,
+            "sender_id": user["id"],
+            "text": body.text,
+            "media_data_url": body.media_data_url,
+            "created_at": now_utc().isoformat(),
+            "sender": {"id": user["id"], "display_name": user.get("display_name"), "avatar": None},
+        }
     nsfw_score = None
     if body.media_data_url:
         if not body.media_data_url.startswith("data:image/"):

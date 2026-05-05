@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { RoleBadge } from "../components/RoleBadge";
 import { AdminPromosTab } from "../components/AdminPromosTab";
 import { AdminBlogTab } from "../components/AdminBlogTab";
+import { AdminHoneypotsTab } from "../components/AdminHoneypotsTab";
 import { AdminNav } from "../components/AdminNav";
 
 const ADMIN_TAB_LABELS = {
@@ -845,6 +846,10 @@ export default function AdminPage() {
                   </TableBody>
                 </Table>
               </div>
+            </TabsContent>
+
+            <TabsContent value="honeypots" className="mt-4">
+              <AdminHoneypotsTab isSuper={isSuper} />
             </TabsContent>
 
             {isSuper && (
