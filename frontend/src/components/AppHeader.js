@@ -17,6 +17,7 @@ import {
 import {
   Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle,
 } from "./ui/sheet";
+import { SparksBalance } from "./SparksBalance";
 
 function CounterBadge({ count, testid }) {
   if (!count || count <= 0) return null;
@@ -167,6 +168,7 @@ export function AppHeader() {
 
         {/* Right: actions */}
         <div className="flex items-center gap-1">
+          <SparksBalance />
           {user?.is_premium && (
             <span
               className="hidden sm:inline-flex items-center gap-1 rounded-full border border-[hsl(var(--accent))]/40 bg-[hsl(var(--accent))]/10 px-2 py-0.5 text-[11px] font-medium text-[hsl(var(--accent))]"

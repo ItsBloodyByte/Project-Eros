@@ -1,18 +1,18 @@
 [
   {
-    "content": "Phase 15.1: Foundation komplett (Constants, Sparks Ledger, Subscriptions, Migration, Limits, Hooks, Admin Endpoints, Bug-fix _id leak) + Backend-Test 90% pass",
+    "content": "Phase 15.1: Foundation komplett & getestet (90% pass)",
     "status": "completed"
   },
   {
-    "content": "Phase 15.2: Sparks Spending + Premium-Features (Filter SKIP)",
-    "status": "pending"
+    "content": "Phase 15.2: Sparks Spending + Premium-Features (100% pass)",
+    "status": "completed"
   },
   {
-    "content": "Phase 15.3: Pricing + Payment Cycles + Pause + Sparks-Pakete + Boost-Spend",
-    "status": "pending"
+    "content": "Phase 15.3: Pause/Resume/Cancel + Sparks-Pakete + Cycle-Pakete (Backend getestet)",
+    "status": "completed"
   },
   {
-    "content": "Phase 15.4: Frontend Polish + Transparenzseite + Anti-Dark-Pattern Locks",
-    "status": "pending"
+    "content": "Phase 15.4: Frontend Polish (Sparks-Header + LedgerPage + SubSection + TransparentPage + PremiumPage Rework)",
+    "status": "completed"
   }
 ]

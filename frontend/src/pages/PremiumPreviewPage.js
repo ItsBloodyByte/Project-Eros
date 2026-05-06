@@ -9,8 +9,125 @@ import { Badge } from "../components/ui/badge";
 import { Skeleton } from "../components/ui/skeleton";
 import {
   Check, Crown, Eye, Ghost, Heart, MessageSquareText, Rocket, Shield,
-  Sliders, Sparkles, Users, Video, Zap,
+  Sliders, Sparkles, Users, Video, Zap, X,
 } from "lucide-react";
+
+/**
+ * Per-cycle price tiles (Phase 15.3 — Kapitel 15.2 prices).
+ *
+ * The numbers are rendered as plain JSX rather than fetched from
+ * `/api/payments/packages` because they need to be readable for guests
+ * (who may not be authenticated) and for SEO crawlers. The /account
+ * page is the source of truth for actual purchase — that's where Stripe
+ * runs and where the per-package idempotency keys are issued.
+ */
+function PricingSection({ isPremium }) {
+  const cycles = [
+    { id: "monthly",  label: "Monatlich",     monthly: "9,99\u202f\u20ac",  total: "9,99\u202f\u20ac / Monat",       savings: null,        popular: false },
+    { id: "biannual", label: "Halbj\u00e4hrlich",  monthly: "7,99\u202f\u20ac", total: "47,94\u202f\u20ac / 6\u202fMonate",   savings: "\u201320\u202f%",  popular: true },
+    { id: "annual",   label: "J\u00e4hrlich",      monthly: "5,99\u202f\u20ac", total: "71,88\u202f\u20ac / Jahr",         savings: "\u201340\u202f%",  popular: false },
+    { id: "student",  label: "Studierende",  monthly: "3,99\u202f\u20ac", total: "47,88\u202f\u20ac / Jahr",         savings: "\u201360\u202f%",  popular: false },
+  ];
+  return (
+    <section className="space-y-4" data-testid="premium-pricing">
+      <h2 className="font-display text-2xl tracking-tight text-center">Preise</h2>
+      <p className="text-sm text-[hsl(var(--muted-foreground))] text-center max-w-xl mx-auto">
+        Kündige jederzeit, pausiere bis 90 Tage, oder verschenke das Abo. Sparks verfallen nie.
+      </p>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {cycles.map((c) => (
+          <div
+            key={c.id}
+            data-testid={`pricing-${c.id}`}
+            className={`relative rounded-[var(--radius-lg)] p-5 ring-1 flex flex-col ${
+              c.popular
+                ? "bg-[hsl(var(--accent))]/10 ring-[hsl(var(--accent))]/40 shadow-[var(--shadow-md)]"
+                : "bg-[hsl(var(--card))] ring-[hsl(var(--border))]/60"
+            }`}
+          >
+            {c.popular && (
+              <span className="absolute -top-2 right-3 text-[10px] uppercase tracking-wider bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] rounded-full px-2 py-0.5 font-medium">
+                Beliebt
+              </span>
+            )}
+            <div className="text-sm font-medium text-[hsl(var(--muted-foreground))]">{c.label}</div>
+            <div className="font-display text-3xl tracking-tight mt-1">{c.monthly}<span className="text-base text-[hsl(var(--muted-foreground))] font-sans">/Mon.</span></div>
+            <div className="text-xs text-[hsl(var(--muted-foreground))] mt-1">{c.total}</div>
+            {c.savings && (
+              <div className="text-xs font-medium text-emerald-500 mt-1">{c.savings} günstiger</div>
+            )}
+            {c.id === "student" && (
+              <div className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1 italic">
+                Verifizierung erforderlich
+              </div>
+            )}
+            <div className="mt-auto pt-3" />
+          </div>
+        ))}
+      </div>
+      {!isPremium && (
+        <p className="text-center text-xs text-[hsl(var(--muted-foreground))] pt-1">
+          Auswahl &amp; Bezahlung im{" "}
+          <Link to="/account" className="underline hover:text-[hsl(var(--foreground))]">Account-Bereich</Link>.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Honest comparison table — what's actually different between Free and
+ * Premium. We deliberately *don't* gate filters or basic discovery, so
+ * the row count is small. Lying here would erode trust faster than any
+ * paywall could ever earn back.
+ */
+function ComparisonSection() {
+  const ROWS = [
+    { label: "Profile durchsuchen, liken, matchen",       free: true,         premium: true },
+    { label: "Alle Filter (Position, Kinks, Sprache, \u2026)", free: true,         premium: true },
+    { label: "Fotos pro Profil",                            free: "8",           premium: "30" },
+    { label: "Alben pro Profil",                            free: "2",           premium: "15" },
+    { label: "Medien pro Album",                            free: "20",          premium: "100" },
+    { label: "Suchradius",                                  free: "50\u202fkm",  premium: "300\u202fkm + global" },
+    { label: "Wer hat mich geliked? \u2014 volle Profile",   free: false,        premium: true },
+    { label: "Profil-Besucher mit Zeitstempel",             free: false,        premium: true },
+    { label: "Inkognito-Modus",                             free: false,        premium: true },
+    { label: "Unsichtbar browsen",                          free: false,        premium: true },
+    { label: "Statistiken (Reichweite)",                    free: "7 Tage",     premium: "90 Tage" },
+    { label: "Boost (1 Stunde)",                             free: "via Sparks", premium: "3\u00d7/Monat inkl." },
+    { label: "Sparks-Monatsbonus",                          free: false,        premium: "+50/Monat" },
+  ];
+  const Cell = ({ v }) => {
+    if (v === true)  return <Check className="h-4 w-4 text-emerald-500 mx-auto" />;
+    if (v === false) return <X className="h-4 w-4 text-[hsl(var(--muted-foreground))] mx-auto opacity-50" />;
+    return <span className="text-sm font-mono">{v}</span>;
+  };
+  return (
+    <section className="space-y-4" data-testid="premium-comparison">
+      <h2 className="font-display text-2xl tracking-tight text-center">Free vs. Premium — ehrlich</h2>
+      <div className="overflow-x-auto rounded-[var(--radius-lg)] ring-1 ring-[hsl(var(--border))]/60 bg-[hsl(var(--card))]">
+        <table className="w-full text-sm">
+          <thead className="text-[hsl(var(--muted-foreground))] text-xs uppercase tracking-wider">
+            <tr>
+              <th className="text-left font-medium px-4 py-3">Funktion</th>
+              <th className="text-center font-medium px-4 py-3 w-32">Free „Entdecken“</th>
+              <th className="text-center font-medium px-4 py-3 w-32 bg-[hsl(var(--accent))]/5">Premium „Verbinden“</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[hsl(var(--border))]/60">
+            {ROWS.map((r) => (
+              <tr key={r.label}>
+                <td className="px-4 py-2.5">{r.label}</td>
+                <td className="px-4 py-2.5 text-center"><Cell v={r.free} /></td>
+                <td className="px-4 py-2.5 text-center bg-[hsl(var(--accent))]/5"><Cell v={r.premium} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
 
 const ICONS = {
   heart: Heart,
@@ -172,6 +289,30 @@ export default function PremiumPreviewPage() {
               </div>
             </section>
           )}
+
+          {/* Pricing tiers (Phase 15.3) */}
+          <PricingSection isPremium={isPremium} />
+
+          {/* Free vs Premium comparison */}
+          <ComparisonSection />
+
+          {/* Transparency callout */}
+          <section className="rounded-[var(--radius-lg)] border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/30 p-5 md:p-6 flex flex-col md:flex-row items-start md:items-center gap-4">
+            <Shield className="h-7 w-7 text-[hsl(var(--accent))] shrink-0" />
+            <div className="flex-1">
+              <h3 className="font-display text-lg">Transparent verdient. Fair berechnet.</h3>
+              <p className="text-sm text-[hsl(var(--muted-foreground))]">
+                Wir veröffentlichen unsere Galerie-Gewichtungen, Sparks-Mathematik und Anti-Dark-Pattern Garantien öffentlich.
+              </p>
+            </div>
+            <Link
+              to="/transparent"
+              className="text-sm font-medium text-[hsl(var(--accent))] hover:underline shrink-0"
+              data-testid="premium-transparent-link"
+            >
+              Mehr erfahren →
+            </Link>
+          </section>
 
           {/* Closing CTA */}
           <section className="text-center space-y-3 pt-4 pb-8">

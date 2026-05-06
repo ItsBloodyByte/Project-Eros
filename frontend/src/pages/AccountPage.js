@@ -12,6 +12,7 @@ import { Mail, ShieldCheck, Zap, Crown, Heart, Lock, Plane, Trash2, IdCard } fro
 import { Link } from "react-router-dom";
 import { AppFooter } from "../components/AppFooter";
 import { PremiumExtrasSection } from "../components/PremiumExtrasSection";
+import { SubscriptionSection } from "../components/SubscriptionSection";
 import { CoupleSection } from "../components/CoupleSection";
 import { BroadcastHistorySection } from "../components/BroadcastHistorySection";
 import { PaymentProviderDialog } from "../components/PaymentProviderDialog";
@@ -228,6 +229,8 @@ export default function AccountPage() {
           <BroadcastHistorySection />
 
           <PremiumExtrasSection />
+
+          <SubscriptionSection />
 
           <section className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-3 shadow-[var(--shadow-sm)]" data-testid="premium-section">
             <div className="font-display text-lg flex items-center gap-2"><Crown className="h-4 w-4" /> Premium</div>

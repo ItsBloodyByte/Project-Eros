@@ -34,6 +34,8 @@ const BlogPostPage = lazy(() => import("./pages/BlogPostPage"));
 const PremiumPreviewPage = lazy(() => import("./pages/PremiumPreviewPage"));
 const VisitorsPage = lazy(() => import("./pages/VisitorsPage"));
 const PaypalReturnPage = lazy(() => import("./pages/PaypalReturnPage"));
+const SparksLedgerPage = lazy(() => import("./pages/SparksLedgerPage"));
+const TransparentPage = lazy(() => import("./pages/TransparentPage"));
 const KlarnaCheckoutPage = lazy(() => import("./pages/KlarnaCheckoutPage"));
 
 /** Reusable fallback while a lazy route is being fetched. Matches the
@@ -83,6 +85,8 @@ function AppRoutes() {
         <Route path="/blog/:slug" element={<BlogPostPage />} />
         {/* Premium feature preview – marketing page, no auth required */}
         <Route path="/premium" element={<PremiumPreviewPage />} />
+        {/* Public transparency page (Kapitel 15.5) */}
+        <Route path="/transparent" element={<TransparentPage />} />
         <Route path="/onboarding" element={<Protected><OnboardingPage /></Protected>} />
         {/* Public landing page for guests; authenticated users are redirected
          *  to /discover by HomeOrLanding.
@@ -99,6 +103,7 @@ function AppRoutes() {
         <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
         <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
         <Route path="/visitors" element={<Protected><VisitorsPage /></Protected>} />
+        <Route path="/sparks" element={<Protected><SparksLedgerPage /></Protected>} />
         <Route path="/payments/paypal/return" element={<Protected><PaypalReturnPage /></Protected>} />
         <Route path="/payments/paypal/cancel" element={<Protected><PaypalReturnPage /></Protected>} />
         <Route path="/payments/klarna/checkout" element={<Protected><KlarnaCheckoutPage /></Protected>} />

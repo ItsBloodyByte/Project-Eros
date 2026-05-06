@@ -2445,12 +2445,29 @@ from emergentintegrations.payments.stripe.checkout import StripeCheckout, Checko
 PAYMENT_CONFIG_KEY = "payment_config"
 
 DEFAULT_PACKAGES: List[Dict] = [
-    {"id": "premium_30", "amount": 9.99, "currency": "eur", "desc": "Eros Premium 30 Tage",
-     "enabled": True, "kind": "premium", "days": 30},
-    {"id": "premium_365", "amount": 79.99, "currency": "eur", "desc": "Eros Premium 1 Jahr",
-     "enabled": True, "kind": "premium", "days": 365},
-    {"id": "boost_single", "amount": 2.99, "currency": "eur", "desc": "Boost (30 Minuten)",
-     "enabled": True, "kind": "boost", "minutes": 30},
+    # Premium subscription cycles (Phase 15.3 — Kapitel 15.2 prices).
+    {"id": "premium_30", "amount": 9.99, "currency": "eur", "desc": "Eros Premium · Monatlich",
+     "enabled": True, "kind": "premium", "days": 30, "billing_cycle": "monthly"},
+    {"id": "premium_180", "amount": 47.94, "currency": "eur", "desc": "Eros Premium · Halbjährlich (≈7,99 €/Mon, –20 %)",
+     "enabled": True, "kind": "premium", "days": 182, "billing_cycle": "biannual"},
+    {"id": "premium_365", "amount": 71.88, "currency": "eur", "desc": "Eros Premium · Jährlich (≈5,99 €/Mon, –40 %)",
+     "enabled": True, "kind": "premium", "days": 365, "billing_cycle": "annual"},
+    {"id": "premium_student_365", "amount": 47.88, "currency": "eur",
+     "desc": "Eros Premium · Studierende (≈3,99 €/Mon, –60 %)",
+     "enabled": True, "kind": "premium", "days": 365, "billing_cycle": "student",
+     "requires_verification": True},
+    # Sparks top-ups (Phase 15.3 — Kapitel 15.3 packages).
+    {"id": "sparks_50",   "amount":  2.99, "currency": "eur", "desc": "50 Sparks",
+     "enabled": True, "kind": "sparks", "sparks":   50, "bonus":   0},
+    {"id": "sparks_150",  "amount":  6.99, "currency": "eur", "desc": "150 Sparks (+15 Bonus)",
+     "enabled": True, "kind": "sparks", "sparks":  150, "bonus":  15},
+    {"id": "sparks_400",  "amount": 14.99, "currency": "eur", "desc": "400 Sparks (+50 Bonus)",
+     "enabled": True, "kind": "sparks", "sparks":  400, "bonus":  50},
+    {"id": "sparks_1000", "amount": 29.99, "currency": "eur", "desc": "1.000 Sparks (+200 Bonus)",
+     "enabled": True, "kind": "sparks", "sparks": 1000, "bonus": 200},
+    # Boost (single-purchase, retains backwards compat with boost endpoints).
+    {"id": "boost_single", "amount": 2.99, "currency": "eur", "desc": "Boost (1 Stunde)",
+     "enabled": True, "kind": "boost", "minutes": 60},
 ]
 
 
@@ -2549,6 +2566,31 @@ async def _apply_entitlement(user_id: str, package_id: str):
         minutes = int(pkg.get("minutes") or 30)
         new_exp = now_utc() + timedelta(minutes=minutes)
         await db.users.update_one({"id": user_id}, {"$set": {"boost_expires_at": new_exp.isoformat()}})
+    elif kind == "sparks":
+        # Phase 15.3: Sparks top-up packages purchased through the regular
+        # payment flow. The package definition carries the base amount and
+        # an optional bonus; we credit them as TWO ledger rows so the
+        # transaction history clearly shows what the user paid for and what
+        # was awarded as a bonus.
+        try:
+            import sparks as _sparks_lib
+            base = int(pkg.get("sparks") or 0)
+            bonus = int(pkg.get("bonus") or 0)
+            if base > 0:
+                await _sparks_lib.award_sparks(
+                    db, user_id, "purchased",
+                    amount=base, related_id=package_id,
+                    note=f"Sparks-Kauf ({base})",
+                )
+            if bonus > 0:
+                await _sparks_lib.award_sparks(
+                    db, user_id, "purchase_bonus",
+                    amount=bonus, related_id=package_id,
+                    note=f"Bonus-Sparks ({bonus})",
+                )
+        except Exception as ex:
+            logger.warning("sparks entitlement failed for user %s pkg %s: %s",
+                           user_id, package_id, ex)
 
 
 async def _record_webhook_event(provider: str, event_id: str, payload: Dict) -> bool:
@@ -3512,6 +3554,7 @@ from routers import landing as _landing_routes  # noqa: E402,F401
 from routers import payments_maintenance as _payments_maintenance_routes  # noqa: E402,F401
 from routers import sparks as _sparks_routes  # noqa: E402,F401
 from routers import sparks_spend as _sparks_spend_routes  # noqa: E402,F401
+from routers import subscription as _subscription_routes  # noqa: E402,F401
 
 app.include_router(api_router)
 
