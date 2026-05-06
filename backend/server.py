@@ -193,6 +193,26 @@ async def startup():
     except Exception as e:
         logger.exception("hide_seen migration failed: %s", e)
 
+    # One-time migration: drop the deprecated "online" mood. The generic
+    # online indicator (last-seen heuristic) makes the mood redundant and the
+    # UI now treats unknown mood keys as "no mood". We unset both the value
+    # and any stale `current_mood_updated_at` so the profile renders cleanly.
+    try:
+        flag = await db.settings.find_one({"key": "migration_drop_online_mood_v1"})
+        if not flag:
+            res = await db.users.update_many(
+                {"current_mood": "online"},
+                {"$set": {"current_mood": None, "current_mood_updated_at": None}},
+            )
+            await db.settings.insert_one({
+                "key": "migration_drop_online_mood_v1",
+                "applied_at": now_utc().isoformat(),
+                "modified_count": getattr(res, "modified_count", 0),
+            })
+            logger.info("Migration: cleared 'online' mood for %s users", getattr(res, "modified_count", 0))
+    except Exception as e:
+        logger.exception("drop_online_mood migration failed: %s", e)
+
 
 @app.on_event("shutdown")
 async def shutdown():

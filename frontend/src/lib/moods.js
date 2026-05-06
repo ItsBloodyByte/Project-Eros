@@ -3,9 +3,9 @@
  * Single source of truth for mood keys, labels, icons, and colors.
  * Backend enum lives in /app/backend/models.py (Mood).
  */
-import { Flame, Heart, MessageCircle, Sparkles } from "lucide-react";
+import { Flame, Heart, MessageCircle } from "lucide-react";
 
-export const MOOD_KEYS = ["sex_meet", "dating", "chatting", "online"];
+export const MOOD_KEYS = ["sex_meet", "dating", "chatting"];
 
 /**
  * Definitions. Colors map into distinct HSL tokens so each mood has its own
@@ -13,7 +13,12 @@ export const MOOD_KEYS = ["sex_meet", "dating", "chatting", "online"];
  *  - sex_meet uses the "destructive" hue for its bold/adult vibe
  *  - dating uses the accent hue (hearts & connection)
  *  - chatting uses a neutral blue-ish from "ring"
- *  - online uses a success green from "success"
+ *
+ *  Note (2026-05): the "online" mood was removed because every authenticated
+ *  user already exposes a generic online indicator. Keeping it as a mood
+ *  caused a duplicate "Online" pill on profiles that confused users. Legacy
+ *  documents whose `current_mood` is still "online" no-op gracefully because
+ *  `getMood("online")` returns null and `MoodBadge` short-circuits.
  */
 export const MOODS = {
   sex_meet: {
@@ -49,17 +54,6 @@ export const MOODS = {
     textClass: "text-[hsl(var(--ring))]",
     dotClass: "bg-[hsl(var(--ring))]",
     description: "Nur zum Quatschen – kein Druck.",
-  },
-  online: {
-    key: "online",
-    label: "Online",
-    short: "Online",
-    icon: Sparkles,
-    ringClass: "ring-emerald-500/45",
-    bgClass: "bg-emerald-500/12",
-    textClass: "text-emerald-600 dark:text-emerald-400",
-    dotClass: "bg-emerald-500",
-    description: "Bin gerade da und ansprechbar.",
   },
 };
 

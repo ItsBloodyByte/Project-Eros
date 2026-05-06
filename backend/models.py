@@ -22,7 +22,7 @@ DietType = Literal["omnivore", "vegetarian", "vegan", "pescetarian", "kosher", "
 StiStatus = Literal["negative", "positive_undetectable", "positive", "on_prep", "prefer_not_say"]
 CupSize = Literal["A", "B", "C", "D", "DD", "E", "F", "G", "H", "I"]
 PenisCategory = Literal["S", "M", "L", "XL", "XXL"]
-Mood = Literal["sex_meet", "dating", "chatting", "online"]
+Mood = Literal["sex_meet", "dating", "chatting"]
 RelationshipStatus = Literal[
     "not_specified", "single", "taken", "married",
     "open_relationship", "complicated", "polyamorous", "divorced", "widowed"
