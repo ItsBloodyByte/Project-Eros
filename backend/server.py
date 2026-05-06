@@ -3415,6 +3415,9 @@ from routers import me as _me_routes  # noqa: E402,F401
 from routers import discover as _discover_routes  # noqa: E402,F401
 from routers import matches_chat as _matches_chat_routes  # noqa: E402,F401
 
+from routers import pic4pic as _pic4pic_routes  # noqa: E402,F401
+from routers import landing as _landing_routes  # noqa: E402,F401
+
 app.include_router(api_router)
 
 # CORS: if credentials are allowed, wildcard origins are insecure. Require

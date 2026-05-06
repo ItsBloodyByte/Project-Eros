@@ -234,14 +234,16 @@ async def pic4pic_respond(body: Pic4PicRespond, user=Depends(_require_user)):
         )
         # Inline the swapped photos as ordinary chat media so they appear in
         # the timeline. Each is sent under the *original* sender's account.
+        if initiator:
+            await _post_system_message(
+                ex["match_id"], initiator, text="",
+                extra={"kind": "pic4pic_photo", "pic4pic_id": ex["id"], "side": "initiator",
+                       "media_data_url": ex["initiator_photo"]},
+            )
         await _post_system_message(
-            ex["match_id"], initiator or {"id": ex["initiator_id"]},
-            text="", media=ex["initiator_photo"],
-            extra={"kind": "pic4pic_photo", "pic4pic_id": ex["id"], "side": "initiator"},
-        ) if initiator else None
-        await _post_system_message(
-            ex["match_id"], user, text="", media=compressed,
-            extra={"kind": "pic4pic_photo", "pic4pic_id": ex["id"], "side": "recipient"},
+            ex["match_id"], user, text="",
+            extra={"kind": "pic4pic_photo", "pic4pic_id": ex["id"], "side": "recipient",
+                   "media_data_url": compressed},
         )
     except Exception as ex2:
         logger.warning("pic4pic post-completion message failed: %s", ex2)

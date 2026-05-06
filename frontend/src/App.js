@@ -25,6 +25,7 @@ import PremiumPreviewPage from "./pages/PremiumPreviewPage";
 import VisitorsPage from "./pages/VisitorsPage";
 import PaypalReturnPage from "./pages/PaypalReturnPage";
 import KlarnaCheckoutPage from "./pages/KlarnaCheckoutPage";
+import LandingPage from "./pages/LandingPage";
 import { BroadcastBanner } from "./components/BroadcastBanner";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import "./App.css";
@@ -59,7 +60,11 @@ function AppRoutes() {
       {/* Premium feature preview – marketing page, no auth required */}
       <Route path="/premium" element={<PremiumPreviewPage />} />
       <Route path="/onboarding" element={<Protected><OnboardingPage /></Protected>} />
-      <Route path="/" element={<Protected><DiscoverPage /></Protected>} />
+      {/* Public landing page for guests; authenticated users are redirected
+       *  to /discover by the LandingPage component itself.
+       */}
+      <Route path="/" element={<HomeOrLanding />} />
+      <Route path="/discover" element={<Protected><DiscoverPage /></Protected>} />
       <Route path="/profile/:id" element={<Protected><ProfileViewPage /></Protected>} />
       <Route path="/me" element={<Protected><MyProfilePage /></Protected>} />
       <Route path="/matches" element={<Protected><MatchesPage /></Protected>} />

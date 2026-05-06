@@ -886,11 +886,24 @@ async def admin_audit(user=Depends(_require_user)):
 
 
 @api_router.get("/admin/moderation/photos")
-async def admin_moderation_photos(user=Depends(_require_user), threshold: float = 0.5):
+async def admin_moderation_photos(user=Depends(_require_user), threshold: Optional[float] = None):
+    """Photo moderation queue.
+
+    The default threshold honours the runtime AI config:
+      - `mandatory_review=True`  → 0.5 (catch borderline content)
+      - `mandatory_review=False` → use `block_threshold` (only the worst hits)
+    Admins can still override via the `?threshold=` query parameter.
+    """
     await _require_role(user, ["admin", "moderator", "content_reviewer", "superadmin"])
+    if threshold is None:
+        ai_cfg = await db.settings.find_one({"key": AI_CONFIG_KEY}) or {}
+        if ai_cfg.get("mandatory_review", True):
+            threshold = 0.5
+        else:
+            threshold = float(ai_cfg.get("block_threshold") or 0.92)
     cursor = db.users.find(
         {"photos.nsfw_score": {"$gte": threshold}},
-        {"password_hash": 0}
+        {"password_hash": 0},
     ).limit(100)
     items = await cursor.to_list(length=100)
     out = []
@@ -902,7 +915,7 @@ async def admin_moderation_photos(user=Depends(_require_user), threshold: float 
                     "display_name": u["display_name"],
                     "photo": p,
                 })
-    return {"photos": out}
+    return {"photos": out, "threshold_used": threshold}
 
 
 # --------- Admin role management ---------
@@ -1065,29 +1078,79 @@ async def admin_get_ai_config(user=Depends(_require_user)):
     await _require_role(user, ["admin", "superadmin"])
     cfg = await db.settings.find_one({"key": AI_CONFIG_KEY}) or {}
     cfg.pop("_id", None)
-    # Don't leak api key in GET after set, return masked
+    # Mask all api keys before returning. Both legacy top-level `api_key`
+    # and the new per-provider `provider_keys[*].api_key` fields are masked
+    # so admins see they're set without leaking the secret to the network.
     if cfg.get("api_key"):
         cfg["api_key_masked"] = "***" + cfg["api_key"][-4:]
         cfg.pop("api_key", None)
-    return cfg or {"provider": "gemini", "model": "gemini-2.5-flash", "enabled": True}
+    pkeys = cfg.get("provider_keys") or {}
+    masked_pkeys = {}
+    for prov, sub in pkeys.items():
+        sub = dict(sub or {})
+        if sub.get("api_key"):
+            sub["api_key_masked"] = "***" + str(sub["api_key"])[-4:]
+            sub.pop("api_key", None)
+        masked_pkeys[prov] = sub
+    if masked_pkeys:
+        cfg["provider_keys"] = masked_pkeys
+    cfg.setdefault("enabled", True)
+    cfg.setdefault("provider", "gemini")
+    cfg.setdefault("model", "gemini-2.5-flash")
+    cfg.setdefault("mandatory_review", True)
+    cfg.setdefault("block_threshold", 0.92)
+    return cfg
 
 
 @api_router.post("/admin/ai-config")
-async def admin_set_ai_config(body: AIConfigUpdate, user=Depends(_require_user)):
+async def admin_set_ai_config(body: dict, user=Depends(_require_user)):
+    """Update the moderation config. Body fields:
+        - enabled (bool, master switch)
+        - provider ("gemini" | "openai" | "anthropic" | "noop")
+        - model (str)
+        - mandatory_review (bool)
+        - block_threshold (float 0..1)
+        - api_key (str, legacy single key — applied to active provider)
+        - base_url (str, optional)
+        - provider_keys (dict[provider→{api_key, model}]) — partial updates
+          merged with existing config.
+    """
     await _require_role(user, ["admin", "superadmin"])
-    doc = {
-        "key": AI_CONFIG_KEY,
-        "provider": body.provider,
-        "model": body.model,
-        "base_url": body.base_url,
-        "enabled": body.enabled,
-        "updated_at": now_utc().isoformat(),
-        "updated_by": user["id"],
-    }
-    if body.api_key:
-        doc["api_key"] = body.api_key
-    await db.settings.update_one({"key": AI_CONFIG_KEY}, {"$set": doc}, upsert=True)
-    await _audit(user["id"], "ai_config_update", meta={"provider": body.provider, "model": body.model})
+    body = body or {}
+    existing = await db.settings.find_one({"key": AI_CONFIG_KEY}) or {}
+    update: Dict = {"key": AI_CONFIG_KEY,
+                    "updated_at": now_utc().isoformat(),
+                    "updated_by": user["id"]}
+    for field in ("enabled", "provider", "model", "mandatory_review",
+                  "block_threshold", "base_url"):
+        if field in body and body[field] is not None:
+            update[field] = body[field]
+    if body.get("api_key"):
+        update["api_key"] = body["api_key"]
+    incoming_pkeys = body.get("provider_keys") or {}
+    if isinstance(incoming_pkeys, dict) and incoming_pkeys:
+        merged = dict(existing.get("provider_keys") or {})
+        for prov, sub in incoming_pkeys.items():
+            if not isinstance(sub, dict):
+                continue
+            current = dict(merged.get(prov) or {})
+            for k in ("api_key", "model"):
+                if k in sub and sub[k] not in (None, ""):
+                    current[k] = sub[k]
+            merged[prov] = current
+        update["provider_keys"] = merged
+    await db.settings.update_one({"key": AI_CONFIG_KEY}, {"$set": update}, upsert=True)
+    # Tell the moderation module to reload on next call.
+    try:
+        from moderation import invalidate_config_cache
+        invalidate_config_cache()
+    except Exception:
+        pass
+    await _audit(user["id"], "ai_config_update", meta={
+        "provider": update.get("provider"),
+        "enabled": update.get("enabled"),
+        "providers_updated": list(incoming_pkeys.keys()) if incoming_pkeys else [],
+    })
     return {"ok": True}
 
 

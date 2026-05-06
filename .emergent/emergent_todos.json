@@ -1,19 +1,19 @@
 [
   {
-    "content": "#2 Album mutual-Freigabe: bidirektional gating + auto-cascade-revoke",
+    "content": "#2 Album mutual-Freigabe",
     "status": "completed"
   },
   {
-    "content": "#1 Pic4Pic sicherer Bildtausch im Chat",
-    "status": "in_progress"
+    "content": "#1 Pic4Pic Backend",
+    "status": "completed"
   },
   {
-    "content": "#4 AI optional + Multi-Provider + optionale Reviews",
-    "status": "pending"
+    "content": "#4 AI optional + Multi-Provider + optionale Reviews (Backend + Admin Config)",
+    "status": "completed"
   },
   {
     "content": "#6 Custom Landing Page für Gäste",
-    "status": "pending"
+    "status": "in_progress"
   },
   {
     "content": "#8 Performance-Sweep",
