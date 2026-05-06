@@ -23,6 +23,11 @@ import { AdminBlogTab } from "../components/AdminBlogTab";
 import { AdminHoneypotsTab } from "../components/AdminHoneypotsTab";
 import { AdminShell } from "../admin/shell/AdminShell";
 import { OverviewSection } from "../admin/components/OverviewSection";
+import SparksSection from "../admin/sections/SparksSection";
+import { AdminPageHeader } from "../admin/components/AdminPageHeader";
+import { AdminEmptyState } from "../admin/components/AdminEmptyState";
+import { AdminStatusPill } from "../admin/components/AdminStatusPill";
+import { Search as SearchIcon, Flag, Image as ImageIcon2, BadgeCheck as BadgeCheckIcon, ScrollText, ServerCog, RefreshCw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const ADMIN_TAB_LABELS = {
@@ -711,6 +716,11 @@ export default function AdminPage() {
         <OverviewSection onJumpTo={setActiveTab} isSuper={isSuper} />
       )}
 
+      {/* Sparks economy admin (KPIs + ledger + manual adjust). */}
+      {activeTab === "sparks" && (
+        <SparksSection />
+      )}
+
       <div className="min-w-0" data-testid="admin-layout">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* Legacy TabsList — kept as accessibility fallback (sr-only, drives
@@ -732,11 +742,25 @@ export default function AdminPage() {
                   {isSuper && <TabsTrigger value="system">System</TabsTrigger>}
                 </TabsList>
 
-            <TabsContent value="reports" className="mt-4">
+            <TabsContent value="reports" className="mt-4 space-y-4">
+              <AdminPageHeader
+                title="Reports"
+                count={reports.length}
+                subtitle="Eingehende Meldungen prüfen, weiterleiten oder erledigen"
+                actions={
+                  <Button size="sm" variant="outline" onClick={loadAll} data-testid="reports-refresh">
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Aktualisieren
+                  </Button>
+                }
+              />
               <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow>
-                    <TableHead>ID</TableHead><TableHead>Ziel</TableHead><TableHead>Grund</TableHead><TableHead>Status</TableHead><TableHead>Aktionen</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">ID</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Ziel</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Grund</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Status</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Aktionen</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
                     {reports.map((r) => (
@@ -753,7 +777,7 @@ export default function AdminPage() {
                           )}
                         </TableCell>
                         <TableCell className="max-w-[200px] sm:max-w-[320px] truncate" onClick={() => openReport(r.id)}>{r.reason}</TableCell>
-                        <TableCell><Badge variant={r.status==="resolved"?"secondary":"outline"}>{r.status}</Badge></TableCell>
+                        <TableCell><AdminStatusPill status={r.status === "reviewing" ? "in_review" : r.status} testid={`admin-report-status-${r.id}`} /></TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1.5">
                             <Button size="sm" variant="outline" onClick={() => openReport(r.id)} data-testid={`admin-report-open-${r.id}`}>Details</Button>
@@ -765,19 +789,53 @@ export default function AdminPage() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {reports.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-6">Keine Meldungen.</TableCell></TableRow>}
+                    {reports.length === 0 && (
+                      <TableRow><TableCell colSpan={5} className="p-0">
+                        <AdminEmptyState
+                          icon={Flag}
+                          title="Keine offenen Meldungen"
+                          body="Alle Reports sind abgearbeitet. Eingehende Meldungen erscheinen hier sofort."
+                        />
+                      </TableCell></TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
             </TabsContent>
 
-            <TabsContent value="users" className="mt-4 space-y-3">
-              <Input placeholder="Suche E-Mail / Name" value={search} onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={async (e) => { if (e.key === "Enter") { const { data } = await api.get("/admin/users", { params: { q: search } }); setUsers(data.users); } }} />
+            <TabsContent value="users" className="mt-4 space-y-4">
+              <AdminPageHeader
+                title="Users"
+                count={users.length}
+                subtitle="Profile prüfen, bearbeiten, bannen oder entbannen"
+                actions={
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                    <div className="relative">
+                      <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
+                      <Input
+                        placeholder="E-Mail / Name / ID"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        onKeyDown={async (e) => { if (e.key === "Enter") { const { data } = await api.get("/admin/users", { params: { q: search } }); setUsers(data.users); } }}
+                        className="pl-8 h-9 w-[220px] md:w-[280px]"
+                        data-testid="users-search-input"
+                      />
+                    </div>
+                    <Button size="sm" variant="outline" onClick={loadAll} data-testid="users-refresh">
+                      <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Aktualisieren
+                    </Button>
+                  </div>
+                }
+              />
               <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow>
-                    <TableHead>Name</TableHead><TableHead>E-Mail</TableHead><TableHead>Alter</TableHead><TableHead>Rolle</TableHead><TableHead>Status</TableHead><TableHead>Aktionen</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Name</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">E-Mail</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Alter</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Rolle</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Status</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Aktionen</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
                     {users.map((u) => (
@@ -793,20 +851,22 @@ export default function AdminPage() {
                           </Link>
                         </TableCell>
                         <TableCell className="font-mono text-xs">{u.email}</TableCell>
-                        <TableCell>{u.age}</TableCell>
+                        <TableCell className="tabular-nums">{u.age}</TableCell>
                         <TableCell>
                           {u.role && u.role !== "user" ? (
                             <RoleBadge role={u.role} />
                           ) : (
-                            <Badge variant="outline">user</Badge>
+                            <span className="text-[11px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">user</span>
                           )}
                         </TableCell>
-                        <TableCell className="space-x-1">
-                          {u.banned && <Badge variant="destructive">banned</Badge>}
-                          {u.shadow_restricted && <Badge variant="secondary">shadow</Badge>}
-                          {u.id_verified && <Badge>ID</Badge>}
-                          {u.privacy?.hidden_mode && <Badge variant="outline">versteckt</Badge>}
-                          {!u.banned && !u.shadow_restricted && !u.privacy?.hidden_mode && <Badge variant="secondary">aktiv</Badge>}
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {u.id_verified && <AdminStatusPill status="approved" label="ID" testid={`admin-user-id-${u.id}`} />}
+                            {u.banned && <AdminStatusPill status="banned" />}
+                            {u.shadow_restricted && <AdminStatusPill status="shadow" />}
+                            {u.privacy?.hidden_mode && <AdminStatusPill status="neutral" label="versteckt" />}
+                            {!u.banned && !u.shadow_restricted && !u.privacy?.hidden_mode && <AdminStatusPill status="active" />}
+                          </div>
                         </TableCell>
                         <TableCell className="space-x-1">
                           <Button size="sm" variant="ghost" asChild data-testid={`admin-user-view-${u.id}`}>
@@ -819,60 +879,144 @@ export default function AdminPage() {
                         </TableCell>
                       </TableRow>
                     ))}
+                    {users.length === 0 && (
+                      <TableRow><TableCell colSpan={6} className="p-0">
+                        <AdminEmptyState
+                          icon={SearchIcon}
+                          title="Keine User gefunden"
+                          body="Probiere eine andere Suche oder lade die Liste neu."
+                        />
+                      </TableCell></TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
             </TabsContent>
 
-            <TabsContent value="photos" className="mt-4">
-              <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                {photos.map((p) => (
-                  <div key={p.photo.id} className="relative aspect-square rounded-md overflow-hidden border bg-[hsl(var(--muted))]">
-                    <img src={p.photo.data} alt="" className="h-full w-full object-cover" />
-                    <div className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-[11px] px-2 py-1">
-                      <div>{p.display_name} · NSFW {(p.photo.nsfw_score*100).toFixed(0)}%</div>
-                      <div className="flex gap-2 mt-1">
-                        <button className="underline" onClick={() => ban(p.user_id, "NSFW violation")}>Owner bannen</button>
+            <TabsContent value="photos" className="mt-4 space-y-4">
+              <AdminPageHeader
+                title="Foto-Queue"
+                count={photos.length}
+                subtitle="Hochgeladene Fotos mit erhöhter NSFW-Wahrscheinlichkeit (Schwelle 0.5)"
+                actions={
+                  <Button size="sm" variant="outline" onClick={loadAll} data-testid="photos-refresh">
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Aktualisieren
+                  </Button>
+                }
+              />
+              {photos.length === 0 ? (
+                <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60">
+                  <AdminEmptyState
+                    icon={ImageIcon2}
+                    title="Foto-Queue ist leer"
+                    body="Aktuell sind keine Fotos zur Prüfung markiert. Markierte Fotos erscheinen automatisch hier."
+                  />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                  {photos.map((p) => {
+                    const score = p.photo.nsfw_score || 0;
+                    const tone = score >= 0.85 ? "danger" : score >= 0.65 ? "warn" : "neutral";
+                    const ringCls = tone === "danger" ? "ring-rose-500/40" : tone === "warn" ? "ring-amber-500/40" : "ring-[hsl(var(--border))]";
+                    return (
+                      <div key={p.photo.id} className={`group relative rounded-[var(--radius-md)] overflow-hidden bg-[hsl(var(--muted))] ring-1 ${ringCls}`} data-testid={`admin-photo-${p.photo.id}`}>
+                        <div className="aspect-square">
+                          <img src={p.photo.data} alt="" className="h-full w-full object-cover" />
+                        </div>
+                        <div className="absolute top-2 left-2">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-mono backdrop-blur-md ${tone === "danger" ? "bg-rose-500/80 text-white" : tone === "warn" ? "bg-amber-500/85 text-black" : "bg-black/55 text-white"}`}>
+                            NSFW {(score * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent text-white p-2.5">
+                          <Link to={`/profile/${p.user_id}`} className="block text-[12px] font-medium truncate hover:underline">
+                            {p.display_name || "(unbekannt)"}
+                          </Link>
+                          <div className="text-[10px] font-mono opacity-75 truncate">{p.user_id?.slice(0, 8)}</div>
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            <Button size="sm" variant="destructive" className="h-7 px-2 text-[11px]" onClick={() => ban(p.user_id, "NSFW violation")} data-testid={`admin-photo-ban-${p.photo.id}`}>
+                              Owner bannen
+                            </Button>
+                            <Button size="sm" variant="secondary" className="h-7 px-2 text-[11px]" asChild>
+                              <Link to={`/profile/${p.user_id}`}>Profil</Link>
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
-                {photos.length === 0 && <div className="col-span-full text-center text-sm text-[hsl(var(--muted-foreground))] py-6">Keine markierten Fotos.</div>}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </TabsContent>
 
-            <TabsContent value="verifications" className="mt-4">
+            <TabsContent value="verifications" className="mt-4 space-y-4">
+              <AdminPageHeader
+                title="ID-Verifizierungen"
+                count={verifs.length}
+                subtitle="Eingereichte Selfies + Dokumente nach Review zerstören"
+                actions={
+                  <Button size="sm" variant="outline" onClick={loadAll} data-testid="verifs-refresh">
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Aktualisieren
+                  </Button>
+                }
+              />
               <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow>
-                    <TableHead>User</TableHead><TableHead>Dokument-Typ</TableHead><TableHead>Selfie</TableHead><TableHead>Dokument</TableHead><TableHead>Eingereicht</TableHead><TableHead>Aktionen</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">User</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Dokument-Typ</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Selfie</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Dokument</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Eingereicht</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider">Aktionen</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
                     {verifs.map((v) => (
                       <TableRow key={v.id}>
-                        <TableCell className="font-mono text-xs">{v.user_id?.slice(0,8)}</TableCell>
-                        <TableCell>{v.document_type}</TableCell>
-                        <TableCell>{v.selfie_data_url ? <img src={v.selfie_data_url} alt="selfie" className="h-16 w-16 object-cover rounded" /> : "-"}</TableCell>
-                        <TableCell>{v.document_data_url ? <img src={v.document_data_url} alt="doc" className="h-16 w-24 object-cover rounded" /> : "-"}</TableCell>
-                        <TableCell className="font-mono text-xs">{v.submitted_at}</TableCell>
+                        <TableCell>
+                          <Link to={`/profile/${v.user_id}`} className="inline-flex items-center gap-1 font-mono text-xs hover:underline">
+                            {v.user_id?.slice(0,8)}
+                            <ExternalLink className="h-3 w-3 opacity-60" />
+                          </Link>
+                        </TableCell>
+                        <TableCell><AdminStatusPill status="pending" label={v.document_type || "—"} /></TableCell>
+                        <TableCell>{v.selfie_data_url ? <img src={v.selfie_data_url} alt="selfie" className="h-16 w-16 object-cover rounded ring-1 ring-[hsl(var(--border))]" /> : <span className="text-[hsl(var(--muted-foreground))] text-xs">—</span>}</TableCell>
+                        <TableCell>{v.document_data_url ? <img src={v.document_data_url} alt="doc" className="h-16 w-24 object-cover rounded ring-1 ring-[hsl(var(--border))]" /> : <span className="text-[hsl(var(--muted-foreground))] text-xs">—</span>}</TableCell>
+                        <TableCell className="font-mono text-[11px] text-[hsl(var(--muted-foreground))]">{v.submitted_at?.slice(0,16).replace("T", " ")}</TableCell>
                         <TableCell className="space-x-2">
                           <Button size="sm" onClick={() => reviewVerif(v.user_id, "approved")} data-testid={`verif-approve-${v.user_id}`}>Genehmigen</Button>
                           <Button size="sm" variant="destructive" onClick={() => reviewVerif(v.user_id, "rejected")}>Ablehnen</Button>
                         </TableCell>
                       </TableRow>
                     ))}
-                    {verifs.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-6">Keine offenen Verifizierungen.</TableCell></TableRow>}
+                    {verifs.length === 0 && (
+                      <TableRow><TableCell colSpan={6} className="p-0">
+                        <AdminEmptyState
+                          icon={BadgeCheckIcon}
+                          title="Keine offenen Verifizierungen"
+                          body="Sobald User Identitätsnachweise einreichen, erscheinen sie hier zur Prüfung."
+                        />
+                      </TableCell></TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
             </TabsContent>
 
-            <TabsContent value="honeypots" className="mt-4">
+            <TabsContent value="honeypots" className="mt-4 space-y-4">
+              <AdminPageHeader
+                title="Honeypots & Shadow-Bans"
+                subtitle="Köderprofile zur Bot-Erkennung sowie aktive Shadow-Bans verwalten"
+              />
               <AdminHoneypotsTab isSuper={isSuper} />
             </TabsContent>
 
             {isSuper && (
-              <TabsContent value="ai" className="mt-4">
+              <TabsContent value="ai" className="mt-4 space-y-4">
+                <AdminPageHeader
+                  title="KI-Moderation"
+                  subtitle="Provider, Modell und Schwellen für die automatische Bildmoderation"
+                />
                 <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-5 space-y-4 max-w-2xl">
                   <div className="font-display text-lg">KI-Moderationsanbieter</div>
                   <div className="grid grid-cols-2 gap-3">
@@ -915,7 +1059,11 @@ export default function AdminPage() {
             )}
 
             {isSuper && (
-              <TabsContent value="payments" className="mt-4">
+              <TabsContent value="payments" className="mt-4 space-y-4">
+                <AdminPageHeader
+                  title="Zahlungsanbieter & Preise"
+                  subtitle="Anbieter aktivieren, Provider-Schlüssel pflegen, Pakete kuratieren"
+                />
                 <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-5 space-y-4">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div className="font-display text-lg">Zahlungsanbieter & Preise</div>
@@ -1044,7 +1192,11 @@ export default function AdminPage() {
             )}
 
             {isSuper && (
-              <TabsContent value="legal" className="mt-4">
+              <TabsContent value="legal" className="mt-4 space-y-4">
+                <AdminPageHeader
+                  title="Rechtliches"
+                  subtitle="Nutzungsbedingungen, Datenschutz, Impressum & weitere Rechtstexte pflegen"
+                />
                 <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-5 space-y-4">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div className="font-display text-lg">Rechtliche Seiten</div>
@@ -1086,6 +1238,15 @@ export default function AdminPage() {
             )}
 
             <TabsContent value="broadcasts" className="mt-4 space-y-4">
+              <AdminPageHeader
+                title="Broadcasts"
+                subtitle="Signierte Mitteilungen an alle oder Segmente — automatisch im Chat & im Postfach"
+                actions={
+                  <Button size="sm" variant="outline" onClick={loadBroadcasts} data-testid="broadcasts-refresh">
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Aktualisieren
+                  </Button>
+                }
+              />
               <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="font-display text-lg">Broadcast verfassen</div>
@@ -1265,17 +1426,29 @@ export default function AdminPage() {
             </TabsContent>
 
             {isSuper && (
-              <TabsContent value="promos" className="mt-4">
+              <TabsContent value="promos" className="mt-4 space-y-4">
+                <AdminPageHeader
+                  title="Promos & Konfiguration"
+                  subtitle="Promo-Codes, Plattform-Konfig und globale Schwellen"
+                />
                 <AdminPromosTab />
               </TabsContent>
             )}
 
-            <TabsContent value="blog" className="mt-4">
+            <TabsContent value="blog" className="mt-4 space-y-4">
+              <AdminPageHeader
+                title="Blog"
+                subtitle="Beiträge erstellen, bearbeiten, veröffentlichen"
+              />
               <AdminBlogTab />
             </TabsContent>
 
             {isSuper && (
-              <TabsContent value="team-channels" className="mt-4">
+              <TabsContent value="team-channels" className="mt-4 space-y-4">
+                <AdminPageHeader
+                  title="Team-Kanäle"
+                  subtitle="Standard-Benachrichtigungen pro Rolle — individuelle Einstellungen überschreiben Defaults"
+                />
                 <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-6 space-y-4">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div>
@@ -1325,25 +1498,38 @@ export default function AdminPage() {
               </TabsContent>
             )}
 
-            <TabsContent value="audit" className="mt-4">
-              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-x-auto shadow-[var(--shadow-sm)]">
-                <div className="px-5 py-3 flex items-center justify-between border-b border-[hsl(var(--border))]/60">
-                  <div className="font-display text-lg tracking-tight">Audit-Log</div>
-                  <div className="text-xs text-[hsl(var(--muted-foreground))]">{audit.length} Ereignisse</div>
-                </div>
+            <TabsContent value="audit" className="mt-4 space-y-4">
+              <AdminPageHeader
+                title="Audit-Log"
+                count={audit.length}
+                subtitle="Lückenlose Protokollierung aller administrativen Aktionen"
+                actions={
+                  <Button size="sm" variant="outline" onClick={loadAll} data-testid="audit-refresh">
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Aktualisieren
+                  </Button>
+                }
+              />
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 overflow-hidden">
                 {audit.length === 0 ? (
-                  <div className="p-10 text-center text-sm text-[hsl(var(--muted-foreground))]">Noch keine Ereignisse protokolliert.</div>
+                  <AdminEmptyState
+                    icon={ScrollText}
+                    title="Keine Ereignisse"
+                    body="Sobald administrative Aktionen ausgeführt werden, erscheinen sie hier mit Zeitstempel und Akteur."
+                  />
                 ) : (
                   <ul className="divide-y divide-[hsl(var(--border))]/60">
                     {audit.map((ev) => (
-                      <li key={ev.id} className="px-5 py-3 flex items-start gap-4 hover:bg-[hsl(var(--secondary))]/50 transition-colors">
+                      <li key={ev.id} className="px-5 py-3 flex items-start gap-4 hover:bg-[hsl(var(--secondary))]/40 transition-colors" data-testid={`audit-row-${ev.id}`}>
                         <div className="text-[11px] font-mono text-[hsl(var(--muted-foreground))] w-40 shrink-0">
                           {(ev.created_at || "").replace("T"," ").slice(0,19)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <Badge variant="outline" className="rounded-full font-mono text-[10.5px]">{(ev.actor_id || "system").slice(0,8)}</Badge>
-                            <span className="font-medium text-sm">{ev.action}</span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center gap-1 rounded-full ring-1 ring-[hsl(var(--border))] bg-[hsl(var(--muted))]/40 px-2 py-0.5 text-[10.5px] font-mono">
+                              <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--accent))]" />
+                              {(ev.actor_id || "system").slice(0,8)}
+                            </span>
+                            <span className="font-medium text-[13px]">{ev.action}</span>
                             {ev.target && <span className="font-mono text-[11px] text-[hsl(var(--muted-foreground))]">→ {ev.target.slice(0,8)}</span>}
                           </div>
                           {ev.meta && Object.keys(ev.meta || {}).length > 0 && (
@@ -1358,8 +1544,14 @@ export default function AdminPage() {
                 )}
               </div>
             </TabsContent>
-            <TabsContent value="system" className="mt-4">
-              <SystemUpdatesPanel />
+            <TabsContent value="system" className="mt-4 space-y-4">
+              <AdminPageHeader
+                title="System"
+                subtitle="Build-Status, Modul-Übersicht & Updates"
+              />
+              <div className="rounded-[var(--radius-lg)] bg-[hsl(var(--card))] ring-1 ring-[hsl(var(--border))]/60 p-5">
+                <SystemUpdatesPanel />
+              </div>
             </TabsContent>
           </Tabs>
             </div>

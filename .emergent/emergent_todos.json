@@ -1,18 +1,42 @@
 [
   {
-    "content": "Phase 15.1: Foundation komplett & getestet (90% pass)",
+    "content": "Backend: Add /api/admin/sparks/stats endpoint (global aggregates) + /api/admin/sparks/recent (recent ledger across users)",
     "status": "completed"
   },
   {
-    "content": "Phase 15.2: Sparks Spending + Premium-Features (100% pass)",
+    "content": "Frontend: Build new SparksSection.js admin tab with KPIs, recent ledger, user search & adjust modal",
     "status": "completed"
   },
   {
-    "content": "Phase 15.3: Pause/Resume/Cancel + Sparks-Pakete + Cycle-Pakete (Backend getestet)",
+    "content": "Wire SparksSection into AdminPage.js and verify rendering",
     "status": "completed"
   },
   {
-    "content": "Phase 15.4: Frontend Polish (Sparks-Header + LedgerPage + SubSection + TransparentPage + PremiumPage Rework)",
+    "content": "Polish Reports tab: AdminPageHeader + filter + AdminEmptyState + AdminStatusPill",
+    "status": "completed"
+  },
+  {
+    "content": "Polish Users tab: AdminPageHeader + count + AdminStatusPill",
+    "status": "completed"
+  },
+  {
+    "content": "Polish Foto-Queue (photos) tab: AdminPageHeader + empty state + grid layout",
+    "status": "completed"
+  },
+  {
+    "content": "Polish Verifizierungen tab: AdminPageHeader + empty state + status pills",
+    "status": "completed"
+  },
+  {
+    "content": "Polish Audit-Log tab: AdminPageHeader + filter + better row formatting",
+    "status": "completed"
+  },
+  {
+    "content": "Polish System / Honeypots / Blog / Broadcasts / Payments / KI-Konfig / Legal / Promos / Team-Channels with consistent AdminPageHeader",
+    "status": "completed"
+  },
+  {
+    "content": "Final verification screenshot test of all polished tabs",
     "status": "completed"
   }
 ]

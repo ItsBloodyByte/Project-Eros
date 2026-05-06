@@ -646,12 +646,35 @@ Diese Phase überarbeitet die gesamte Moderations-/Admin-Oberfläche zu einer pr
   - `shell/AdminShell.js` — collapsible Sidebar (Gruppen: Übersicht, Moderation, People, Content, Operations) + sticky Topbar mit Breadcrumb, ENV-Pill, User-Block.
   - `components/AdminStatCard.js`, `AdminKpiCard.js`, `AdminPageHeader.js`, `AdminStatusPill.js`, `AdminEmptyState.js` — wiederverwendbare Bausteine.
   - `components/OverviewSection.js` — Dashboard mit Moderation-Queues, Plattform-KPIs, Zahlungs-Status.
-- `pages/AdminPage.js` integriert `<AdminShell>` und ersetzt die Legacy-Header-Navigation. Tab-State bleibt unverändert; alle bestehenden Tab-Inhalte rendern unverändert im Shell.
-- Verifiziert via Screenshots: 11 Tabs (Reports, Users, Foto-Queue, ID-Verifizierung, Honeypots, Blog, Broadcasts, Payments, KI-Konfig, Audit-Log, System) rendern korrekt mit Breadcrumb-Update und ohne Console-Errors.
+- `pages/AdminPage.js` integriert `<AdminShell>` und ersetzt die Legacy-Header-Navigation. Tab-State bleibt unverändert.
 
 **Status:** Abgeschlossen.
 
-### Phase 16.1 — (optional) AdminPage.js Splitting
-**Ziel:** `AdminPage.js` (~1850 LOC) in einzelne Section-Komponenten unter `/admin/sections/` aufteilen für bessere Wartbarkeit.
+### Phase 16.1 — Sparks Admin Section + Tab-Inhalte professionalisieren
+**Ziele:**
+- Vollwertiger Sparks-Admin-Tab mit Wirtschafts-KPIs, Top-Inflow/Outflow, Live-Ledger, User-Lookup + manueller Adjust.
+- Alle Tab-Inhalte einheitlich mit `AdminPageHeader` + `AdminStatusPill` + `AdminEmptyState` aufgewertet.
+
+**Umsetzung (Delivered):**
+- Backend: `GET /api/admin/sparks/stats` (active_balance, minted, burned, tx_24h/7d, top_earn, top_spend) und `GET /api/admin/sparks/recent` (cross-user Ledger, enriched mit user_email/display_name).
+- Frontend: `admin/sections/SparksSection.js` mit:
+  - 6 KPI-Karten (Aktiver Bestand, Inflow, Outflow, User mit Balance, TX 24h/7T)
+  - 2 Distribution-Cards mit klickbaren Mini-Bars (filtern den Live-Ledger)
+  - User-Lookup-Card mit Inline-Ledger und Adjust-Dialog (Gutschrift/Abbuchung mit Audit-Notiz)
+  - Cross-User Live-Ledger-Tabelle mit Typ-Filter
+- Tab-Polish in `pages/AdminPage.js`:
+  - **Reports**: AdminPageHeader mit Count + Refresh; AdminStatusPill (Offen/In Prüfung/Gelöst/Abgelehnt); AdminEmptyState bei leerer Queue.
+  - **Users**: Header mit Count + integrierter Such-Input + Refresh; AdminStatusPill für aktiv/banned/shadow/versteckt + ID-Badge.
+  - **Foto-Queue**: Header mit Count + Refresh; Grid-Karten mit NSFW-Score-Pill (rot/amber/grau je Schwelle); AdminEmptyState; klickbare Profil-Links.
+  - **ID-Verifizierungen**: Header + Refresh; AdminStatusPill für Dokument-Typ; AdminEmptyState.
+  - **Audit-Log**: Header mit Count + Refresh; modernisierte Aktor-Pills mit Accent-Dot.
+  - **System / KI-Konfig / Payments / Rechtliches / Honeypots / Broadcasts / Promos / Blog / Team-Kanäle**: jeweils AdminPageHeader mit Titel + erklärendem Untertitel.
+
+**Verifikation:** Screenshot-Sweep über alle 14 Tabs zeigt einheitliches Header-Layout, korrekte Breadcrumb-Updates, professionelle Empty-States und keine Layout-Brüche.
+
+**Status:** Abgeschlossen.
+
+### Phase 16.2 — (optional) AdminPage.js Splitting
+**Ziel:** `AdminPage.js` (~2000 LOC) in einzelne Section-Komponenten unter `/admin/sections/` aufteilen für bessere Wartbarkeit.
 
 **Status:** Geplant (nicht blockierend).
