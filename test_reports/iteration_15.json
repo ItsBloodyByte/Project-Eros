@@ -1,0 +1,108 @@
+{
+  "summary": "Phase 15.2 Sparks spending endpoints testing completed. All 6 spending endpoints functional with correct error handling. AI chat-starter integration working with gemini-2.5-flash. Discover endpoint includes is_highlighted field. Privacy invisible_browsing feature verified.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/me/sparks - Returns balance, earning rates, spending rates, and packages",
+    "GET /api/me/sparks/ledger - Returns paginated ledger entries",
+    "GET /api/admin/sparks/{user_id} - Admin can view user's sparks balance and ledger",
+    "POST /api/admin/sparks/{user_id}/adjust - Admin can credit/debit sparks with audit log",
+    "POST /api/sparks/spend/boost - Spends 30 sparks, creates boost with 1h expiry, returns 409 for duplicate",
+    "POST /api/sparks/spend/highlight - Spends 15 sparks, sets 24h highlight, returns 409 for duplicate",
+    "POST /api/sparks/spend/super-like - Spends 10 sparks, marks like as super, returns 429 for duplicate within 24h",
+    "POST /api/sparks/spend/extra-unlock-request - Spends 8 sparks, increments unlock credit",
+    "POST /api/sparks/spend/gift-premium-week - Spends 80 sparks, extends recipient premium by 7 days, creates subscription row",
+    "POST /api/sparks/spend/chat-starter - Spends 3 sparks, returns 3 German AI-generated conversation starters using gemini-2.5-flash",
+    "Insufficient sparks handling - Returns HTTP 402 with German message 'Nicht genug Sparks. Benötigt: X.'",
+    "GET /api/discover - Response includes 'is_highlighted' boolean field for profiles with active highlight",
+    "Privacy invisible_browsing - When enabled, viewing profiles does NOT create visit records in db.visits",
+    "Phase 15.1 regression - Balance, ledger, daily_login, admin adjust, RBAC all working"
+  ],
+  "test_report_links": [
+    "/app/phase15_2_test.py",
+    "/app/backend_test.py"
+  ],
+  "action_item_for_main_agent": "",
+  "updated_files": [
+    "/app/backend_test.py",
+    "/app/phase15_2_test.py"
+  ],
+  "success_percentage": {
+    "backend": "100%",
+    "frontend": "N/A (skipped per request)"
+  },
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false,
+  "detailed_findings": {
+    "boost_spending": {
+      "status": "✅ Working",
+      "cost": "30 sparks",
+      "duration": "1 hour",
+      "duplicate_handling": "409 Conflict with German message 'Du hast bereits einen aktiven Boost.'",
+      "creates_db_row": "db.boosts with boost_id, started_at, ends_at, source='sparks_purchase'"
+    },
+    "highlight_spending": {
+      "status": "✅ Working",
+      "cost": "15 sparks",
+      "duration": "24 hours",
+      "duplicate_handling": "409 Conflict with German message 'Dein Profil ist bereits hervorgehoben.'",
+      "field_updated": "profile_highlight_until on user doc"
+    },
+    "super_like_spending": {
+      "status": "✅ Working",
+      "cost": "10 sparks",
+      "cooldown": "24 hours per target",
+      "duplicate_handling": "429 Too Many Requests with German message",
+      "marks_like": "super=true, super_source='sparks'"
+    },
+    "extra_unlock_spending": {
+      "status": "✅ Working",
+      "cost": "8 sparks",
+      "effect": "Increments user.extra_unlock_request_credits by 1",
+      "no_album_check": "Accepts any album_id >= 10 chars (credit applies generically)"
+    },
+    "gift_premium_spending": {
+      "status": "✅ Working",
+      "cost": "80 sparks",
+      "effect": "Extends recipient premium_expires_at by 7 days from max(now, current expiry)",
+      "creates_subscription": "billing_cycle='gift', discount_type='sparks_gift', payment_provider='sparks'"
+    },
+    "chat_starter_spending": {
+      "status": "✅ Working",
+      "cost": "3 sparks",
+      "ai_model": "gemini-2.5-flash via Emergent LLM",
+      "returns": "3 German conversation starters (60-140 chars each)",
+      "llm_failure_handling": "Returns 503 WITHOUT spending sparks if AI fails",
+      "sample_output": [
+        "Eros, bei so einem offiziellen Profil frage ich mich, ob ich hier direkt beim Liebesgott persönlich gelandet bin.",
+        "Mit 99 Jahren auf dem Buckel muss der Herr Eros ja so einige Liebesgeschichten erlebt und gesammelt haben.",
+        "Selbst ein offizielles Profil kann die Neugier nicht dämpfen, welche Botschaften das Team von Eros sonst noch so schickt."
+      ]
+    },
+    "insufficient_sparks": {
+      "status": "✅ Working",
+      "http_code": "402 Payment Required",
+      "message_format": "Nicht genug Sparks. Benötigt: {cost}.",
+      "balance_unchanged": "Atomic check prevents overdraft"
+    },
+    "discover_is_highlighted": {
+      "status": "✅ Working",
+      "field": "is_highlighted (boolean)",
+      "logic": "true when profile_highlight_until > now",
+      "privacy": "Does not leak exact expiry timestamp"
+    },
+    "invisible_browsing": {
+      "status": "✅ Working",
+      "field": "privacy.invisible_browsing",
+      "effect": "Viewing profiles does NOT create/update db.visits rows",
+      "distinct_from": "stealth_mode (which hides from gallery)"
+    }
+  }
+}

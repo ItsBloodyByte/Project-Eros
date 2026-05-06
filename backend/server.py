@@ -3055,6 +3055,13 @@ async def _record_visit(viewer: dict, target_id: str):
         return
     if (viewer.get("privacy") or {}).get("stealth_mode"):
         return
+    # Phase 15.2 Premium: Unsichtbar browsen — silently dropped when the
+    # viewer has the invisible_browsing flag set. Distinct from
+    # `stealth_mode`: stealth hides them from the gallery, invisible-browsing
+    # only suppresses *visit footprints*. This is enforced server-side so
+    # a malicious client can't strip the flag.
+    if (viewer.get("privacy") or {}).get("invisible_browsing"):
+        return
     try:
         await db.visits.update_one(
             {"viewer_id": viewer["id"], "target_id": target_id},
@@ -3504,6 +3511,7 @@ from routers import pic4pic as _pic4pic_routes  # noqa: E402,F401
 from routers import landing as _landing_routes  # noqa: E402,F401
 from routers import payments_maintenance as _payments_maintenance_routes  # noqa: E402,F401
 from routers import sparks as _sparks_routes  # noqa: E402,F401
+from routers import sparks_spend as _sparks_spend_routes  # noqa: E402,F401
 
 app.include_router(api_router)
 

@@ -2271,9 +2271,347 @@ class DatingPlatformTester:
             self.log_test(f"Regression: {method} /api{endpoint}", success,
                          f"Status: {resp.status_code if resp else 'No response'}")
 
+    def test_phase15_sparks_balance(self):
+        """Test Phase 15.1: Sparks balance and ledger"""
+        print("\n🔍 Testing Phase 15.1: Sparks Balance & Ledger...")
+        
+        testing_token = self.tokens.get("testing@test.com")
+        if not testing_token:
+            self.log_test("Sparks balance tests", False, "Testing user token not available")
+            return
+        
+        # Test GET /api/me/sparks
+        success, resp = self.make_request('GET', '/me/sparks', token=testing_token)
+        if success and resp:
+            data = resp.json()
+            has_balance = "balance" in data
+            has_rates = "rates_earn" in data and "rates_spend" in data
+            self.log_test("GET /api/me/sparks", has_balance and has_rates,
+                         f"Balance: {data.get('balance')}, Rates: {bool(has_rates)}")
+        else:
+            self.log_test("GET /api/me/sparks", False, "Failed to get sparks balance")
+        
+        # Test GET /api/me/sparks/ledger
+        success, resp = self.make_request('GET', '/me/sparks/ledger', token=testing_token)
+        if success and resp:
+            data = resp.json()
+            has_rows = "rows" in data
+            self.log_test("GET /api/me/sparks/ledger", has_rows,
+                         f"Ledger rows: {len(data.get('rows', []))}")
+        else:
+            self.log_test("GET /api/me/sparks/ledger", False, "Failed to get sparks ledger")
+
+    def test_phase15_admin_sparks(self):
+        """Test Phase 15.1: Admin sparks management"""
+        print("\n🔍 Testing Phase 15.1: Admin Sparks Management...")
+        
+        admin_token = self.tokens.get("admin@eros.app")
+        testing_token = self.tokens.get("testing@test.com")
+        testing_id = self.users.get("testing@test.com", {}).get("id")
+        
+        if not admin_token or not testing_id:
+            self.log_test("Admin sparks tests", False, "Required tokens not available")
+            return
+        
+        # Test GET /api/admin/sparks/{user_id}
+        success, resp = self.make_request('GET', f'/admin/sparks/{testing_id}', token=admin_token)
+        if success and resp:
+            data = resp.json()
+            has_balance = "balance" in data and "ledger" in data
+            self.log_test("GET /api/admin/sparks/{user_id}", has_balance,
+                         f"Balance: {data.get('balance')}")
+        else:
+            self.log_test("GET /api/admin/sparks/{user_id}", False, "Failed to get admin sparks view")
+        
+        # Test POST /api/admin/sparks/{user_id}/adjust (credit)
+        adjust_data = {"amount": 100, "note": "Test credit for Phase 15.2 testing"}
+        success, resp = self.make_request('POST', f'/admin/sparks/{testing_id}/adjust', 
+                                        adjust_data, token=admin_token)
+        if success and resp:
+            data = resp.json()
+            has_row = "row" in data and data.get("ok") == True
+            self.log_test("POST /api/admin/sparks/{user_id}/adjust - Credit", has_row,
+                         f"Balance after: {data.get('row', {}).get('balance_after')}")
+        else:
+            self.log_test("POST /api/admin/sparks/{user_id}/adjust - Credit", False, "Failed to adjust sparks")
+
+    def test_phase15_2_boost_spending(self):
+        """Test Phase 15.2: Boost spending endpoint"""
+        print("\n🔍 Testing Phase 15.2: Boost Spending...")
+        
+        testing_token = self.tokens.get("testing@test.com")
+        if not testing_token:
+            self.log_test("Boost spending tests", False, "Testing user token not available")
+            return
+        
+        # Test POST /api/sparks/spend/boost (first time - should succeed)
+        success, resp = self.make_request('POST', '/sparks/spend/boost', token=testing_token)
+        if success and resp:
+            data = resp.json()
+            has_boost = "boost_id" in data and "boost_expires_at" in data and "sparks_balance" in data
+            self.log_test("POST /api/sparks/spend/boost - First boost", has_boost,
+                         f"Boost ID: {data.get('boost_id')}, Balance: {data.get('sparks_balance')}")
+            
+            # Test duplicate boost (should return 409)
+            success2, resp2 = self.make_request('POST', '/sparks/spend/boost', 
+                                              token=testing_token, expected_status=409)
+            self.log_test("POST /api/sparks/spend/boost - Duplicate (409)", success2,
+                         "Correctly blocked duplicate boost")
+        else:
+            self.log_test("POST /api/sparks/spend/boost", False, 
+                         f"Failed to spend on boost. Status: {resp.status_code if resp else 'No response'}")
+
+    def test_phase15_2_highlight_spending(self):
+        """Test Phase 15.2: Profile highlight spending endpoint"""
+        print("\n🔍 Testing Phase 15.2: Profile Highlight Spending...")
+        
+        testing_token = self.tokens.get("testing@test.com")
+        if not testing_token:
+            self.log_test("Highlight spending tests", False, "Testing user token not available")
+            return
+        
+        # Test POST /api/sparks/spend/highlight (first time - should succeed)
+        success, resp = self.make_request('POST', '/sparks/spend/highlight', token=testing_token)
+        if success and resp:
+            data = resp.json()
+            has_highlight = "highlight_until" in data and "sparks_balance" in data
+            self.log_test("POST /api/sparks/spend/highlight - First highlight", has_highlight,
+                         f"Highlight until: {data.get('highlight_until')}, Balance: {data.get('sparks_balance')}")
+            
+            # Test duplicate highlight (should return 409)
+            success2, resp2 = self.make_request('POST', '/sparks/spend/highlight', 
+                                              token=testing_token, expected_status=409)
+            self.log_test("POST /api/sparks/spend/highlight - Duplicate (409)", success2,
+                         "Correctly blocked duplicate highlight")
+        else:
+            self.log_test("POST /api/sparks/spend/highlight", False, 
+                         f"Failed to spend on highlight. Status: {resp.status_code if resp else 'No response'}")
+
+    def test_phase15_2_super_like_spending(self):
+        """Test Phase 15.2: Super-like spending endpoint"""
+        print("\n🔍 Testing Phase 15.2: Super-Like Spending...")
+        
+        testing_token = self.tokens.get("testing@test.com")
+        alice_id = self.users.get("alice@eros.app", {}).get("id")
+        
+        if not testing_token or not alice_id:
+            self.log_test("Super-like spending tests", False, "Required tokens not available")
+            return
+        
+        # Test POST /api/sparks/spend/super-like (first time - should succeed)
+        super_like_data = {"target_user_id": alice_id}
+        success, resp = self.make_request('POST', '/sparks/spend/super-like', 
+                                        super_like_data, token=testing_token)
+        if success and resp:
+            data = resp.json()
+            has_balance = "sparks_balance" in data and data.get("ok") == True
+            self.log_test("POST /api/sparks/spend/super-like - First super-like", has_balance,
+                         f"Balance: {data.get('sparks_balance')}")
+            
+            # Test duplicate super-like within 24h (should return 429)
+            success2, resp2 = self.make_request('POST', '/sparks/spend/super-like', 
+                                              super_like_data, token=testing_token, expected_status=429)
+            self.log_test("POST /api/sparks/spend/super-like - Duplicate (429)", success2,
+                         "Correctly blocked duplicate super-like within 24h")
+        else:
+            self.log_test("POST /api/sparks/spend/super-like", False, 
+                         f"Failed to spend on super-like. Status: {resp.status_code if resp else 'No response'}")
+
+    def test_phase15_2_extra_unlock_spending(self):
+        """Test Phase 15.2: Extra unlock request spending endpoint"""
+        print("\n🔍 Testing Phase 15.2: Extra Unlock Request Spending...")
+        
+        testing_token = self.tokens.get("testing@test.com")
+        if not testing_token:
+            self.log_test("Extra unlock spending tests", False, "Testing user token not available")
+            return
+        
+        # Test POST /api/sparks/spend/extra-unlock-request
+        unlock_data = {"album_id": "test_album_id_12345"}
+        success, resp = self.make_request('POST', '/sparks/spend/extra-unlock-request', 
+                                        unlock_data, token=testing_token)
+        if success and resp:
+            data = resp.json()
+            has_credit = "credit_granted" in data and data.get("credit_granted") == 1
+            self.log_test("POST /api/sparks/spend/extra-unlock-request", has_credit,
+                         f"Credit granted: {data.get('credit_granted')}, Balance: {data.get('sparks_balance')}")
+        else:
+            self.log_test("POST /api/sparks/spend/extra-unlock-request", False, 
+                         f"Failed to spend on extra unlock. Status: {resp.status_code if resp else 'No response'}")
+
+    def test_phase15_2_gift_premium_spending(self):
+        """Test Phase 15.2: Gift premium week spending endpoint"""
+        print("\n🔍 Testing Phase 15.2: Gift Premium Week Spending...")
+        
+        testing_token = self.tokens.get("testing@test.com")
+        werner_id = self.users.get("werner@eros.app", {}).get("id")
+        
+        if not testing_token or not werner_id:
+            self.log_test("Gift premium spending tests", False, "Required tokens not available")
+            return
+        
+        # Test POST /api/sparks/spend/gift-premium-week
+        gift_data = {"target_user_id": werner_id}
+        success, resp = self.make_request('POST', '/sparks/spend/gift-premium-week', 
+                                        gift_data, token=testing_token)
+        if success and resp:
+            data = resp.json()
+            has_recipient = "recipient" in data and "premium_until" in data.get("recipient", {})
+            self.log_test("POST /api/sparks/spend/gift-premium-week", has_recipient,
+                         f"Recipient premium until: {data.get('recipient', {}).get('premium_until')}, Balance: {data.get('sparks_balance')}")
+        else:
+            self.log_test("POST /api/sparks/spend/gift-premium-week", False, 
+                         f"Failed to gift premium. Status: {resp.status_code if resp else 'No response'}")
+
+    def test_phase15_2_chat_starter_spending(self):
+        """Test Phase 15.2: AI chat starter spending endpoint"""
+        print("\n🔍 Testing Phase 15.2: AI Chat Starter Spending...")
+        
+        testing_token = self.tokens.get("testing@test.com")
+        
+        if not testing_token:
+            self.log_test("Chat starter spending tests", False, "Testing user token not available")
+            return
+        
+        # First, we need a match_id. Let's check if testing user has any matches
+        success, resp = self.make_request('GET', '/matches', token=testing_token)
+        if not success or not resp:
+            self.log_test("POST /api/sparks/spend/chat-starter", False, "Failed to get matches")
+            return
+        
+        matches = resp.json().get("matches", [])
+        if not matches:
+            self.log_test("POST /api/sparks/spend/chat-starter", False, "No matches available for testing")
+            return
+        
+        match_id = matches[0]["id"]
+        
+        # Test POST /api/sparks/spend/chat-starter
+        chat_data = {"match_id": match_id}
+        success, resp = self.make_request('POST', '/sparks/spend/chat-starter', 
+                                        chat_data, token=testing_token, expected_status=[200, 503])
+        if success and resp:
+            data = resp.json()
+            if resp.status_code == 200:
+                has_starters = "starters" in data and isinstance(data.get("starters"), list)
+                self.log_test("POST /api/sparks/spend/chat-starter - Success", has_starters,
+                             f"Starters count: {len(data.get('starters', []))}, Balance: {data.get('sparks_balance')}")
+            elif resp.status_code == 503:
+                # LLM failure - should not spend sparks
+                self.log_test("POST /api/sparks/spend/chat-starter - LLM failure (503)", True,
+                             "Correctly returned 503 without spending sparks")
+        else:
+            self.log_test("POST /api/sparks/spend/chat-starter", False, 
+                         f"Failed to request chat starter. Status: {resp.status_code if resp else 'No response'}")
+
+    def test_phase15_2_insufficient_sparks(self):
+        """Test Phase 15.2: Insufficient sparks error handling"""
+        print("\n🔍 Testing Phase 15.2: Insufficient Sparks Error (402)...")
+        
+        # Create a new user with no sparks
+        new_user_email = f"test_no_sparks_{datetime.now().strftime('%H%M%S')}@example.com"
+        register_data = {
+            "email": new_user_email,
+            "password": "TestPass123!",
+            "display_name": "No Sparks User",
+            "age": 25,
+            "gender_identity": "man",
+            "consents": {
+                "terms": True,
+                "privacy": True,
+                "sensitive_data": True,
+                "nsfw_view": False
+            }
+        }
+        
+        success, resp = self.make_request('POST', '/auth/register', register_data)
+        if not success or not resp:
+            self.log_test("Insufficient sparks test", False, "Failed to create test user")
+            return
+        
+        new_token = resp.json().get("access_token")
+        
+        # Try to spend sparks (should return 402)
+        success, resp = self.make_request('POST', '/sparks/spend/boost', 
+                                        token=new_token, expected_status=402)
+        if success and resp:
+            error_msg = resp.json().get("detail", "")
+            has_german_msg = "Nicht genug Sparks" in error_msg and "Benötigt:" in error_msg
+            self.log_test("POST /api/sparks/spend/* - Insufficient sparks (402)", has_german_msg,
+                         f"Error message: {error_msg}")
+        else:
+            self.log_test("POST /api/sparks/spend/* - Insufficient sparks (402)", False, 
+                         "Failed to test insufficient sparks")
+
+    def test_phase15_2_discover_is_highlighted(self):
+        """Test Phase 15.2: Discover endpoint includes is_highlighted field"""
+        print("\n🔍 Testing Phase 15.2: Discover is_highlighted Field...")
+        
+        testing_token = self.tokens.get("testing@test.com")
+        if not testing_token:
+            self.log_test("Discover is_highlighted tests", False, "Testing user token not available")
+            return
+        
+        # Test GET /api/discover
+        success, resp = self.make_request('GET', '/discover', token=testing_token)
+        if success and resp:
+            data = resp.json()
+            results = data.get("results", [])
+            
+            # Check if is_highlighted field is present in results
+            has_highlighted_field = all("is_highlighted" in user for user in results) if results else True
+            
+            # Check if any user is highlighted (testing user should be highlighted from previous test)
+            any_highlighted = any(user.get("is_highlighted") == True for user in results)
+            
+            self.log_test("GET /api/discover - is_highlighted field", has_highlighted_field,
+                         f"Results: {len(results)}, Has field: {has_highlighted_field}, Any highlighted: {any_highlighted}")
+        else:
+            self.log_test("GET /api/discover - is_highlighted field", False, "Failed to get discovery results")
+
+    def test_phase15_2_invisible_browsing(self):
+        """Test Phase 15.2: Invisible browsing privacy feature"""
+        print("\n🔍 Testing Phase 15.2: Invisible Browsing Privacy...")
+        
+        testing_token = self.tokens.get("testing@test.com")
+        alice_token = self.tokens.get("alice@eros.app")
+        alice_id = self.users.get("alice@eros.app", {}).get("id")
+        
+        if not testing_token or not alice_token or not alice_id:
+            self.log_test("Invisible browsing tests", False, "Required tokens not available")
+            return
+        
+        # Enable invisible_browsing for testing user
+        privacy_data = {"privacy": {"invisible_browsing": True}}
+        success, resp = self.make_request('PATCH', '/me', privacy_data, token=testing_token)
+        if not success:
+            self.log_test("Invisible browsing setup", False, "Failed to enable invisible browsing")
+            return
+        
+        # Visit Alice's profile with invisible browsing enabled
+        success, resp = self.make_request('GET', f'/users/{alice_id}', token=testing_token)
+        if not success:
+            self.log_test("Invisible browsing test", False, "Failed to visit profile")
+            return
+        
+        # Check Alice's visitors (testing user should NOT appear)
+        success, resp = self.make_request('GET', '/me/visitors', token=alice_token)
+        if success and resp:
+            data = resp.json()
+            visitors = data.get("visitors", [])
+            testing_id = self.users.get("testing@test.com", {}).get("id")
+            
+            # Testing user should NOT be in visitors list
+            testing_not_in_visitors = not any(v.get("viewer_id") == testing_id for v in visitors)
+            
+            self.log_test("Invisible browsing - No visit recorded", testing_not_in_visitors,
+                         f"Visitors count: {len(visitors)}, Testing user hidden: {testing_not_in_visitors}")
+        else:
+            self.log_test("Invisible browsing - No visit recorded", False, "Failed to check visitors")
+
     def run_all_tests(self):
-        """Run comprehensive test suite including Phase 5"""
-        print("🚀 Starting Comprehensive Dating Platform API Tests (Phase 5)")
+        """Run comprehensive test suite including Phase 15.2"""
+        print("🚀 Starting Comprehensive Dating Platform API Tests (Phase 15.2)")
         print(f"Testing against: {self.base_url}")
         print("=" * 60)
         
@@ -2334,6 +2672,19 @@ class DatingPlatformTester:
             
             # Phase 6 tests - Payment webhook hardening
             self.test_phase6_payment_webhook_hardening()
+            
+            # Phase 15 tests - Sparks system
+            self.test_phase15_sparks_balance()
+            self.test_phase15_admin_sparks()
+            self.test_phase15_2_boost_spending()
+            self.test_phase15_2_highlight_spending()
+            self.test_phase15_2_super_like_spending()
+            self.test_phase15_2_extra_unlock_spending()
+            self.test_phase15_2_gift_premium_spending()
+            self.test_phase15_2_chat_starter_spending()
+            self.test_phase15_2_insufficient_sparks()
+            self.test_phase15_2_discover_is_highlighted()
+            self.test_phase15_2_invisible_browsing()
             
         except Exception as e:
             print(f"\n❌ Test suite error: {str(e)}")

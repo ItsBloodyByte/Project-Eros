@@ -264,6 +264,10 @@ async def discover(
         pub = public_user_from_doc(d, viewer_location=viewer_coords, list_mode=True)
         pub["boosted"] = (d.get("boost_expires_at") or "") > now_iso
         pub["is_premium"] = (d.get("premium_expires_at") or "") > now_iso
+        # Phase 15.2: 24-hour profile highlight bought with Sparks. Surfaced
+        # as a boolean so the UI can render a subtle border without leaking
+        # the exact expiry timestamp (which would feel "salesy").
+        pub["is_highlighted"] = (d.get("profile_highlight_until") or "") > now_iso
         # Penis category post-filter (derived)
         if wanted_penis:
             if pub.get("penis_category") not in wanted_penis:
