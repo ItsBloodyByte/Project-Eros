@@ -628,5 +628,30 @@ Diese Phase überarbeitet das gesamte Premium/Freemium-Konzept gemäß Kapitel 1
 - Phase 13.1–13.3: **fertig** (Honey-Pots + Shadow-Bans + Admin UI).
 - Phase 14.1–14.6: **fertig** (Landing/Routing → Pic4Pic → Payments hardening → Performance).
 - Phase 14.7: **fertig** (Desktop Name Wrap Fix + Mood „Online“ entfernt).
+- Phase 15.1–15.5: **fertig** (Sparks Ledger, Subscriptions, Limits, Spending, Frontend Premium UI, Transparenzseite).
+- Phase 16.0: **fertig** (Admin/Moderation UI Redesign — neuer AdminShell mit Sidebar-Gruppierung, Breadcrumb, KPI-Cards, Topbar; alle 14 Tabs verifiziert).
 
-**Aktueller Fokus:** **Phase 15** — vollständige Premium/Freemium-Überarbeitung gemäß Konzept-Kapitel 15 (mit Filter-Ausnahme).
+**Aktueller Fokus:** Mobile-Parität für Phase 15 (Sparks UI + Subscriptions in React Native), weitere UX-Polish-Punkte oder neue User-Wünsche.
+
+---
+
+## Phase 16 — Admin/Moderation UI Redesign
+Diese Phase überarbeitet die gesamte Moderations-/Admin-Oberfläche zu einer professionellen, detaillierten und intuitiven Konsole.
+
+### Phase 16.0 — AdminShell + Overview Redesign
+**Ziel:** Persistente Chrome (Sidebar + Topbar) mit gruppierter Navigation, Breadcrumb, KPI-Übersicht.
+
+**Umsetzung (Delivered):**
+- Neue Module unter `/app/frontend/src/admin/`:
+  - `shell/AdminShell.js` — collapsible Sidebar (Gruppen: Übersicht, Moderation, People, Content, Operations) + sticky Topbar mit Breadcrumb, ENV-Pill, User-Block.
+  - `components/AdminStatCard.js`, `AdminKpiCard.js`, `AdminPageHeader.js`, `AdminStatusPill.js`, `AdminEmptyState.js` — wiederverwendbare Bausteine.
+  - `components/OverviewSection.js` — Dashboard mit Moderation-Queues, Plattform-KPIs, Zahlungs-Status.
+- `pages/AdminPage.js` integriert `<AdminShell>` und ersetzt die Legacy-Header-Navigation. Tab-State bleibt unverändert; alle bestehenden Tab-Inhalte rendern unverändert im Shell.
+- Verifiziert via Screenshots: 11 Tabs (Reports, Users, Foto-Queue, ID-Verifizierung, Honeypots, Blog, Broadcasts, Payments, KI-Konfig, Audit-Log, System) rendern korrekt mit Breadcrumb-Update und ohne Console-Errors.
+
+**Status:** Abgeschlossen.
+
+### Phase 16.1 — (optional) AdminPage.js Splitting
+**Ziel:** `AdminPage.js` (~1850 LOC) in einzelne Section-Komponenten unter `/admin/sections/` aufteilen für bessere Wartbarkeit.
+
+**Status:** Geplant (nicht blockierend).

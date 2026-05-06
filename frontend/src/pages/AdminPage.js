@@ -21,7 +21,9 @@ import { RoleBadge } from "../components/RoleBadge";
 import { AdminPromosTab } from "../components/AdminPromosTab";
 import { AdminBlogTab } from "../components/AdminBlogTab";
 import { AdminHoneypotsTab } from "../components/AdminHoneypotsTab";
-import { AdminNav } from "../components/AdminNav";
+import { AdminShell } from "../admin/shell/AdminShell";
+import { OverviewSection } from "../admin/components/OverviewSection";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const ADMIN_TAB_LABELS = {
   reports: "Reports",
@@ -44,7 +46,34 @@ function activeTabLabel(id) {
 
 export default function AdminPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("reports");
+  // Section state is mirrored into the URL (?section=...) so deep links
+  // and browser back/forward work like in any modern admin console.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const initial = (() => {
+    try {
+      const sp = new URLSearchParams(location.search);
+      return sp.get("section") || "overview";
+    } catch { return "overview"; }
+  })();
+  const [activeTab, _setActiveTab] = useState(initial);
+  const setActiveTab = (id) => {
+    _setActiveTab(id);
+    try {
+      const sp = new URLSearchParams(location.search);
+      sp.set("section", id);
+      navigate({ pathname: location.pathname, search: `?${sp.toString()}` }, { replace: true });
+    } catch {}
+  };
+  // Sync state back when the URL changes externally (e.g. browser back).
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(location.search);
+      const s = sp.get("section");
+      if (s && s !== activeTab) _setActiveTab(s);
+    } catch {}
+    // eslint-disable-next-line
+  }, [location.search]);
   const [reports, setReports] = useState([]);
   const [users, setUsers] = useState([]);
   const [audit, setAudit] = useState([]);
@@ -543,162 +572,152 @@ export default function AdminPage() {
 
   const isSuper = user.role === "admin" || user.role === "superadmin";
 
-  return (
-    <div className="app-wrap app-shell-bg-light dark:app-shell-bg">
-      <div className="app-content flex flex-col min-h-screen">
-        <AppHeader />
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10">
-          {/* Page header — professional, compact, responsive */}
-          <header className="mb-5 sm:mb-8 flex items-start justify-between gap-4">
-            <div>
-              <nav className="text-[11px] uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))] mb-1.5 flex items-center gap-1.5" aria-label="Breadcrumb">
-                <span>Admin</span>
-                <span aria-hidden="true">/</span>
-                <span className="text-[hsl(var(--foreground))] font-medium normal-case tracking-normal" data-testid="admin-breadcrumb-active">
-                  {activeTabLabel(activeTab, isSuper)}
-                </span>
-              </nav>
-              <h1 className="font-display text-3xl sm:text-4xl md:text-5xl tracking-tight leading-none">Moderation</h1>
-              <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))] max-w-xl hidden sm:block">
-                Zentrale für User-Reports, Content-Moderation, Verifizierungen und System-Konfiguration.
-              </p>
-            </div>
-            {/* Realtime moderation bell */}
-            <DropdownMenu open={bellOpen} onOpenChange={setBellOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="relative inline-flex items-center justify-center h-10 w-10 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card))] hover:bg-[hsl(var(--secondary))] transition-colors"
-                  aria-label="Benachrichtigungen"
-                  data-testid="admin-bell-button"
-                >
-                  <Bell className="h-4 w-4" />
-                  {unreadCount > 0 && (
-                    <span
-                      className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[hsl(var(--destructive))] text-white text-[10px] font-semibold grid place-items-center ring-2 ring-[hsl(var(--background))]"
-                      data-testid="admin-bell-unread"
-                    >{unreadCount > 99 ? "99+" : unreadCount}</span>
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[380px] max-h-[480px] overflow-y-auto">
-                <div className="px-3 py-2 flex items-center justify-between border-b gap-2">
-                  <div className="font-medium text-sm">Moderations-Events</div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
-                      onClick={() => { setChannelsOpen(true); setBellOpen(false); }}
-                      data-testid="admin-bell-channels"
-                    >Kanäle</button>
-                    <button className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" onClick={ackAllNotifications} data-testid="admin-bell-ack-all">Alle markieren</button>
-                  </div>
-                </div>
-                {!channelsState.all_subscribed && (
-                  <div className="px-3 py-1.5 bg-[hsl(var(--secondary))]/40 text-[11px] text-[hsl(var(--muted-foreground))] border-b">
-                    Abonniert: {(channelsState.channels || []).length}/{channelsState.available_channels?.length || 0} Kanäle
-                  </div>
-                )}
-                {liveEvents.length === 0 && <div className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">Noch keine Benachrichtigungen.</div>}
-                <ul className="divide-y divide-[hsl(var(--border))]/60">
-                  {liveEvents.slice(0, 50).map((e, i) => (
-                    <li key={e.notification_id || i} className="px-3 py-2 text-xs space-y-0.5 hover:bg-[hsl(var(--secondary))]/50" data-testid={`admin-bell-item-${i}`}>
-                      <div className="flex items-center gap-2">
-                        <span className={`inline-block h-1.5 w-1.5 rounded-full ${e._ack ? "bg-[hsl(var(--muted-foreground))]/40" : "bg-[hsl(var(--destructive))]"}`} />
-                        <span className="font-medium capitalize">{(e.type || "").replace(/_/g, " ")}</span>
-                        <span className="ml-auto font-mono text-[10px] text-[hsl(var(--muted-foreground))]">{(e.at || e.persisted_at || "").slice(11,19)}</span>
-                      </div>
-                      <div className="text-[hsl(var(--muted-foreground))] pl-3.5">
-                        {e.type === "new_report" && <>Grund: <b>{e.reason}</b> · {e.target_type} · {e.target_email || (e.target_id || "").slice(0,8)}</>}
-                        {e.type === "minor_registration_attempt" && <>{e.email} · Alter {e.age} · IP {e.ip}</>}
-                        {e.type === "flagged_registration" && <>{e.email} · IP {e.ip} — ID-Verifizierung erforderlich</>}
-                        {e.type === "id_verification_submitted" && <>{e.user_name} ({e.email}) · {e.document_type}</>}
-                        {e.type === "auto_shadow_restrict" && <>User {e.user_id?.slice(0,8)} · {e.unique_reports} Reports</>}
-                        {e.type === "photo_retention_set" && <>User {e.target_user_id?.slice(0,8)} · bis {(e.until || "").slice(0,10)}</>}
-                      </div>
-                      {e.type === "new_report" && e.report_id && (
-                        <button
-                          className="ml-3.5 underline text-[11px] text-[hsl(var(--accent))]"
-                          onClick={() => { setBellOpen(false); openReport(e.report_id); }}
-                        >Report öffnen</button>
-                      )}
-                      {(e.type === "flagged_registration" || e.type === "minor_registration_attempt" || e.type === "id_verification_submitted") && e.user_id && (
-                        <button
-                          className="ml-3.5 underline text-[11px] text-[hsl(var(--accent))]"
-                          onClick={() => { setBellOpen(false); openEditUser(e.user_id); }}
-                        >Nutzer öffnen</button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </header>
-
-          {/* Notification Channels Dialog */}
-          <Dialog open={channelsOpen} onOpenChange={setChannelsOpen}>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle className="font-display text-2xl">Benachrichtigungs-Kanäle</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-2 text-sm">
-                <p className="text-[hsl(var(--muted-foreground))] text-xs">
-                  Wähle, welche Moderations-Events dich erreichen sollen. Die Glocke oben rechts zeigt dann nur ausgewählte Kanäle — andere Teammitglieder können sich um den Rest kümmern.
-                </p>
-                <div className="rounded-md border divide-y divide-[hsl(var(--border))]/60">
-                  {(channelsState.available_channels || []).map((c) => (
-                    <label key={c} className="flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer hover:bg-[hsl(var(--secondary))]/40" data-testid={`channel-${c}`}>
-                      <div>
-                        <div className="font-medium">{CHANNEL_LABELS[c] || c}</div>
-                        <div className="text-[11px] text-[hsl(var(--muted-foreground))] font-mono">{c}</div>
-                      </div>
-                      <Switch
-                        checked={isChannelActive(c)}
-                        onCheckedChange={() => toggleChannel(c)}
-                        data-testid={`channel-toggle-${c}`}
-                      />
-                    </label>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between pt-1">
-                  <button
-                    type="button"
-                    className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
-                    onClick={enableAllChannels}
-                    disabled={channelsSaving}
-                    data-testid="channels-all-on"
-                  >Alle aktivieren</button>
-                  <div className="text-[11px] text-[hsl(var(--muted-foreground))]">
-                    Änderungen greifen nach Speichern und Neuaufbau der Verbindung.
-                  </div>
-                </div>
+  // The bell + notification channels dialog is moved into the topbar slot
+  // so it lives in the new AdminShell rather than the legacy app header.
+  const topbarBell = (
+    <DropdownMenu open={bellOpen} onOpenChange={setBellOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="relative inline-flex items-center justify-center h-8 w-8 rounded-md text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]/40"
+          aria-label="Benachrichtigungen"
+          data-testid="admin-bell-button"
+        >
+          <Bell className="h-4 w-4" />
+          {unreadCount > 0 && (
+            <span
+              className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-[hsl(var(--destructive))] text-white text-[9px] font-semibold grid place-items-center ring-2 ring-[hsl(var(--card))]"
+              data-testid="admin-bell-unread"
+            >{unreadCount > 99 ? "99+" : unreadCount}</span>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[380px] max-h-[480px] overflow-y-auto">
+        <div className="px-3 py-2 flex items-center justify-between border-b gap-2">
+          <div className="font-medium text-sm">Moderations-Events</div>
+          <div className="flex items-center gap-2">
+            <button
+              className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+              onClick={() => { setChannelsOpen(true); setBellOpen(false); }}
+              data-testid="admin-bell-channels"
+            >Kanäle</button>
+            <button className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" onClick={ackAllNotifications} data-testid="admin-bell-ack-all">Alle markieren</button>
+          </div>
+        </div>
+        {!channelsState.all_subscribed && (
+          <div className="px-3 py-1.5 bg-[hsl(var(--secondary))]/40 text-[11px] text-[hsl(var(--muted-foreground))] border-b">
+            Abonniert: {(channelsState.channels || []).length}/{channelsState.available_channels?.length || 0} Kanäle
+          </div>
+        )}
+        {liveEvents.length === 0 && <div className="py-8 text-center text-sm text-[hsl(var(--muted-foreground))]">Noch keine Benachrichtigungen.</div>}
+        <ul className="divide-y divide-[hsl(var(--border))]/60">
+          {liveEvents.slice(0, 50).map((e, i) => (
+            <li key={e.notification_id || i} className="px-3 py-2 text-xs space-y-0.5 hover:bg-[hsl(var(--secondary))]/50" data-testid={`admin-bell-item-${i}`}>
+              <div className="flex items-center gap-2">
+                <span className={`inline-block h-1.5 w-1.5 rounded-full ${e._ack ? "bg-[hsl(var(--muted-foreground))]/40" : "bg-[hsl(var(--destructive))]"}`} />
+                <span className="font-medium capitalize">{(e.type || "").replace(/_/g, " ")}</span>
+                <span className="ml-auto font-mono text-[10px] text-[hsl(var(--muted-foreground))]">{(e.at || e.persisted_at || "").slice(11,19)}</span>
               </div>
-              <DialogFooter>
-                <Button variant="ghost" onClick={() => setChannelsOpen(false)}>Abbrechen</Button>
-                <Button onClick={saveChannels} disabled={channelsSaving} data-testid="channels-save">
-                  {channelsSaving ? "Speichern…" : "Speichern"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <div className="md:flex md:gap-8" data-testid="admin-layout">
-            <AdminNav
-              value={activeTab}
-              onChange={(id) => {
-                setActiveTab(id);
-                // Preserve the old tab-level side effects (lazy-load content).
-                if (id === "legal") loadLegal(legalKey);
-                if (id === "broadcasts") loadBroadcasts();
-                if (id === "team-channels" && isSuper) loadRoleChannels();
-              }}
-              isSuper={isSuper}
-              counts={{ reports: (reports || []).length, photos: (photos || []).length, verifications: (verifs || []).length }}
-            />
+              <div className="text-[hsl(var(--muted-foreground))] pl-3.5">
+                {e.type === "new_report" && <>Grund: <b>{e.reason}</b> · {e.target_type} · {e.target_email || (e.target_id || "").slice(0,8)}</>}
+                {e.type === "minor_registration_attempt" && <>{e.email} · Alter {e.age} · IP {e.ip}</>}
+                {e.type === "flagged_registration" && <>{e.email} · IP {e.ip} — ID-Verifizierung erforderlich</>}
+                {e.type === "id_verification_submitted" && <>{e.user_name} ({e.email}) · {e.document_type}</>}
+                {e.type === "auto_shadow_restrict" && <>User {e.user_id?.slice(0,8)} · {e.unique_reports} Reports</>}
+                {e.type === "photo_retention_set" && <>User {e.target_user_id?.slice(0,8)} · bis {(e.until || "").slice(0,10)}</>}
+              </div>
+              {e.type === "new_report" && e.report_id && (
+                <button
+                  className="ml-3.5 underline text-[11px] text-[hsl(var(--accent))]"
+                  onClick={() => { setBellOpen(false); openReport(e.report_id); }}
+                >Report öffnen</button>
+              )}
+              {(e.type === "flagged_registration" || e.type === "minor_registration_attempt" || e.type === "id_verification_submitted") && e.user_id && (
+                <button
+                  className="ml-3.5 underline text-[11px] text-[hsl(var(--accent))]"
+                  onClick={() => { setBellOpen(false); openEditUser(e.user_id); }}
+                >Nutzer öffnen</button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
-            <div className="flex-1 min-w-0">
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                {/* Legacy TabsList — kept as accessibility fallback (sr-only, drives
-                    Radix active state when external nav calls onValueChange). */}
-                <TabsList className="sr-only">
-                  <TabsTrigger value="reports">Reports</TabsTrigger>
+  return (
+    <AdminShell
+      value={activeTab}
+      onChange={(id) => {
+        setActiveTab(id);
+        // Preserve the legacy lazy-loading hooks for tabs that fetched on demand.
+        if (id === "legal") loadLegal(legalKey);
+        if (id === "broadcasts") loadBroadcasts();
+        if (id === "team-channels" && isSuper) loadRoleChannels();
+      }}
+      isSuper={isSuper}
+      counts={{ reports: (reports || []).length, photos: (photos || []).length, verifications: (verifs || []).length }}
+      user={user}
+      topbarRight={topbarBell}
+    >
+      {/* Notification Channels Dialog (kept as before; just reparented). */}
+      <Dialog open={channelsOpen} onOpenChange={setChannelsOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">Benachrichtigungs-Kanäle</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p className="text-[hsl(var(--muted-foreground))] text-xs">
+              Wähle, welche Moderations-Events dich erreichen sollen. Die Glocke oben rechts zeigt dann nur ausgewählte Kanäle — andere Teammitglieder können sich um den Rest kümmern.
+            </p>
+            <div className="rounded-md border divide-y divide-[hsl(var(--border))]/60">
+              {(channelsState.available_channels || []).map((c) => (
+                <label key={c} className="flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer hover:bg-[hsl(var(--secondary))]/40" data-testid={`channel-${c}`}>
+                  <div>
+                    <div className="font-medium">{CHANNEL_LABELS[c] || c}</div>
+                    <div className="text-[11px] text-[hsl(var(--muted-foreground))] font-mono">{c}</div>
+                  </div>
+                  <Switch
+                    checked={isChannelActive(c)}
+                    onCheckedChange={() => toggleChannel(c)}
+                    data-testid={`channel-toggle-${c}`}
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                className="text-xs underline text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                onClick={enableAllChannels}
+                disabled={channelsSaving}
+                data-testid="channels-all-on"
+              >Alle aktivieren</button>
+              <div className="text-[11px] text-[hsl(var(--muted-foreground))]">
+                Änderungen greifen nach Speichern und Neuaufbau der Verbindung.
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setChannelsOpen(false)}>Abbrechen</Button>
+            <Button onClick={saveChannels} disabled={channelsSaving} data-testid="channels-save">
+              {channelsSaving ? "Speichern…" : "Speichern"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* The new Overview dashboard. Shown when section == "overview". */}
+      {activeTab === "overview" && (
+        <OverviewSection onJumpTo={setActiveTab} isSuper={isSuper} />
+      )}
+
+      <div className="min-w-0" data-testid="admin-layout">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          {/* Legacy TabsList — kept as accessibility fallback (sr-only, drives
+              Radix active state when external nav calls onValueChange). */}
+          <TabsList className="sr-only">
+            <TabsTrigger value="overview">Dashboard</TabsTrigger>
+            <TabsTrigger value="reports">Reports</TabsTrigger>
                   <TabsTrigger value="users">Users</TabsTrigger>
                   <TabsTrigger value="photos">Foto-Queue</TabsTrigger>
                   <TabsTrigger value="verifications">Verifizierungen</TabsTrigger>
@@ -1344,7 +1363,7 @@ export default function AdminPage() {
             </TabsContent>
           </Tabs>
             </div>
-          </div>
+          {/* End of Tabs wrapper for the new AdminShell */}
 
           {/* Admin Edit User Dialog */}
           <Dialog open={!!editUser} onOpenChange={(v) => { if (!v) { setEditUser(null); setEditForm(null); } }}>
@@ -1792,10 +1811,7 @@ export default function AdminPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </main>
-        <AppFooter />
-      </div>
-    </div>
+    </AdminShell>
   );
 }
 
