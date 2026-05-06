@@ -159,6 +159,14 @@ async def startup():
             await db.payment_transactions.create_index("order_id", sparse=True)
             await db.payment_transactions.create_index([("provider", 1), ("created_at", -1)])
             await db.payment_transactions.create_index("user_id")
+            # Phase 15.1: Sparks ledger + subscriptions
+            try:
+                import sparks as _sparks_lib
+                import subscriptions as _sub_lib
+                await _sparks_lib.ensure_indexes(db)
+                await _sub_lib.ensure_indexes(db)
+            except Exception as _ex:
+                logger.warning("Sparks/Subscriptions index setup issue: %s", _ex)
         except Exception as ex:
             logger.warning("Phase-6 index setup issue: %s", ex)
         # IP flagging with automatic expiry (minor-attempt protection)
@@ -212,6 +220,15 @@ async def startup():
             logger.info("Migration: cleared 'online' mood for %s users", getattr(res, "modified_count", 0))
     except Exception as e:
         logger.exception("drop_online_mood migration failed: %s", e)
+
+    # Phase 15.1 migration: legacy `premium_expires_at` users gain a proper
+    # `subscriptions` row so all downstream entitlement checks can run on
+    # the new model. Idempotent — guarded by `migration_subscriptions_v1`.
+    try:
+        import subscriptions as _sub_lib
+        await _sub_lib.migrate_legacy_premium(db)
+    except Exception as e:
+        logger.exception("subscriptions migration failed: %s", e)
 
 
 @app.on_event("shutdown")
@@ -501,6 +518,13 @@ async def login(body: LoginRequest, request: "Request" = None):
     token = create_token(doc["id"], doc.get("role", "user"))
     await db.users.update_one({"id": doc["id"]}, {"$set": {"last_active": now_utc().isoformat()}})
     await _audit(doc["id"], "login", meta={"ip": ip})
+    # Sparks earning: daily login + streak bookkeeping. Failures must never
+    # block the login itself; they're surfaced via the balance endpoint.
+    try:
+        import sparks as _sparks
+        await _sparks.grant_daily_login(db, doc["id"])
+    except Exception as _ex:
+        logger.warning("sparks daily-login hook failed for %s: %s", doc["id"], _ex)
     return TokenResponse(access_token=token, user=UserPublic(**public_user_from_doc(doc)))
 
 
@@ -706,6 +730,13 @@ async def create_like(body: LikeRequest, user=Depends(_require_user)):
                 }
             )
             await _audit(user["id"], "match_created", match_id)
+        # Sparks: first-match bonus for both participants (idempotent per user).
+        try:
+            import sparks as _sparks
+            await _sparks.grant_first_match(db, user["id"], match_id)
+            await _sparks.grant_first_match(db, body.target_user_id, match_id)
+        except Exception as _ex:
+            logger.debug("sparks first-match hook failed: %s", _ex)
         return LikeResponse(liked=True, matched=True, match_id=match_id)
     return LikeResponse(liked=True, matched=False)
 
@@ -1484,6 +1515,16 @@ def _broadcast_matches_user(doc: dict, user: dict) -> bool:
 # ---------- Albums ----------
 @api_router.post("/albums", response_model=AlbumPublic)
 async def create_album(body: AlbumCreate, user=Depends(_require_user)):
+    # Tier-based album cap (Phase 15.1): 2 free, 15 premium.
+    from monetization import limits_for
+    max_albums = limits_for(_is_premium(user))["albums"]
+    current = await db.albums.count_documents({"owner_id": user["id"]})
+    if current >= max_albums:
+        raise HTTPException(
+            400,
+            f"Album-Limit erreicht: {max_albums}. Mit Premium kannst du bis zu 15 Alben anlegen."
+            if max_albums < 15 else f"Maximal {max_albums} Alben erlaubt",
+        )
     album = {
         "id": str(uuid.uuid4()),
         "owner_id": user["id"],
@@ -1592,6 +1633,15 @@ async def add_album_photo(album_id: str, body: PhotoUploadRequest, user=Depends(
     a = await db.albums.find_one({"id": album_id})
     if not a or a["owner_id"] != user["id"]:
         raise HTTPException(404, "Album not found")
+    # Tier-based per-album media cap (Phase 15.1): 20 free, 100 premium.
+    from monetization import limits_for
+    max_media = limits_for(_is_premium(user))["media_per_album"]
+    if len(a.get("photos") or []) >= max_media:
+        raise HTTPException(
+            400,
+            f"Album-Medien-Limit erreicht: {max_media}. Mit Premium passen bis zu 100 Medien pro Album."
+            if max_media < 100 else f"Maximal {max_media} Medien pro Album",
+        )
     if not body.data_url.startswith("data:image/"):
         raise HTTPException(400, "Invalid image data URL")
     _reject_if_bad_image_mime(body.data_url)
@@ -1838,6 +1888,11 @@ async def verify_email(body: EmailVerifyRequest, user=Depends(_require_user)):
         {"$set": {"email_verified": True}, "$unset": {"email_verification": ""}},
     )
     await _audit(user["id"], "email_verified")
+    try:
+        import sparks as _sparks
+        await _sparks.grant_verification(db, user["id"], "email")
+    except Exception as _ex:
+        logger.debug("sparks email-verify hook failed: %s", _ex)
     return {"ok": True}
 
 
@@ -1923,6 +1978,16 @@ def _is_premium(doc: dict) -> bool:
         return exp > now_utc().isoformat()
     except Exception:
         return False
+
+
+def _user_limits(doc: dict) -> dict:
+    """Return the active monetization limit table for this user.
+
+    Defers to the canonical FREE/PREMIUM tables in `monetization.py` so the
+    UI, the upgrade page, and the server can never quote different numbers.
+    """
+    from monetization import limits_for
+    return limits_for(_is_premium(doc))
 
 
 
@@ -3438,6 +3503,7 @@ from routers import matches_chat as _matches_chat_routes  # noqa: E402,F401
 from routers import pic4pic as _pic4pic_routes  # noqa: E402,F401
 from routers import landing as _landing_routes  # noqa: E402,F401
 from routers import payments_maintenance as _payments_maintenance_routes  # noqa: E402,F401
+from routers import sparks as _sparks_routes  # noqa: E402,F401
 
 app.include_router(api_router)
 

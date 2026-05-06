@@ -204,12 +204,18 @@ async def discover(
         query["preferences.age_max"] = {"$gte": my_age}
 
     # Radius (geo)
+    # Tier-based cap (Phase 15.1): Free max 50 km, Premium max 300 km.
+    # Users keep their preferred radius UI value but the server clamps it
+    # to the active tier so a Free user can never silently scan past 50 km.
     geo_applied = False
     if loc and loc.get("coordinates") and prefs.get("radius_km"):
+        from monetization import limits_for
+        max_radius = limits_for(_is_user_premium(user))["search_radius_km"]
+        eff_radius = min(int(prefs["radius_km"]), int(max_radius))
         query["location"] = {
             "$near": {
                 "$geometry": loc,
-                "$maxDistance": int(prefs["radius_km"]) * 1000,
+                "$maxDistance": eff_radius * 1000,
             }
         }
         geo_applied = True

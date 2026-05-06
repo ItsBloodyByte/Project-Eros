@@ -1,26 +1,26 @@
 [
   {
-    "content": "Phase A1-A4: Routing + Landing",
+    "content": "Phase 15.1: Foundation komplett (Constants, Sparks Ledger, Subscriptions, Migration, Limits, Hooks, Admin Endpoints)",
     "status": "completed"
   },
   {
-    "content": "Phase B1-B4: Pic4Pic Web + AI-Key Bugfix + E2E",
-    "status": "completed"
+    "content": "Phase 15.1.7: Backend Smoke-Test via testing_agent",
+    "status": "in_progress"
   },
   {
-    "content": "Phase C1-C2: Pic4Pic Mobile (lint passed)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase D1-D2: Payments Hardening (Sweeper + Strict-Mode + Admin Endpoints + getestet)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase E1: Performance-Sweep - Web Bundle-Splitting (-55% main.js)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase E2: Optional - API caching/optimistic updates (verschoben - größter Hebel mit E1 gezogen)",
+    "content": "Phase 15.1.5: Boost rework (verschoben in Phase 15.3 zusammen mit Sparks-Spending)",
     "status": "cancelled"
+  },
+  {
+    "content": "Phase 15.2: Sparks Spending + Premium-Features (Filter SKIP)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 15.3: Pricing + Payment Cycles + Pause + Sparks-Pakete + Boost-Spend",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 15.4: Frontend Polish + Transparenzseite + Anti-Dark-Pattern Locks",
+    "status": "pending"
   }
 ]

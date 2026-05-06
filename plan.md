@@ -89,8 +89,8 @@ E2E: Auth → Profile/Photo/AI → Discover mutual-filter → Like/Match → Cha
 - E-Mail Verifizierung (In-App Code; `dev_code` für Tests).
 - MFA (TOTP): Setup/Enable/Disable + MFA Login Challenge.
 - Video-Clips: Upload + Moderation Queue + Playback.
-- Premium Tier (intern): Upgrade/Status/Cancel.
-  - Premium unlocks: Likes received, First Message, Boost.
+- Premium Tier (legacy, intern): Upgrade/Status/Cancel.
+  - Premium unlocks (legacy): Likes received, First Message, Boost.
 - Events: Create/List/Detail/RSVP.
 - Admin Rollen: `admin`, `content_reviewer`, `support` + Rollenverwaltung.
 - Account Page zeigt Features + Premium Badge.
@@ -407,91 +407,177 @@ Diese Phase bildet die direkte Fortsetzung aus den letzten Iterationen. Reihenfo
 **Status:** Abgeschlossen.
 
 ### Phase 14.1 — Routing Fix: Gast-Landing korrekt anbinden + Screenshot-Deterrents endgültig entfernen (Web)
-**Ergebnis (Delivered):**
-- `/` zeigt LandingPage für Gäste.
-- Eingeloggte User werden zuverlässig nach `/discover` umgeleitet.
-- Root-Routing-Bug (`HomeOrLanding` fehlte) behoben.
-- Screenshot-Deterrents in `App.js` final entfernt.
-
-**Umsetzung (Delivered):**
-- `frontend/src/App.js` neu strukturiert (Route-Guards + Root Handler).
-- `frontend/src/pages/LandingPage.js` Auth-Status an `loading` angepasst; Routenpfade zu `/login` & `/register` korrigiert.
-
 **Status:** Abgeschlossen.
 
 ### Phase 14.2 — LandingPage finalisieren (Feature #6)
-**Ergebnis (Delivered):**
-- Backend Defaults konsistent zu Web-Routen (`/login`, `/register`).
-- Public Endpoint `/api/landing` verifiziert.
-
-**Umsetzung (Delivered):**
-- `backend/routers/landing.py` Default-CTAs angepasst.
-
 **Status:** Abgeschlossen.
 
 ### Phase 14.3 — Pic4Pic Web Frontend (Feature #1, Web)
-**Ergebnis (Delivered):**
-- Pic4Pic UI im Web-Chat integriert (Idle/Pending/Cancel, Respond auf Recipient-Seite).
-- Canonical state via `GET /api/pic4pic/match/{match_id}`.
-- Reaktive Updates bei WS-Systemmessages (`kind` startet mit `pic4pic`).
-
-**Umsetzung (Delivered):**
-- Neue Komponente: `frontend/src/components/Pic4PicPanel.js`.
-- Integration in `frontend/src/pages/ChatPage.js`.
-
 **Status:** Abgeschlossen.
 
 ### Phase 14.3.1 — Pic4Pic Backend: Moderation-Key & Fail-Open Robustheit
-**Problem (gefunden in Tests):**
-- DB-Setting `settings.key=ai_moderation` enthielt einen Fake-Gemini-Key (`fake_gemini_key_for_testing`), wodurch Moderation Calls fehlschlugen.
-- Pic4Pic blockierte zusätzlich, weil `_is_strong_photo` ohne Labels/Face/NSFW nicht akzeptierte.
-
-**Fixes (Delivered):**
-- DB-Cleanup: `ai_moderation.api_key` entfernt → Fallback auf `EMERGENT_LLM_KEY`.
-- `backend/routers/pic4pic.py`: `_is_strong_photo` akzeptiert `provider=noop` (Moderation disabled/errored) um Ausfall der KI nicht zu einem globalen Feature-Ausfall zu machen.
-
 **Status:** Abgeschlossen.
 
 ### Phase 14.4 — Pic4Pic Mobile Frontend (Feature #1, Mobile)
-**Ergebnis (Delivered):**
-- Pic4Pic Banner + Initiate/Respond/Cancel im Mobile Chat.
-- Bildanzeige in Messages via `media_data_url`.
-
-**Umsetzung (Delivered):**
-- `mobile/src/screens/ChatScreen.js` erweitert:
-  - Pollt zusätzlich `/pic4pic/match/{matchId}`
-  - Expo ImagePicker Upload (base64→data URL)
-  - Banner-State machine (idle/pending role-based)
-
 **Status:** Abgeschlossen.
 
 ### Phase 14.5 — Payments Production Hardening (Reststücke)
-**Ergebnis (Delivered):**
-- Stale-Transactions werden automatisch bereinigt (`initiated` → `expired`).
-- Ops/Admin Endpoints verfügbar + RBAC geprüft.
-- Startup-Warnung für `strict_webhook_verification` OFF hinzugefügt.
-
-**Umsetzung (Delivered):**
-- Neuer Router: `backend/routers/payments_maintenance.py`
-  - Background Sweeper (alle 15 Min)
-  - `POST /api/admin/payments/cleanup-stale`
-  - `GET /api/admin/payments/stale-stats`
-  - Startup Warning, wenn Live-Provider aktiv und Strict-Mode aus
-- Einbindung in `server.py` via Late-Binding Import.
-
 **Status:** Abgeschlossen.
 
 ### Phase 14.6 — Performance-Sweep (Feature #8)
-**Ergebnis (Delivered):**
-- Route-based code splitting in Web aktiviert.
-- Bundle signifikant reduziert:
-  - `main.js` gzip: **525.74 kB → 237.26 kB (-55%)**
+**Status:** Abgeschlossen.
+
+---
+
+## Phase 14.7 — UX Polish (Desktop) + Mood-System Cleanup
+Diese Phase adressiert zwei konkrete UX-Feedback-Punkte aus der Desktop-Version.
+
+### Phase 14.7.1 — Desktop: Name im Profil-Header nicht umbrechen
+**Ziel:** Kein ungewollter Zeilenumbruch im Namen (z. B. „Rouv\nen“).
 
 **Umsetzung (Delivered):**
-- `frontend/src/App.js` auf `React.lazy` + `Suspense` umgestellt.
-- RouteFallback Loader vereinheitlicht.
+- `frontend/src/pages/ProfileViewPage.js`:
+  - `break-words` entfernt.
+  - Header-Flex auf `sm:flex-wrap` umgestellt (Badges dürfen umbrechen statt Name).
+  - Name-Container auf `flex-1`.
+  - Alter/Partner-Alter `whitespace-nowrap`.
 
 **Status:** Abgeschlossen.
+
+### Phase 14.7.2 — Mood-Option „Online“ entfernen (redundant)
+**Ziel:** Der auswählbare Status „Online“ soll wegfallen, weil ein generischer Online-Indikator bereits existiert.
+
+**Umsetzung (Delivered):**
+- Frontend: `frontend/src/lib/moods.js` entfernt `online` aus `MOOD_KEYS` + `MOODS`.
+- Backend: `backend/models.py` entfernt `online` aus Mood Literal.
+- Migration: `backend/server.py` One-Time Migration `migration_drop_online_mood_v1` setzt `current_mood="online"` → `None`.
+
+**Status:** Abgeschlossen.
+
+---
+
+## Phase 15 — Freemium & Premium — Monetarisierung (Rework nach Kapitel 15)
+Diese Phase überarbeitet das gesamte Premium/Freemium-Konzept gemäß Kapitel 15.
+
+**Wichtige Abweichungen (User Decision):**
+- **Filter bleiben für alle User frei** (Free + Premium). Kapitel-15-Punkt „Erweiterte Filter = Premium“ wird **nicht** umgesetzt.
+- **Studenten-Verifikation** zunächst **manuell über Admin** (kein SheerID; optional später).
+
+### Phase 15.0 — Leitplanken (Anti-Dark-Pattern) & Definition of Done
+**Leitplanken (MUST):**
+- Keine Like-Limits.
+- Keine Like-Bait Notifications ohne Inhalt.
+- Keine Countdown-Timer ohne echte Expiry.
+- Kündigung verliert Benefits erst am Periodenende (`subscription_active_until`).
+- Keine OS-abhängigen Preise.
+- Abo pausierbar (bis 3 Monate).
+
+**Definition of Done:**
+- Datenmodell + Migration abgeschlossen.
+- Free/Premium Limits serverseitig enforced.
+- Sparks-Ledger append-only.
+- Premium ist **ein** Tier (VERBINDEN).
+- Upgrade/Downgrade/Cancel/Pause flows getestet.
+
+### Phase 15.1 — Datenmodell: Subscriptions + Sparks Ledger (Backend)
+**Ziele:**
+- Einführung der in Kapitel 15 beschriebenen Kerntabellen (Mongo-Äquivalent):
+  - `subscriptions`
+  - `sparks_ledger` (append-only)
+  - `boosts`
+- Migration von Legacy-Feldern (`premium_expires_at`, bestehende payment txns) auf neues Modell.
+
+**Umsetzungsschritte:**
+1. Mongo Collections + Indexe:
+   - `subscriptions`: `user_id`, `external_subscription_id`, `current_period_end`, `subscription_active_until`, `tier`.
+   - `sparks_ledger`: `user_id`, `created_at`, `transaction_type`, `balance_after`.
+   - `boosts`: `user_id`, `started_at`, `ends_at`, `source`, `sparks_ledger_id`.
+2. Serverseitige Entitlements:
+   - `is_premium(user)` wird auf Subscription-Modell umgestellt (Fallback auf legacy während Migration).
+3. Migrations:
+   - bestehende Premium-Nutzer → `subscriptions.tier=premium` + `subscription_active_until` aus `premium_expires_at`.
+   - `current_mood` etc. bleibt unberührt.
+4. Admin Controls:
+   - Admin Endpoint: Sparks admin_adjustment (audit-logged).
+
+**Status:** Geplant.
+
+### Phase 15.2 — Freemium/Premium Limits + Sparks Earning (Backend)
+**Wichtig:** Filter bleiben **frei**.
+
+**Ziele (aus Kapitel 15, angepasst):**
+- Free-Limits:
+  - Fotos bis 8, Alben bis 2, Medien/Album bis 20, Suchradius bis 50km.
+  - Album-Unlock Anfragen: 5/Monat.
+  - Werbung: dezent (nur Galerie; nicht Chat) — sofern Ads-System existiert.
+- Premium-Limits:
+  - Fotos bis 30, Alben bis 15, Medien/Album bis 100, Suchradius bis 300km + Reisemodus.
+  - Album-Unlock Anfragen: unbegrenzt.
+- Sparks verdienen:
+  - Daily login, profile complete, verifications, first match, streaks, confirmed report, quiz, premium monthly bonus.
+
+**Umsetzungsschritte:**
+1. Limits in die existierenden Endpoints einziehen:
+   - Foto-Upload Limit anheben/abstufen.
+   - Album create/add media limits.
+   - Unlock Request Quotas (per month) + sparks-overflow Option erst in 15.3.
+2. Sparks earning pipeline:
+   - `POST /api/me/daily-login` oder serverseitig beim `/api/me` Refresh einmal täglich.
+   - Ledger Buchungen + Balance After.
+3. Monatlicher Premium-Bonus (+50 Sparks):
+   - Cron/Background Task oder bei Periodenwechsel.
+
+**Status:** Geplant.
+
+### Phase 15.3 — Sparks Spending + Premium Features (Backend + UI Hooks)
+**Ziele:**
+- Sparks ausgeben:
+  - Boost (30), Sehr-interessiert-Signal (10), Rewind (5), Album-Unlock-extra (8), Chat-Starter (3), Highlight 24h (15), Premium-Testwoche schenken (80).
+- Premium Features:
+  - Wer hat mich geliked: Profile sichtbar + sortierbar.
+  - Profilbesucher: alle + Zeitstempel.
+  - Inkognito-Modus + unsichtbar browsen.
+  - 90 Tage Stats.
+  - Werbefrei.
+
+**Wichtig:**
+- **Erweiterte Filter werden NICHT Premium**.
+
+**Status:** Geplant.
+
+### Phase 15.4 — Pricing + Payment Cycles + Pause (Stripe/Web) + Student Manual Verify
+**Ziele:**
+- Billing Cycles:
+  - monatlich 9,99, halbjährlich 47,94, jährlich 71,88.
+  - Studenten (jährlich) via **Admin manual verify**.
+  - Duo-Abo (2 Accounts) — Modell/Regeln definieren.
+  - Geschenk-Abo (Code/Link) — Einlösungsflow.
+- Pause bis 3 Monate.
+- Fairness:
+  - Reminder Email 7 Tage vorher (wenn Notification/E-Mail infra existiert).
+  - Preisgarantie 12 Monate (serverseitig).
+  - Prorata-Refund als Sparks bei Ausfall (ops-only initially).
+
+**Status:** Geplant.
+
+### Phase 15.5 — Frontend: Premium Page Rework + Sparks UI + Transparenzseite
+**Ziele:**
+- Eine Premium-Stufe: **VERBINDEN**.
+- Premium Preview/Account UI neu:
+  - Vergleichstabelle Free vs Premium (ohne Filter-Paywall).
+  - Pause/Resume.
+  - Sparks Balance + Ledger Page.
+  - Boost UI + Boost Stats.
+- Öffentliche `/transparent` Seite.
+
+**Status:** Geplant.
+
+### Phase 15.6 — Anti-Dark-Pattern technische Locks + Tests
+**Ziele:**
+- Hard-coded Verbote (no like-bait notifications, timer nur bei real expiry, max upsell-notification etc.)
+- Unit/Regression Tests für Monetarisierungsregeln.
+
+**Status:** Geplant.
 
 ---
 
@@ -512,17 +598,20 @@ Diese Phase bildet die direkte Fortsetzung aus den letzten Iterationen. Reihenfo
 ---
 
 ## Nächste Schritte (Upcoming Tasks)
-### Task 1 (P1): Mobile Report-Flows
-**Ziel:** Nutzer:innen können Profil/Foto/Nachricht aus der Mobile App melden.
+### Task 1 (P1): Phase 15.1 starten (Subscriptions + Sparks Ledger + Migration)
 **Status:** Offen.
 
-### Task 2 (P2): Performance-Sweep — Phase 2
-**Ziel:** Weitere perceived-performance Verbesserungen (API caching/optimistische UI, Bild-Strategien, Query Profiling).
+### Task 2 (P1): Phase 15.2 (Limits + Sparks Earning)
 **Status:** Offen.
 
-### Task 3 (P2): Pic4Pic UX Polish
-**Ziel:** Optional: bessere Completion-States (z. B. „Bilder getauscht“ Banner), Upload progress, Retry UX.
-**Status:** Optional.
+### Task 3 (P1): Phase 15.3 (Sparks Spending + Premium Features)
+**Status:** Offen.
+
+### Task 4 (P1): Phase 15.4 (Pricing + Payment Cycles + Pause + Student manual verify)
+**Status:** Offen.
+
+### Task 5 (P1): Phase 15.5/15.6 (Frontend Rework + Transparenzseite + Anti-Dark-Pattern Locks)
+**Status:** Offen.
 
 ---
 
@@ -537,6 +626,7 @@ Diese Phase bildet die direkte Fortsetzung aus den letzten Iterationen. Reihenfo
 - Phase 11.1–11.3: **fertig** (Router-Split).
 - Phase 12.1–12.3: **fertig** (Screenshot-Schutz entfernt, Neu-Badge, ID-Doc hard delete).
 - Phase 13.1–13.3: **fertig** (Honey-Pots + Shadow-Bans + Admin UI).
-- **Phase 14.1–14.6: COMPLETED** (Option D komplett durchgezogen: Routing/Landing → Pic4Pic Web → Pic4Pic Mobile → Payments Hardening → Performance).
+- Phase 14.1–14.6: **fertig** (Landing/Routing → Pic4Pic → Payments hardening → Performance).
+- Phase 14.7: **fertig** (Desktop Name Wrap Fix + Mood „Online“ entfernt).
 
-**Aktueller Fokus:** Mobile Report-Flows (P1) und optional weitere Performance/UX-Polish (P2).
+**Aktueller Fokus:** **Phase 15** — vollständige Premium/Freemium-Überarbeitung gemäß Konzept-Kapitel 15 (mit Filter-Ausnahme).

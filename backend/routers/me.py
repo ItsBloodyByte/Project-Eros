@@ -185,11 +185,16 @@ async def upload_photo(body: PhotoUploadRequest, user=Depends(_require_user)):
     # Server-side compression: shrink to sane dimensions + re-encode JPEG.
     # This drastically reduces Mongo storage + every subsequent wire transfer.
     compressed_url, _ = compress_image_data_url(body.data_url)
-    # Hard cap: max 5 photos per user (1 primary + 4 secondary)
-    MAX_PHOTOS = 5
+    # Tier-based photo cap (Phase 15.1): 8 free, 30 premium.
+    from monetization import limits_for
+    max_photos = limits_for(_is_premium(user))["photos"]
     current = user.get("photos", [])
-    if len(current) >= MAX_PHOTOS:
-        raise HTTPException(400, f"Maximal {MAX_PHOTOS} Fotos erlaubt")
+    if len(current) >= max_photos:
+        raise HTTPException(
+            400,
+            f"Limit erreicht: {max_photos} Fotos. Mit Premium kannst du bis zu 30 Fotos hochladen."
+            if max_photos < 30 else f"Maximal {max_photos} Fotos erlaubt",
+        )
     photo_id = str(uuid.uuid4())
     mod = await moderate_image(compressed_url, session_tag=f"photo-{photo_id}")
     photo = {
