@@ -16,6 +16,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { ReportDialog } from "../components/ReportDialog";
 import { MoodBadge } from "../components/MoodBadge";
+import { Pic4PicPanel } from "../components/Pic4PicPanel";
 
 export default function ChatPage() {
   const { matchId } = useParams();
@@ -30,9 +31,22 @@ export default function ChatPage() {
   const [coupleMeta, setCoupleMeta] = useState({});
   const [typing, setTyping] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
+  const [pic4pic, setPic4pic] = useState(null);
   const wsRef = useRef(null);
   const listRef = useRef(null);
   const fileRef = useRef(null);
+
+  // Reload the current Pic4Pic exchange (if any) for this match. Called on
+  // mount, after each user action, and whenever a pic4pic-related system
+  // message arrives via the WebSocket.
+  const refreshPic4Pic = async () => {
+    try {
+      const { data } = await api.get(`/pic4pic/match/${matchId}`);
+      setPic4pic(data?.exchange || null);
+    } catch {
+      // Non-fatal; the chat keeps working without the panel.
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -46,10 +60,13 @@ export default function ChatPage() {
         setMessages(res.data.messages);
         setSenders(res.data.senders || {});
         setCoupleMeta(res.data.couple_meta || {});
+        // Pic4Pic state — independent endpoint, fetched once on mount.
+        refreshPic4Pic();
       } catch (e) {
         toast.error("Failed to load chat");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId, nav]);
 
   useEffect(() => {
@@ -69,6 +86,14 @@ export default function ChatPage() {
             });
             if (data.sender) {
               setSenders((prev) => ({ ...prev, [data.sender.id]: data.sender }));
+            }
+            // Pic4Pic banner needs to react when the partner initiates,
+            // responds, cancels — all of which post system messages with a
+            // `kind` starting with "pic4pic". We refetch the exchange so
+            // the panel gets the canonical state from the server.
+            const k = data.message?.kind || "";
+            if (typeof k === "string" && k.startsWith("pic4pic")) {
+              refreshPic4Pic();
             }
           } else if (data.type === "typing" && data.from !== user?.id) {
             setPeerTyping(Boolean(data.is_typing));
@@ -268,6 +293,12 @@ export default function ChatPage() {
             </div>
           ) : (
             <>
+              <Pic4PicPanel
+                exchange={pic4pic}
+                matchId={matchId}
+                onChange={refreshPic4Pic}
+                disabled={matchMeta.locked}
+              />
               <div className="mt-3 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
                 <Label className="flex items-center gap-2 cursor-pointer">
                   <Switch checked={selfDestruct} onCheckedChange={setSelfDestruct} data-testid="self-destruct-toggle" />

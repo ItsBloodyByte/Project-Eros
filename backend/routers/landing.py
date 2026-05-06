@@ -31,8 +31,8 @@ DEFAULT_LANDING = {
         "eyebrow": "Eros",
         "headline": "Verbinde dich mit Menschen, die dich wirklich sehen.",
         "subheadline": "Inklusiv, sicher und werbefrei. Eros ist die moderne Dating-Plattform für offene Köpfe.",
-        "cta_primary": {"label": "Kostenlos starten", "href": "/auth/register"},
-        "cta_secondary": {"label": "Anmelden", "href": "/auth/login"},
+        "cta_primary": {"label": "Kostenlos starten", "href": "/register"},
+        "cta_secondary": {"label": "Anmelden", "href": "/login"},
         "image_url": None,
     },
     "sections": [

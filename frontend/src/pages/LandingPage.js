@@ -23,7 +23,9 @@ const ICONS = {
  * see this page (matches /api/landing being a public endpoint).
  */
 export default function LandingPage() {
-  const { user, ready } = useAuth();
+  // AuthContext exposes `{ user, loading }`; `ready` is derived (= !loading).
+  const { user, loading: authLoading } = useAuth();
+  const ready = !authLoading;
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -65,8 +67,8 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-2">
           <Link to="/blog" className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hidden sm:inline-flex" data-testid="landing-nav-blog">Blog</Link>
-          <Link to="/auth/login"><Button variant="ghost" size="sm" data-testid="landing-nav-login">Anmelden</Button></Link>
-          <Link to={hero.cta_primary?.href || "/auth/register"}>
+          <Link to="/login"><Button variant="ghost" size="sm" data-testid="landing-nav-login">Anmelden</Button></Link>
+          <Link to={hero.cta_primary?.href || "/register"}>
             <Button size="sm" data-testid="landing-nav-register">Registrieren</Button>
           </Link>
         </div>
@@ -89,14 +91,14 @@ export default function LandingPage() {
         )}
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           {hero.cta_primary?.label && (
-            <Link to={hero.cta_primary.href || "/auth/register"}>
+            <Link to={hero.cta_primary.href || "/register"}>
               <Button size="lg" className="w-full sm:w-auto" data-testid="landing-cta-primary">
                 {hero.cta_primary.label}
               </Button>
             </Link>
           )}
           {hero.cta_secondary?.label && (
-            <Link to={hero.cta_secondary.href || "/auth/login"}>
+            <Link to={hero.cta_secondary.href || "/login"}>
               <Button size="lg" variant="outline" className="w-full sm:w-auto" data-testid="landing-cta-secondary">
                 {hero.cta_secondary.label}
               </Button>

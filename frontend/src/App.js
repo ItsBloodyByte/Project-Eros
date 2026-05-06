@@ -1,9 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { useEffect } from "react";
 import { Toaster } from "./components/ui/sonner";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { useTheme } from "./lib/theme";
-import { installScreenshotDeterrents } from "./lib/screenshotGuard";
 import { useLocationHeartbeat } from "./lib/useLocationHeartbeat";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -47,6 +45,28 @@ function Protected({ children }) {
   return children;
 }
 
+/**
+ * Root route handler: shows the public LandingPage to guests and redirects
+ * authenticated users straight to /discover. While auth state is still
+ * resolving we show a small loader to avoid flicker and prevent the landing
+ * page from briefly appearing for already-logged-in users.
+ */
+function HomeOrLanding() {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen grid place-items-center app-shell-bg">
+        <div className="flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[hsl(var(--accent))] border-t-transparent" />
+          <span>Lädt…</span>
+        </div>
+      </div>
+    );
+  }
+  if (user) return <Navigate to="/discover" replace />;
+  return <LandingPage />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -61,7 +81,7 @@ function AppRoutes() {
       <Route path="/premium" element={<PremiumPreviewPage />} />
       <Route path="/onboarding" element={<Protected><OnboardingPage /></Protected>} />
       {/* Public landing page for guests; authenticated users are redirected
-       *  to /discover by the LandingPage component itself.
+       *  to /discover by HomeOrLanding.
        */}
       <Route path="/" element={<HomeOrLanding />} />
       <Route path="/discover" element={<Protected><DiscoverPage /></Protected>} />
@@ -86,7 +106,6 @@ function AppRoutes() {
 
 function ThemedApp() {
   useTheme();
-  useEffect(() => { installScreenshotDeterrents(); }, []);
   useLocationHeartbeat();
   return (
     <>

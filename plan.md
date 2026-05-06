@@ -24,7 +24,7 @@ Konzept sieht NestJS + PostgreSQL + Next.js + React Native vor. Umgebung nutzt F
 5. **Chat nur nach Match** (mit Premium-Option „First Message“).
 6. **Alben** mit selektivem Sharing + Unlock Requests.
 7. **Admin/Moderation** Panel mit Reports Queue.
-8. **Privacy Controls:** Read Receipts, Online-Status, Hidden Mode, Screenshot-Abschreckung/Indikatoren.
+8. **Privacy Controls:** Read Receipts, Online-Status, Hidden Mode.
 9. **GDPR:** Export + Delete, Consent Tracking.
 10. **Partner-Profile (Couples):**
    - **Linked Couple (2 Logins):** Zwei Accounts werden nach gegenseitiger Bestätigung als Paar-Identität angezeigt; jeder behält seine Login-Daten.
@@ -66,7 +66,8 @@ Test der kritischsten Integrationen in einem Python-Skript:
 - Pages:
   - `/login`, `/register`
   - `/onboarding`
-  - `/` (Discover Grid)
+  - `/` (ursprünglich Discover Grid; inzwischen wird `/` als Gast-Landing genutzt — siehe Phase 14)
+  - `/discover` (Discover Grid)
   - `/profile/:id`
   - `/me`
   - `/matches`
@@ -94,7 +95,6 @@ E2E: Auth → Profile/Photo/AI → Discover mutual-filter → Like/Match → Cha
 - Admin Rollen: `admin`, `content_reviewer`, `support` + Rollenverwaltung.
 - Account Page zeigt Features + Premium Badge.
 - i18n Setup (Deutsch primär).
-- Screenshot-Abschreckung im Web.
 
 ### Testing results
 - Backend- und Frontendtests überwiegend grün; Restpunkt: Session-Persistence UX leicht holprig (Frontend-Rehydration/Flicker) → siehe Issue.
@@ -111,7 +111,6 @@ E2E: Auth → Profile/Photo/AI → Discover mutual-filter → Like/Match → Cha
 - `react-i18next` (Deutsch primär) + Struktur für weitere Sprachen.
 - Erweiterte Profile: Kinks, Body-Dimensions inkl. Auto-Kategorisierung.
 - UI-Logik: leere Felder ausblenden (bis Phase 7.0 für bestimmte Sektionen angepasst).
-- Web Screenshot Guard (Deterrence).
 - React Native Expo Grundgerüst.
 
 **Status:** Abgeschlossen.
@@ -163,7 +162,6 @@ Phase 5 wurde in mehreren Teilschritten umgesetzt und anschließend getestet.
 - Typografie (Figtree), max-w-6xl, Desktop-Grid, Preview Mode, ID-only Verified Badge.
 - Admin Report Details Dialog + Kontext.
 - Unmatch/Block.
-- Screenshot-Audit.
 
 **Status:** Abgeschlossen.
 
@@ -245,7 +243,7 @@ Diese Phase bündelt die zuletzt umgesetzten produktionsnahen Arbeiten (Docker/S
 ## Phase 9 — UX-Fixes + Conditional Filters + Mobile Parität (NSFW / Gay Position)
 Diese Phase bündelt drei zusammenhängende Produktpunkte:
 1) **UX-Bugfix** für Range-Slider (fehlender zweiter Griff).
-2) **Kontextabhängige Filterfelder** nach Zielgruppe/Orientierung (z. B. Cup-Size bei Gay-/Männer-only-Searching ausblenden).
+2) **Kontextabhängige Filterfelder** nach Zielgruppe/Orientierung.
 3) **Mobile Parität**: neue Profilfelder (NSFW-Präferenz & Gay Position) und passende Discover-Filter im React Native Client.
 
 ### Phase 9.1 — Web: Slider-Bugfix (Range-Thumb)
@@ -269,7 +267,7 @@ Diese Phase bündelt drei zusammenhängende Produktpunkte:
 ---
 
 ## Phase 10 — Mobile Iteration 3 Abschluss: Foto-Upload UX + Persona‑B Parität + Stealth + Video Upload
-Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scope-Check hat gezeigt, dass Teile bereits existierten; fehlende Parität wurde nachgezogen.
+Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab.
 
 ### Phase 10.1 — Stealth Toggle (Mobile)
 **Status:** Bereits vorhanden.
@@ -295,7 +293,6 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 - **Late-Binding-Pattern:**
   - Router-Module in `/app/backend/routers/*.py` importieren `api_router` + benötigte Helpers/Deps aus `server.py` und registrieren ihre Routen via `@api_router.<verb>`.
   - `server.py` importiert diese Module **ganz am Ende** (unmittelbar vor `app.include_router(api_router)`), nachdem alle Helpers deklariert sind.
-- Dadurch: **kein API-Contract-Change**, minimaler Bewegungsradius, schnelle Regressionstests möglich.
 
 ### Phase 11.1 — Refactor Schritt 1 (Delivered): Legal + Blog + Couples
 **Status:** Abgeschlossen.
@@ -303,9 +300,9 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 ### Phase 11.2 — Refactor Schritt 2 (Delivered): Payments + Webhooks + Admin
 **Umsetzung (Delivered):**
 - Neue Router:
-  - `/app/backend/routers/payments.py` (Checkout + Provider-Flows)
-  - `/app/backend/routers/webhooks.py` (Stripe/PayPal/Klarna Webhooks, weiterhin auf root `app` gemountet)
-  - `/app/backend/routers/admin.py` (52 Admin-Endpunkte)
+  - `/app/backend/routers/payments.py`
+  - `/app/backend/routers/webhooks.py`
+  - `/app/backend/routers/admin.py`
 - Regression: `iteration_11.json` **100% pass**.
 
 **Status:** Abgeschlossen.
@@ -314,13 +311,12 @@ Diese Phase schließt die noch offenen Punkte aus „Iteration 3“ ab. Ein Scop
 **Umsetzung (Delivered):**
 - Neue Router:
   - `/app/backend/routers/me.py`
-  - `/app/backend/routers/discover.py` (Boost-Fix bleibt erhalten: separate boosted query vor `$near`)
+  - `/app/backend/routers/discover.py` (Boost-Fix bleibt erhalten)
   - `/app/backend/routers/matches_chat.py`
 - Regression: `iteration_12.json` **31/32 pass** (ein 403 war erwartetes RBAC-Verhalten, keine Regression).
 
 **Messbarer Fortschritt:**
 - `server.py` reduziert von **6432** → **3336** LOC (**-48%**).
-- Router-Module gesamt: 9 (`legal`, `blog`, `couples`, `payments`, `webhooks`, `admin`, `me`, `discover`, `matches_chat`).
 
 **Status:** Abgeschlossen.
 
@@ -345,24 +341,22 @@ Diese Phase bündelt kleinere, aber produktrelevante Änderungen.
 
 **Status:** Abgeschlossen.
 
+> **Hinweis (aktueller Stand):** Im Web ist noch ein Import/Call in `frontend/src/App.js` vorhanden (`installScreenshotDeterrents`). Das wird in Phase 14 final bereinigt, damit Feature #5 wirklich vollständig ist.
+
 ### Phase 12.2 — Profil-Erstellungsdatum öffentlich + „Neu“-Badge (7 Tage)
 **Umsetzung (Delivered):**
-- Backend:
-  - `helpers.public_user_from_doc` liefert jetzt `created_at` + `is_new` (computed, 7 Tage).
-- Web:
-  - `ProfileViewPage` zeigt „Mitglied seit <Monat Jahr>“ + Neu-Badge.
-  - `ProfileCard` im Discover zeigt Neu-Badge.
+- Backend: `public_user_from_doc` liefert `created_at` + `is_new` (computed, 7 Tage).
+- Web: ProfileViewPage + Discover ProfileCard zeigen Neu-Badge.
 
 **Status:** Abgeschlossen.
 
 ### Phase 12.3 — ID-Verifikation: Dokument-Zerstörung nach Review
-**Ziel:** Sobald ein Reviewer eine Verifikation (approved/rejected) entscheidet, müssen Selfie + Dokumentdaten umgehend zerstört werden.
+**Ziel:** Nach `approved/rejected` werden Selfie + Dokumentdaten umgehend zerstört.
 
 **Umsetzung (Delivered):**
-- Admin Review Endpoint setzt bei `approved` **und** `rejected`:
+- Admin Review Endpoint setzt:
   - `selfie_data_url=None`, `document_data_url=None`
   - `document_destroyed_at`, `document_destroyed_by`
-- Admin Listing filtert defensiv: wenn `document_destroyed_at` gesetzt, werden Bildfelder nie wieder ausgeliefert.
 
 **Status:** Abgeschlossen.
 
@@ -373,44 +367,171 @@ Ziel: Bot-/Scraper-Aktivitäten aktiv abfangen, ohne echte User zu beeinträchti
 
 ### Phase 13.1 — Honey-Pot Subsystem (Backend)
 **Umsetzung (Delivered):**
-- Neues Modul: `/app/backend/honeypot.py`:
-  - `visibility_filter_for(viewer)` → Mongo query fragment (versteckt honeypots + shadow-banned)
-  - `trigger_honeypot(db, viewer, target, action, meta)` → idempotenter Shadow-Ban
-  - `record_honeypot_flag` → `moderation_flags` Eintrag `kind="honeypot_trigger"`
-- Discover:
-  - `/discover` nutzt `_hp_filter(user)` → Honey-Pots (und Shadow-Banned) für Non-Staff unsichtbar.
-- Trigger-Hooks:
-  - `GET /users/{id}`: View eines Honey-Pots shadow-banned den Viewer (ohne UX-Feedback).
-  - `POST /likes`: Like auf Honey-Pot → shadow-ban + Return success (no-op).
-  - `POST /messages`: Message an Honey-Pot (Match-Gegenstück) → shadow-ban + synthetische success response (keine Zustellung).
+- Neues Modul: `/app/backend/honeypot.py`
+- Discover nutzt Honey-Pot Filter.
+- Trigger-Hooks (View/Like/Message) shadow-bannen den Viewer bei Honey-Pot Interaktion.
 
 **Status:** Abgeschlossen.
 
 ### Phase 13.2 — Admin API (Backend)
 **Umsetzung (Delivered):**
-- `/admin/honeypots`:
-  - `GET` list
-  - `POST` create
-  - `DELETE /{hp_id}`
-- `/admin/shadow-banned`:
-  - `GET` list (filterable by reason)
-  - `POST /admin/shadow-ban/{user_id}` manual shadow ban
-  - `POST /admin/shadow-unban/{user_id}` lift
+- `/admin/honeypots` (GET/POST/DELETE)
+- `/admin/shadow-banned` + manual shadow ban/unban
 
 **Status:** Abgeschlossen.
 
 ### Phase 13.3 — Admin UI (Web)
 **Umsetzung (Delivered):**
-- `AdminNav` neuer Eintrag **Honey-Pots**.
-- Neue Komponente: `frontend/src/components/AdminHoneypotsTab.js`:
-  - Tabs: Fallen / Geblockte Bots
-  - Create/Delete Trap (superadmin)
-  - Unban + optional Hard-Ban (superadmin)
-
-**E2E-Verifikation:**
-- Admin erstellt Honeypot → normaler User view triggert Shadow-Ban → Admin sieht Trigger-Trail → Honeypot taucht nicht in Discover auf → Cleanup erfolgreich.
+- `AdminNav` + `AdminHoneypotsTab` (Fallen/Geblockte Bots; create/delete/unban).
 
 **Status:** Abgeschlossen.
+
+---
+
+## Phase 14 — Continuation (P1): Landing + Routing, Pic4Pic Frontend (Web+Mobile), Payments Hardening, Performance-Sweep
+Diese Phase bildet die direkte Fortsetzung aus den letzten Iterationen. Reihenfolge ist **sequenziell** gemäß Auswahl **Option D**:
+
+### Phase 14.0 — Meta: Reihenfolge & Qualitätsgate
+**Reihenfolge:**
+1) Routing Fix + LandingPage finalisieren
+2) Pic4Pic Web Frontend
+3) Pic4Pic Mobile Frontend
+4) Payments Production Hardening Reststücke
+5) Performance-Sweep
+
+**Qualitätsgate pro Schritt:**
+- Smoke-Test (Web/Mobile wo relevant)
+- Keine Regression im Login/Discover/Chat
+- Audit/Moderation/Honeypot-Logik bleibt unangetastet
+
+**Status:** In Planung.
+
+### Phase 14.1 — Routing Fix: Gast-Landing korrekt anbinden + Screenshot-Deterrents endgültig entfernen (Web)
+**Ausgangslage:**
+- `LandingPage` existiert (`frontend/src/pages/LandingPage.js`) und redirectet eingeloggte User nach `/discover`.
+- `App.js` referenziert aktuell eine nicht existierende Komponente `HomeOrLanding` (Bug).
+- In `App.js` wird `installScreenshotDeterrents` noch importiert/aufgerufen, obwohl Screenshot-Schutz entfernt werden soll.
+
+**Ziele:**
+- `/` zeigt LandingPage für Gäste.
+- Eingeloggte User landen konsistent auf `/discover` (ohne Flicker/Loops).
+- Bereinigung: Screenshot-Deterrent Import/Call vollständig entfernen (keine Re-Adds).
+
+**Umsetzungsschritte:**
+1. `frontend/src/App.js`:
+   - `HomeOrLanding` ersetzen: Root-Route direkt auf `<LandingPage />` oder eine kleine Inline-Komponente definieren.
+   - Routen-Hygiene: `/login`, `/register`, `/legal/*`, `/blog*`, `/premium` bleiben public.
+   - `installScreenshotDeterrents` Import entfernen und `useEffect` Call löschen.
+2. Optional: kleine UX-Verbesserung gegen Auth-Flicker:
+   - Root-Route kann bei `loading` einen minimalen Loader zeigen (falls LandingPage bereits null rendert).
+3. Frontend Smoke-Test:
+   - Gast: `/` zeigt Landing.
+   - Gast: Klick „Anmelden“/„Registrieren“ führt zu den richtigen Routen.
+   - Logged-in: `/` → redirect nach `/discover`.
+
+**Status:** Offen (Bugfix nötig).
+
+### Phase 14.2 — LandingPage finalisieren (Feature #6)
+**Ausgangslage:**
+- Backend Router existiert: `/app/backend/routers/landing.py` (public endpoint `/api/landing`).
+- Frontend LandingPage lädt `/landing` via `api.get("/landing")` und hat robuste Fallbacks.
+
+**Ziele:**
+- Admin-editierbare Landing-Inhalte vollständig nutzbar (Hero/Sections/Blog-Teaser).
+- Stabiler Gast-Flow ohne Auth-Abhängigkeiten.
+
+**Umsetzungsschritte:**
+1. Backend:
+   - Sicherstellen, dass `/api/landing` public ist und stabil die erwarteten Keys liefert.
+2. Frontend:
+   - Links/Paths prüfen (Login/Register URLs konsistent zu tatsächlichen Routen).
+   - Optional: Tracking/Audit (nur falls bereits Standard im Projekt; ansonsten nicht erzwingen).
+3. Tests:
+   - Landing lädt Daten (oder fällt sauber auf Defaults zurück).
+
+**Status:** In Arbeit (Routing blockiert End-to-End Verifikation).
+
+### Phase 14.3 — Pic4Pic Web Frontend (Feature #1, Web)
+**Ausgangslage:**
+- Backend vollständig implementiert:
+  - `POST /api/pic4pic/initiate`
+  - `POST /api/pic4pic/respond`
+  - `POST /api/pic4pic/cancel`
+  - `GET /api/pic4pic/match/{match_id}`
+- Chat postet System-Messages mit `kind=pic4pic`/`pic4pic_photo` etc.
+- Web UI in `frontend/src/pages/ChatPage.js` ist noch ohne Pic4Pic-Bedienelemente.
+
+**Ziele:**
+- Nutzer können im Chat einen Pic4Pic-Tausch starten/sehen/annehmen/abbrechen.
+- Bis zum Abschluss: kein Leaken von Bildern (nur sealed state).
+
+**Umsetzungsschritte (Web):**
+1. API-Integration in ChatPage:
+   - Beim Öffnen eines Matches den aktuellen Exchange via `GET /pic4pic/match/{matchId}` laden.
+   - UI-Banner abhängig von `exchange.status` + `your_role`:
+     - pending (initiator): „Wartet auf Antwort“ + Cancel
+     - pending (recipient): „Foto wartet“ + Upload/Respond + Cancel
+     - completed: optional kleiner Hinweis „Bilder getauscht“
+2. Upload UX:
+   - Datei-Picker → in data URL konvertieren.
+   - Calls an `initiate/respond`.
+   - Fehlerhandling für 409/410/400 (moderation rules).
+3. Chat Rendering:
+   - `kind=pic4pic_photo` messages zeigen `media_data_url` (Partnerfoto) als normales Chat-Media.
+
+**Status:** Offen.
+
+### Phase 14.4 — Pic4Pic Mobile Frontend (Feature #1, Mobile)
+**Ausgangslage:**
+- Expo/React Native Clients vorhanden; Chat Screens existieren.
+- Pic4Pic mobile UI noch nicht umgesetzt.
+
+**Ziele:**
+- Gleicher Funktionsumfang wie Web (Feature-Parität): Initiate/Respond/Cancel + Sealed Banner + Fotoanzeige nach Completion.
+
+**Umsetzungsschritte (Mobile):**
+1. Passende Stellen finden (Chat Screen + Message Renderer).
+2. API calls analog Web.
+3. Upload (ImagePicker) → data URL.
+4. Zustandsmaschine (pending/completed/expired/cancelled) konsistent darstellen.
+
+**Status:** Offen.
+
+### Phase 14.5 — Payments Production Hardening (Reststücke)
+**Ausgangslage:**
+- Payments funktionieren, Hardening teilweise begonnen.
+- Offene Restarbeiten: Stale-Transaction Cleanup, Webhook Strict-Mode Warning.
+
+**Ziele:**
+- Kein unendliches „initiated“ in DB.
+- Striktere Webhook-Validierung/Warning ohne Breaking Change.
+
+**Umsetzungsschritte:**
+1. Stale-Transaction Cleanup:
+   - Background-Job / Cron-ähnlicher Task oder Admin Endpoint, der alte `initiated` → `expired` setzt.
+2. Webhook Strict-Mode:
+   - Wenn Webhook Payload/Signature nicht strikt passt: Warnung & Audit (aber keine Downtime).
+3. Tests:
+   - Backend Regression + gezielte Payments-Tests.
+
+**Status:** In Arbeit / pausiert.
+
+### Phase 14.6 — Performance-Sweep (Feature #8)
+**Ziele:**
+- Ladezeiten minimieren, Interaktionen „live“ gestalten.
+
+**Umsetzungsschritte:**
+1. Web Performance:
+   - Route-based code splitting (wo sinnvoll), Lazy Loading großer Pages.
+   - Profil/Discover: API caching + optimistische UI für likes (wo sicher).
+   - Bild-Rendering: Thumbnail first, dann full.
+2. Backend:
+   - Query profiling (Discover, Chat, Albums).
+   - Index-Check + payload trimming (Serializer).
+3. Mobile:
+   - FlatList Optimierungen, Image caching.
+
+**Status:** Offen.
 
 ---
 
@@ -425,73 +546,42 @@ Ziel: Bot-/Scraper-Aktivitäten aktiv abfangen, ohne echte User zu beeinträchti
 - Empfehlung: `/api/me` Serializer um `blocked_user_ids` erweitern oder `GET /api/me/blocks`.
 
 ### Issue 4: Payments Production Hardening (P1)
-- Status: **in Arbeit / teilweise pausiert** (Refactor und Feature-Backlog hatten Priorität).
-- Hinweis: Hardening-Änderungen (Rate-Limits, Audit, Anti-Tampering) wurden teilweise begonnen, aber nicht vollständig abgeschlossen.
+- Status: **in Arbeit / teilweise pausiert** (Phase 14.5).
+
+### Issue 5: Root Routing Bug (P1)
+- Status: **offen** — `HomeOrLanding` in `frontend/src/App.js` ist nicht definiert; blockiert Landing-Flow (Phase 14.1).
 
 ---
 
 ## Nächste Schritte (Upcoming Tasks)
-### Task 1 (P1): Mobile: Report-Flows
+### Task 1 (P1): Phase 14.1 — Routing Fix + Screenshot-Deterrent Cleanup
+**Status:** Offen.
+
+### Task 2 (P1): Phase 14.3/14.4 — Pic4Pic Web + Mobile
+**Status:** Offen.
+
+### Task 3 (P1): Phase 14.5 — Payments Hardening Reststücke
+**Status:** In Arbeit / pausiert.
+
+### Task 4 (P2): Phase 14.6 — Performance Sweep
+**Status:** Offen.
+
+### Task 5 (P2): Mobile: Report-Flows
 **Ziel:** Nutzer:innen können Profil/Foto/Nachricht aus der Mobile App melden.
-
-**Status:** Offen.
-
-### Task 2 (P1): Payments – Admin-Konfig & Production Hardening
-**Ziel:** Payment Provider Credentials & Webhooks sauber produktionsreif betreiben.
-
-**Empfohlene Restarbeiten:**
-- Webhook Rate-Limits + Strict-Mode Warnings in Admin UI
-- Stale-Transaction Cleanup (`initiated` → `expired`) + Admin Job/Endpoint
-- Mehr Provider-Key Slots + Rotation-Prozess
-
-**Status:** Offen / in Bearbeitung.
-
-### Task 3 (P1): Album mutual-Freigabe (neu)
-**Ziel:** Album wird nur freigegeben, wenn beide Chat-Partner freigeben; Freigabe endet automatisch, wenn eine Seite stoppt.
-
-**Status:** Offen.
-
-### Task 4 (P1): Pic4Pic (neu)
-**Ziel:** Sicherer Bildtausch: A sendet Pic; erst wenn B ein gültiges Pic sendet, werden beide Bilder ausgetauscht. Ungültige/fehlende Antwort → kein Austausch.
-
-**Status:** Offen.
-
-### Task 5 (P1/P2): AI optional + Multi-Provider + optionale Reviews (neu)
-**Ziel:** Admin kann KI komplett deaktivieren; mehrere Provider-Keys verwalten; Reviews optional über Moderation laufen.
-
-**Status:** Offen.
-
-### Task 6 (P1/P2): Custom Landing Page für Gäste (neu)
-**Ziel:** Für nicht eingeloggte User eine admin-konfigurierbare Landingpage (Blogposts, Hero, CTAs, Sections).
-
-**Status:** Offen.
-
-### Task 7 (P2): Performance Sweep
-**Ziel:** UX „live“: Interaktionen ohne spürbare Verzögerung, geringe Ladezeiten.
-
-**Status:** Offen.
-
-### Task 8 (P2): Mobile Voll-Parität — Restliche Iterationen
-- Iteration 4: Broadcast Inbox + Notifications + Settings Parität
-- Iteration 5: Reports (User Side) + Moderation Entry Points
-- Iteration 6: Optional Admin Panel Mobile
-
 **Status:** Offen.
 
 ---
 
 ## Status / Zusammenfassung
 - Phase 1–4: **fertig**.
-- Phase 5.0–5.6: **fertig (Backend + Frontend)** inkl. Broadcast-System.
+- Phase 5.0–5.6: **fertig (Backend + Frontend)**.
 - Phase 6.0–6.4: **fertig**.
 - Phase 7.0–7.4: **fertig**.
 - Phase 8.1–8.4: **fertig**.
 - Phase 9: **fertig**.
 - Phase 10: **fertig**.
-- Phase 11.1–11.3: **fertig** (Monolith-Router-Split; server.py 6432→3336 LOC).
-- Phase 12.1–12.3: **fertig** (Screenshot-Schutz entfernt, Neu-Badge, ID-Doc hard-delete).
+- Phase 11.1–11.3: **fertig** (Router-Split).
+- Phase 12.1–12.3: **fertig** (Screenshot-Schutz entfernt, Neu-Badge, ID-Doc hard delete) — **Rest-Cleanup in App.js offen**.
 - Phase 13.1–13.3: **fertig** (Honey-Pots + Shadow-Bans + Admin UI).
 
-**Gesamtstatus:** Web **COMPLETED** (mit neuem Anti-Bot System). Mobile: Iteration 1–3 **COMPLETED**. Backend Refactor: **COMPLETED** (Router-Split). 
-
-**Aktuelle Priorität (gemäß Roadmap):** #4 AI optional → #2 Album mutual → #1 Pic4Pic → #6 Landing → #8 Performance, plus **Task 2 Payments Production Hardening** abschließen.
+**Aktueller Fokus:** Phase 14 sequenziell (**Option D**): Routing/Landing → Pic4Pic Web → Pic4Pic Mobile → Payments Hardening → Performance.

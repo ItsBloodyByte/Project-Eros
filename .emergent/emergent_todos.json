@@ -1,26 +1,34 @@
 [
   {
-    "content": "#2 Album mutual-Freigabe",
+    "content": "Phase A1-A4: Routing + Landing",
     "status": "completed"
   },
   {
-    "content": "#1 Pic4Pic Backend",
+    "content": "Phase B1-B3: Pic4Pic Web - Komponente + Integration in ChatPage",
     "status": "completed"
   },
   {
-    "content": "#4 AI optional + Multi-Provider + optionale Reviews (Backend + Admin Config)",
-    "status": "completed"
-  },
-  {
-    "content": "#6 Custom Landing Page für Gäste",
+    "content": "Phase B4: Pic4Pic Web - Frontend-Test (testing_agent)",
     "status": "in_progress"
   },
   {
-    "content": "#8 Performance-Sweep",
+    "content": "Phase C1: Pic4Pic Mobile - API Client + ChatScreen Banner/Action",
     "status": "pending"
   },
   {
-    "content": "Payments Hardening Restarbeiten",
+    "content": "Phase C2: Pic4Pic Mobile - Test",
+    "status": "pending"
+  },
+  {
+    "content": "Phase D1: Payments - Stale-Transaction Cleanup Background Task",
+    "status": "pending"
+  },
+  {
+    "content": "Phase D2: Payments - Webhook Strict-Mode Warning + Backend-Test",
+    "status": "pending"
+  },
+  {
+    "content": "Phase E1-E2: Performance-Sweep",
     "status": "pending"
   }
 ]
