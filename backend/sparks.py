@@ -93,6 +93,9 @@ async def _write_ledger(db, user_id: str, amount: int, transaction_type: str,
         "created_at": _now_iso(),
     }
     await db.sparks_ledger.insert_one(row)
+    # `insert_one` mutates the input dict to inject the Mongo `_id`; drop
+    # it before returning so callers (and the JSON encoder) never see it.
+    row.pop("_id", None)
     return row
 
 
@@ -158,6 +161,7 @@ async def spend_sparks(db, user_id: str, transaction_type: str, *,
         "created_at": _now_iso(),
     }
     await db.sparks_ledger.insert_one(row)
+    row.pop("_id", None)
     return row
 
 

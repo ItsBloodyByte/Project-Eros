@@ -1,15 +1,7 @@
 [
   {
-    "content": "Phase 15.1: Foundation komplett (Constants, Sparks Ledger, Subscriptions, Migration, Limits, Hooks, Admin Endpoints)",
+    "content": "Phase 15.1: Foundation komplett (Constants, Sparks Ledger, Subscriptions, Migration, Limits, Hooks, Admin Endpoints, Bug-fix _id leak) + Backend-Test 90% pass",
     "status": "completed"
-  },
-  {
-    "content": "Phase 15.1.7: Backend Smoke-Test via testing_agent",
-    "status": "in_progress"
-  },
-  {
-    "content": "Phase 15.1.5: Boost rework (verschoben in Phase 15.3 zusammen mit Sparks-Spending)",
-    "status": "cancelled"
   },
   {
     "content": "Phase 15.2: Sparks Spending + Premium-Features (Filter SKIP)",

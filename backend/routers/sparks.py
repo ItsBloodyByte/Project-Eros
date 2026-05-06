@@ -108,6 +108,4 @@ async def admin_sparks_adjust(
             raise HTTPException(400, "User has insufficient Sparks balance for this debit")
     await _audit(user["id"], "sparks_admin_adjust", user_id,
                  {"amount": body.amount, "note": note, "balance_after": row.get("balance_after")})
-    # Remove MongoDB _id before returning (not JSON serializable)
-    row.pop("_id", None)
     return {"ok": True, "row": row}
