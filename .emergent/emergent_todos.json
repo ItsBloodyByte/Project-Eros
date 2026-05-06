@@ -4,31 +4,23 @@
     "status": "completed"
   },
   {
-    "content": "Phase B1-B3: Pic4Pic Web - Komponente + Integration in ChatPage",
+    "content": "Phase B1-B4: Pic4Pic Web + AI-Key Bugfix + E2E",
     "status": "completed"
   },
   {
-    "content": "Phase B4: Pic4Pic Web - Frontend-Test (testing_agent)",
-    "status": "in_progress"
+    "content": "Phase C1-C2: Pic4Pic Mobile (lint passed)",
+    "status": "completed"
   },
   {
-    "content": "Phase C1: Pic4Pic Mobile - API Client + ChatScreen Banner/Action",
-    "status": "pending"
+    "content": "Phase D1-D2: Payments Hardening (Sweeper + Strict-Mode + Admin Endpoints + getestet)",
+    "status": "completed"
   },
   {
-    "content": "Phase C2: Pic4Pic Mobile - Test",
-    "status": "pending"
+    "content": "Phase E1: Performance-Sweep - Web Bundle-Splitting (-55% main.js)",
+    "status": "completed"
   },
   {
-    "content": "Phase D1: Payments - Stale-Transaction Cleanup Background Task",
-    "status": "pending"
-  },
-  {
-    "content": "Phase D2: Payments - Webhook Strict-Mode Warning + Backend-Test",
-    "status": "pending"
-  },
-  {
-    "content": "Phase E1-E2: Performance-Sweep",
-    "status": "pending"
+    "content": "Phase E2: Optional - API caching/optimistic updates (verschoben - größter Hebel mit E1 gezogen)",
+    "status": "cancelled"
   }
 ]

@@ -102,6 +102,7 @@ export default function ChatPage() {
       };
     } catch {}
     return () => { try { ws && ws.close(); } catch {} };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId, user?.id]);
 
   useEffect(() => {

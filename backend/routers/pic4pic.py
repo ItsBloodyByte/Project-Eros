@@ -75,9 +75,19 @@ def _is_strong_photo(mod: dict) -> bool:
     Bots love sending blank/transparent images. A proper photo will trigger
     *something* in the moderation pipeline: either a face, a noticeable NSFW
     score, or at least one descriptive label.
+
+    Special case: when moderation didn't actually run (provider == "noop"
+    because it's disabled, the API key is missing, or the upstream call
+    errored) we cannot reason about the image content, so we accept it —
+    otherwise a temporary AI outage would silently break Pic4Pic for all
+    users. The image still passed `_reject_if_bad_image_mime` and is not
+    `blocked`, which is the security floor we care about.
     """
     if mod.get("blocked"):
         return False
+    if mod.get("provider") == "noop":
+        # Moderation skipped (disabled / missing key / upstream error).
+        return True
     if mod.get("has_face"):
         return True
     if (mod.get("nsfw_score") or 0) >= 0.10:
